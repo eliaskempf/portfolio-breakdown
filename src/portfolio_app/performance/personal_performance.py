@@ -8,6 +8,7 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
+from functools import cached_property
 import math
 
 from portfolio_app.ledger.account_journal import effective_events, replay
@@ -122,6 +123,7 @@ class HistoryCalculation:
         self.fingerprint = history_fingerprint(journal)
         self._facts = OrderedDict()
         self._flows = OrderedDict()
+        self._position_flows = {}
 
     def _get(self, key, load):
         if key not in self._facts:
@@ -185,8 +187,22 @@ class HistoryCalculation:
         return self._get(('capital', scope, stamp, target), lambda: capital_at_start(
             self.journal, scope, self.observations, stamp, target, calculation=self))
 
+    @cached_property
+    def _position_flow_inputs(self):
+        from portfolio_app.performance.history_flows import position_flow_inputs
+        return position_flow_inputs(self)
+
     def flows(self, scope, start, end, target):
         from portfolio_app.performance.history_flows import DatedFlows
+        if len(scope.positions) == 1 and not scope.accounts and not scope.unresolved:
+            identity = scope.positions[0]
+            if identity in self._events:
+                # One currency per recorded security; each retains only its own dated inputs.
+                flows = self._position_flows.get(identity)
+                if flows is None or flows.target != target:
+                    flows = DatedFlows(self, scope, target, position_inputs=self._position_flow_inputs[identity])
+                    self._position_flows[identity] = flows
+                return flows.interval(start, end)
         key = scope, target
         if key not in self._flows:
             self._flows[key] = DatedFlows(self, scope, target)

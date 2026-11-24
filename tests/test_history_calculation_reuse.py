@@ -228,7 +228,7 @@ def test_dense_flow_conversion_and_retention_are_linear(monkeypatch):
         flows, reasons = calculation.flows(scope,start.isoformat(),(start+timedelta(days=i)).isoformat(),'EUR')
         assert not reasons and sum(f.amount for f in flows) == 10*i
     assert len(materialized) == 150
-    cached = calculation._flows[scope,'EUR']
+    cached = calculation._position_flows['stock']
     assert sum(len(flows) for flows,_ in cached.buckets.values()) == 150
     for i in range(40):
         calculation.flows(HistoryScope((f'other-{i}',)),start.isoformat(),'2024-01-02','EUR')
@@ -400,3 +400,41 @@ def test_scalar_twr_checks_reciprocal_fx_carried_into_the_valuation_interval():
         Observation('correction', 'fx', 'EUR/USD', friday, 1, 'EUR', target='USD', replaces='inverse')))
     assert full_history_time_weighted(HistoryCalculation(journal, corrected), scope,
                                       date.fromisoformat(monday), 'EUR') == pytest.approx(.1)
+
+
+def test_rotating_position_flows_visit_only_new_postings_in_the_selected_book(monkeypatch):
+    from collections import Counter
+    from datetime import timedelta
+    import portfolio_app.performance.personal_performance as module
+    start = date(2024, 1, 1)
+    books = []
+    for i in range(48):
+        identity = f'invented-{i}'
+        events = [E('zero-'+identity, 'opening', start.isoformat())]
+        for offset in (1, 61):
+            day = (start + timedelta(days=offset+i)).isoformat()
+            events.append(E(f'buy-{identity}-{offset}', 'buy', day, quantity=1, amount=10,
+                            currency='EUR', charges_known=True))
+        books.append(book(*events, identity=identity))
+    calculation = HistoryCalculation(Journal(version=2, securities=tuple(books)), ObservationStore())
+    read = Counter()
+    original = module.external_flows
+    def counted(journal, scope, *args, **kwargs):
+        for posting in kwargs['security_cash']:
+            read[scope.positions[0], posting.position_id] += 1
+        return original(journal, scope, *args, **kwargs)
+    monkeypatch.setattr(module, 'external_flows', counted)
+    for offset, expected in ((50, 10), (110, 20), (50, 10)):
+        end = (start + timedelta(days=offset)).isoformat()
+        for item in books:
+            flows, reasons = calculation.flows(HistoryScope((item.position_id,)), start.isoformat(), end, 'EUR')
+            assert not reasons and sum(flow.amount for flow in flows) == expected
+    assert read == Counter({(b.position_id, b.position_id): 2 for b in books})
+    assert sum(len(item.buckets) for item in calculation._position_flows.values()) == 96
+    # An alternate reporting currency replaces the converted facts for that security.
+    first_scope = HistoryScope((books[0].position_id,))
+    foreign, missing = calculation.flows(first_scope, start.isoformat(), end, 'USD')
+    assert missing and all(flow.amount is None for flow in foreign)
+    restored, missing = calculation.flows(first_scope, start.isoformat(), end, 'EUR')
+    assert not missing and sum(flow.amount for flow in restored) == 10
+    assert len(calculation._position_flows) == len(books)
