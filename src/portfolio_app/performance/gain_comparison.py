@@ -6,7 +6,7 @@ import pandas as pd
 from portfolio_app.performance.gain_accounting import current_component_values, summarize_known_gain
 from portfolio_app.performance.history_observations import HistoryScope
 from portfolio_app.performance.history_scope import category_history_scope
-from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.history_view import full_history_time_weighted
 from portfolio_app.portfolio.strategic import strategic_performance
 from portfolio_app.performance.personal_performance import HistoryCalculation
 
@@ -51,8 +51,7 @@ def known_category_performance(displayed, holdings, config, journal, observation
         gain = summarize_known_gain(journal, scope, observations, today.isoformat(), target,
                                     current_values=values, summary_rows=current_valued, calculation=calculation)
         twr = calculation._get(('category_twr', scope, target, today), lambda:
-            history_view(journal, scope, observations, 'All', today=today, target=target,
-                         include_points=False, calculation=calculation, annualized=False).all_result.time_weighted)
+            full_history_time_weighted(calculation, scope, today, target))
         return gain, twr
 
     return strategic_performance(comparison, config, bucket, evaluate=evaluate)

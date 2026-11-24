@@ -236,3 +236,64 @@ def test_category_comparison_does_not_calculate_unused_annualized_returns(monkey
                                         rows, today=date(2025, 1, 1))
     assert result.Gain.tolist() == [20]
     assert result['Return (%)'].tolist() == pytest.approx([20])
+
+
+def test_scalar_twr_resolves_endpoints_and_flow_boundaries_without_daily_inventory(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from test_daily_twr import example, trade
+
+    start = date(2024, 1, 1)
+    prices = [((start + timedelta(days=i)).isoformat(), 100+i) for i in range(100)]
+    journal, scope, store = example((trade('buy', 'buy', '2024-02-01', 131),), quantity=1, prices=prices)
+    today = start + timedelta(days=101)
+    expected = history_view(journal, scope, store, 'All', today=today).all_result.time_weighted
+    assert expected is not None
+    calculation = HistoryCalculation(journal, store)
+    value = calculation.value
+    dates = set()
+    def observe(scope, stamp, target):
+        dates.add(stamp)
+        return value(scope, stamp, target)
+    monkeypatch.setattr(calculation, 'value', observe)
+    assert full_history_time_weighted(calculation, scope, today, 'EUR') == expected
+    assert dates <= {today.isoformat(), prices[-1][0], '2024-01-31', start.isoformat()}
+
+
+@pytest.mark.parametrize('case', ['negative close', 'negative boundary', 'corrected boundary',
+                                  'negative other currency', 'unvalued purchase', 'fully sold', 'no prices'])
+def test_scalar_twr_preserves_full_history_eligibility(case):
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from test_daily_twr import example, trade
+    today = date(2024, 1, 10)
+    events = ()
+    if case == 'fully sold':
+        events = (trade('sale', 'sell', '2024-01-07', 110),)
+    elif case == 'unvalued purchase':
+        events = (trade('buy', 'buy', '2024-01-09', 110),)
+    prices = () if case == 'no prices' else (('2024-01-01', 100), ('2024-01-06', 110))
+    journal, scope, store = example(events, quantity=1, prices=prices)
+    if 'negative' in case or case == 'corrected boundary':
+        boundary = {} if case == 'negative close' else dict(side='after', boundary='invented-flow')
+        negative = Observation('negative', 'value', scope.key, '2024-01-04', -1,
+                               'USD' if case == 'negative other currency' else 'EUR', **boundary)
+        extra = [negative]
+        if case == 'corrected boundary':
+            extra.append(replace(negative, id='correction', replaces='negative', amount=1))
+        store = replace(store, observations=(*store.observations, *extra))
+    expected = history_view(journal, scope, store, 'All', today=today).all_result.time_weighted
+    assert (expected is not None) == (case in {'fully sold', 'corrected boundary', 'negative other currency'})
+    assert full_history_time_weighted(HistoryCalculation(journal, store), scope, today, 'EUR') == expected
+
+
+def test_scalar_twr_still_detects_interior_conflicting_closing_fx():
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from portfolio_app.portfolio.holdings import DataError
+    from test_daily_twr import example
+    days = ('2024-01-01', '2024-01-04', '2024-01-10')
+    journal, scope, store = example((), quantity=1, prices=[(day, 100) for day in days])
+    store = replace(store, observations=tuple(replace(p, currency='USD') for p in store.observations) +
+                    tuple(Observation('fx-'+day, 'fx', 'USD/EUR', day, 1, 'USD', target='EUR') for day in days) +
+                    (Observation('inverse', 'fx', 'EUR/USD', days[1], 2, 'EUR', target='USD'),))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        full_history_time_weighted(HistoryCalculation(journal, store), scope, date.fromisoformat(days[-1]), 'EUR')

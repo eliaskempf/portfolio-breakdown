@@ -1,7 +1,7 @@
 """Period selection and observed history series, independent of Streamlit."""
 from calendar import monthrange
 from portfolio_app.performance.history_diagnostics import HistoryIssue
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from portfolio_app.performance.history_observations import index_observations
@@ -44,6 +44,56 @@ class HistoryView:
         return self.requested_start <= self.all_start
 
 
+def _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last):
+    flows, _ = calculation.flows(scope, beginning, last, target)
+    return sorted({day for day in recorded.chart_dates if beginning <= day <= last}
+                  | {flow.date for flow in flows} | {day for day in dates if beginning <= day <= last}
+                  | {beginning, first, last})
+
+
+def _period_result(calculation, scope, target, dates, start, end, negative_dates, annualized):
+    result = calculate_history(calculation.journal, scope, calculation.observations, start, end, target,
+                               calculation=calculation, annualized=annualized, negative_dates=negative_dates)
+    if dates and dates[-1] > end:
+        reason = (HistoryIssue('The latest recorded event has no supported ending valuation', 'endpoint'),)
+        return replace(result, money_weighted=None, time_weighted=None,
+                       money_weighted_reasons=reason, time_weighted_reasons=reason)
+    return result
+
+
+def _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
+                 *, annualized, valuations=None):
+    if valuations is None and (scope.accounts or recorded.foreign_prices):
+        # Account equity can turn negative between flows. Foreign prices can
+        # reveal conflicting FX on an intermediate close, even after the last flow.
+        valuations = {day: calculation.value(scope, day, target) for day in stamps}
+
+    def value(day):
+        return valuations[day] if valuations is not None else calculation.value(scope, day, target)
+
+    end = next((day for day in reversed(stamps) if value(day).amount is not None), last)
+    if valuations is None:
+        # FIFO inventory is long-only and validated prices are positive. Only
+        # explicit scope valuations (including flow boundaries) can be negative.
+        negative = tuple(sorted(day for day in recorded.negative_equity_dates if beginning <= day <= last))
+    else:
+        negative = calculation._get(('negative_equity_dates', scope, beginning, last, target), lambda:
+            known_negative_equity_dates(calculation.journal, scope, calculation.observations, beginning, last,
+                                        target, valuations=valuations, calculation=calculation))
+    return end, negative, _period_result(calculation, scope, target, dates, beginning, end, negative, annualized)
+
+
+def full_history_time_weighted(calculation, scope, today, target):
+    """The All-period return for consumers that do not display a dated series."""
+    dates = calculation.event_dates(scope)
+    last = today.isoformat()
+    beginning = dates[0] if dates else last
+    recorded = calculation.observation_dates(scope, target)
+    stamps = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, beginning, last)
+    _, _, result = _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps, annualized=False)
+    return result.time_weighted
+
+
 def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None, annualized=True, period_annualized=True):
     calculation = calculation or HistoryCalculation(journal, index_observations(observations))
     observations = calculation.observations
@@ -54,38 +104,20 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     last = today.isoformat()
     recorded = calculation.observation_dates(scope, target)
     beginning = earliest.isoformat()
-    flows, _ = calculation.flows(scope, beginning, last, target)
-    stamps = sorted({day for day in recorded.chart_dates if beginning <= day <= last} | {f.date for f in flows}
-                    | {d for d in dates if beginning <= d <= last} | {beginning,first,last})
+    stamps = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last)
     valuations = {stamp:calculation.value(scope,stamp,target) for stamp in stamps}
     values = {stamp:valuation.amount for stamp,valuation in valuations.items()}
     available = [stamp for stamp in stamps if values[stamp] is not None]
-    all_start,all_end = beginning, (available[-1] if available else last)
-    negative_dates = calculation._get(('negative_equity_dates', scope, all_start, last, target),
-        lambda: known_negative_equity_dates(journal,scope,observations,all_start,last,target,valuations=valuations,calculation=calculation))
-    def calculate(start, end, *, annualized=True):
-        return calculation._get(('history_result', scope, start, end, target, annualized, tuple(negative_dates)),
-            lambda: calculate_history(journal, scope, observations, start, end, target,
-                annualized=annualized, negative_dates=negative_dates, calculation=calculation))
-    all_result = calculate(all_start, all_end, annualized=annualized)
-    # A later transaction cannot disappear merely because its valuation is absent.
-    if dates and dates[-1] > all_end:
-        from dataclasses import replace
-        reason = (HistoryIssue('The latest recorded event has no supported ending valuation', 'endpoint'),)
-        all_result = replace(all_result, money_weighted=None, time_weighted=None,
-                             money_weighted_reasons=reason, time_weighted_reasons=reason)
+    all_start = beginning
+    all_end, negative_dates, all_result = _all_history(calculation, scope, target, dates, recorded,
+        beginning, last, stamps, annualized=annualized, valuations=valuations)
     all_known = summarize_known_gain(journal,scope,observations,all_end,target,calculation=calculation)
     window = [stamp for stamp in available if first <= stamp <= last]
     start,end = (window[0],window[-1]) if window else (first,last)
     if first <= all_start:
         start, end = all_start, all_end
     result = (all_result if (start,end) == (all_start,all_end) else
-              calculate(start, end, annualized=annualized and period_annualized))
-    if dates and dates[-1] > end and result is not all_result:
-        from dataclasses import replace
-        reason = (HistoryIssue('The latest recorded event has no supported ending valuation', 'endpoint'),)
-        result = replace(result, money_weighted=None, time_weighted=None,
-                         money_weighted_reasons=reason, time_weighted_reasons=reason)
+              _period_result(calculation, scope, target, dates, start, end, negative_dates, annualized and period_annualized))
     # Capital and hover gains keep the same full-history basis as the user zooms.
     # Period gain remains a separate endpoint/flow calculation. Never subtract
     # a neighboring day's capital from a hovered value at a missing observation.

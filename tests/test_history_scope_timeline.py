@@ -7,7 +7,7 @@ import pytest
 from portfolio_app.ledger.account_journal import Account, Event, Journal
 from portfolio_app.performance.gain_accounting import scope_dates
 from portfolio_app.performance.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore
-from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.history_view import full_history_time_weighted, history_view
 from portfolio_app.ledger.security_history import Charge, SecurityBook, SecurityEvent, history_fingerprint
 
 
@@ -70,7 +70,7 @@ def test_receiving_position_includes_transfer_date_from_source_book():
 
 
 def test_separate_fee_negative_equity_withholds_direct_and_chart_returns():
-    from portfolio_app.performance.personal_performance import calculate_history, known_negative_equity_dates, value_at
+    from portfolio_app.performance.personal_performance import HistoryCalculation, calculate_history, known_negative_equity_dates, value_at
     events = (SecurityEvent('zero', 'opening', '2024-01-01'),
         SecurityEvent('buy', 'buy', '2024-01-02', quantity=1, price=10, currency='EUR', charges_known=True),
         SecurityEvent('sell', 'sell', '2024-01-03', quantity=1, price=10, currency='EUR', charges_known=True,
@@ -88,6 +88,7 @@ def test_separate_fee_negative_equity_withholds_direct_and_chart_returns():
     assert known_negative_equity_dates(journal, scope, store, '2024-01-01', '2024-01-05') == ('2024-01-04',)
     direct = calculate_history(journal, scope, store, '2024-01-01', '2024-01-05')
     chart = history_view(journal, scope, store, 'All', today=date(2024, 1, 5)).all_result
+    assert full_history_time_weighted(HistoryCalculation(journal, store), scope, date(2024, 1, 5), 'EUR') is None
     for result in (direct, chart):
         assert result.gain == 0
         assert result.time_weighted is None and result.money_weighted is None

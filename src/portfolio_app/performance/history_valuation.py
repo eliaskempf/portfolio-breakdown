@@ -43,18 +43,22 @@ class ScopeObservationDates:
     chart_dates: frozenset[str]
     boundary_dates: frozenset[str]
     negative_equity_dates: frozenset[str]
+    foreign_prices: bool
 
 
 def scope_observation_dates(journal, scope, observations, target):
     chart, boundaries, negative = set(), set(), set()
+    foreign_prices = False
     for observation in scope_observations(journal, scope, observations, target):
+        if observation.kind == 'price' and observation.currency != target:
+            foreign_prices = True
         if observation.kind != 'value' or observation.side == 'close':
             chart.add(observation.date)
         else:
             boundaries.add(observation.date)
         if observation.kind == 'value' and observation.currency == target and observation.amount < 0:
             negative.add(observation.date)
-    return ScopeObservationDates(frozenset(chart), frozenset(boundaries), frozenset(negative))
+    return ScopeObservationDates(frozenset(chart), frozenset(boundaries), frozenset(negative), foreign_prices)
 
 
 # Provider venue codes, not ticker suffixes or an instrument's domicile.
