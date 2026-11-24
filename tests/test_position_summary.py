@@ -110,3 +110,73 @@ def test_retired_history_selector_ignores_queued_callback(tmp_path, monkeypatch,
     # can retire this widget before its already-queued callback is invoked.
     metadata.callback(*(metadata.callback_args or ()), **(metadata.callback_kwargs or {}))
     assert state == before
+
+
+def test_headline_watcher_updates_only_on_new_evidence_or_day(tmp_path, monkeypatch):
+    from datetime import date, timedelta
+    import streamlit as st
+    from portfolio_app.interface.shared import background_ui, dialog_runtime, input_cache
+    from portfolio_app.performance import position_summary
+    from portfolio_app.performance.history_observations import FILE
+
+    calls, reads, intervals = [], [], []
+    active = [True]
+    revision = ['first']
+    def register(*, run_every):
+        assert run_every == 2
+        def capture(fn):
+            calls.append(fn)
+            return lambda: fn(intervals.append)
+        return capture
+    monkeypatch.setattr(background_ui, 'status_fragment', register)
+    monkeypatch.setattr(dialog_runtime, 'local_fragment_updates', lambda: lambda fn: fn)
+    def read(directory):
+        reads.append(directory)
+        return None, revision[0]
+    monkeypatch.setattr(input_cache, 'observation_snapshot', read)
+    class Rerender(Exception):
+        pass
+    def rerender():
+        raise Rerender
+    monkeypatch.setattr(st, 'rerun', rerender)
+
+    today = date.today()
+    path = tmp_path / FILE
+    path.write_text('first', encoding='utf-8')
+    position_summary._watch_summary_evidence(tmp_path, input_cache.file_stamp(path), revision[0], today, lambda: active[0])
+    tick, = calls
+    tick(intervals.append)
+    assert not reads
+    path.write_text('same revision', encoding='utf-8')
+    tick(intervals.append)
+    tick(intervals.append)
+    assert reads == [tmp_path]
+    revision[0] = 'second'
+    path.write_text('changed', encoding='utf-8')
+    with pytest.raises(Rerender):
+        tick(intervals.append)
+    active[0] = False
+    tick(intervals.append)
+    assert intervals == [None] and reads == [tmp_path, tmp_path]
+    active[0] = True
+    with pytest.raises(Rerender):
+        position_summary._watch_summary_evidence(tmp_path, input_cache.file_stamp(path), revision[0],
+                                                 today - timedelta(days=1), lambda: True)
+
+
+def test_headline_owner_survives_chart_switches_and_retires_with_the_dialog(monkeypatch):
+    import streamlit as st
+    from portfolio_app.interface.views.positions.position_detail import _position_view_guard
+    state = dict(portfolio_workspace_context='first', position_edit_selected='invented',
+                 position_edit_action='Details', position_edit_dialog=True)
+    monkeypatch.setattr(st, 'session_state', state)
+    active = _position_view_guard('invented', include_view=False)
+    original_chart = _position_view_guard('invented')
+    state['position_edit_history_mode_invented'] = 'Price'
+    assert active() and not original_chart()
+    for key, replacement in [('position_edit_selected', 'other'), ('position_edit_action', 'Edit position'),
+                             ('portfolio_workspace_context', 'second'), ('position_edit_dialog', False)]:
+        before = state[key]
+        state[key] = replacement
+        assert not active()
+        state[key] = before

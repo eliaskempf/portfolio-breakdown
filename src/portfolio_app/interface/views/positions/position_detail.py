@@ -49,7 +49,8 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     view = st.segmented_control('Position detail view', views,
         default='History', required=True, key=view_key, label_visibility='collapsed') or views[0]
     from portfolio_app.performance.position_summary import render_position_summary
-    render_position_summary(row, data_dir, journal, has_history=has_history, demo=demo)
+    render_position_summary(row, data_dir, journal, has_history=has_history, demo=demo,
+                            is_active=_position_view_guard(row.position_id, include_view=False))
     active_class = 'position_active_'+view.replace(' ', '_')
     # Native selection changes in the browser before Python finishes its rerun.
     # Hide the outgoing view at that point, including nested fragments which
@@ -72,10 +73,11 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
                 st.html(f'<span hidden data-position-view-ready="{view}"></span>')
 
 
-def _position_view_guard(position_id):
+def _position_view_guard(position_id, *, include_view=True):
     """A polling fragment must not write into a later dialog view's DOM path."""
-    keys = ('position_edit_selected', f'position_edit_detail_view_{position_id}',
-            f'position_edit_history_mode_{position_id}')
+    keys = ('portfolio_workspace_context', 'position_edit_selected', 'position_edit_action')
+    if include_view:
+        keys += (f'position_edit_detail_view_{position_id}', f'position_edit_history_mode_{position_id}')
     expected = {key: st.session_state.get(key) for key in keys}
     return lambda: (st.session_state.get('position_edit_dialog', True)
                     and all(st.session_state.get(key) == value for key, value in expected.items()))
