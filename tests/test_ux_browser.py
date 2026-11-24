@@ -890,7 +890,8 @@ def test_personal_history_is_visible_with_periods_ending_today(ux_page):
     playwright.expect(allocation_delta).to_be_visible()
     playwright.expect(allocation_delta).to_contain_text('+€60.00')
     assert allocation_delta.evaluate('el=>getComputedStyle(el).color') == history_color
-    page.get_by_role('radio',name='Performance',exact=True).click()
+    page.streamlit_reruns.click(page, page.get_by_role('radio',name='Performance',exact=True))
+    playwright.expect(history_capital).to_be_visible()
     page.get_by_label('Category',exact=True).click()
     page.get_by_role('option',name='ETF core',exact=True).click()
     playwright.expect(page.get_by_text('Category value',exact=True)).to_be_visible()

@@ -96,13 +96,14 @@ def test_named_savings_opens_its_statement_alongside_a_futures_investment(future
     amount.fill('50')
     dialog.get_by_role('button', name='Save transaction', exact=True).click()
     playwright.expect(dialog.get_by_text('€300.00', exact=True)).to_be_visible()
-    def open_deposit():
+    def open_deposit(expected_amount):
         row = dialog.get_by_role('table', name='Cash account statement').get_by_role('row').filter(has_text='Deposit')
-        row.focus()
-        page.keyboard.press('Enter')
+        playwright.expect(row.get_by_role('cell', name=expected_amount, exact=True)).to_be_visible()
+        settle(page)
+        row.press('Enter')
         playwright.expect(dialog.get_by_text('Transaction details', exact=True)).to_be_visible()
 
-    open_deposit()
+    open_deposit('+50.00')
     dialog.get_by_role('button', name='Correct entry').click()
     corrected = dialog.get_by_role('textbox', name='Corrected amount')
     corrected.fill('60')
@@ -111,7 +112,7 @@ def test_named_savings_opens_its_statement_alongside_a_futures_investment(future
     dialog.get_by_role('button', name='Review correction').click()
     dialog.get_by_role('button', name='Save correction').click()
     playwright.expect(dialog.get_by_text('€310.00', exact=True)).to_be_visible()
-    open_deposit()
+    open_deposit('+60.00')
     dialog.get_by_role('button', name='Reverse only').click()
     dialog.get_by_role('button', name='Review reversal').click()
     dialog.get_by_role('button', name='Save reversal').click()
