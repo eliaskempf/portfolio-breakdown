@@ -487,9 +487,14 @@ def test_category_rows_keyboard_focus_and_target_confirmation(intro_page):
     page, url, directory = intro_page
     page.emulate_media(reduced_motion='reduce')
     page.goto(url)
+    # Simulate the name rendering a frame ahead of its keyboard destination.
+    delayed_target = page.add_style_tag(content='.st-key-onboarding_new_target_0 {display:none !important}')
     page.get_by_role('button', name='Start my portfolio', exact=True).click()
     dialog = page.get_by_role('dialog')
     name = dialog.get_by_role('textbox', name='Category name', exact=True)
+    playwright.expect(name).to_have_attribute('aria-description', re.compile('Examples: Equities'))
+    playwright.expect(name).not_to_be_focused()
+    delayed_target.evaluate('element => element.remove()')
     playwright.expect(name).to_be_focused()
     playwright.expect(name).to_have_value('')
     name.fill('Invented equity')

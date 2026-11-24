@@ -78,13 +78,15 @@ def _focus_new(index):
         observer.observe(root, {childList: true, subtree: true});
         window.__categorySetupHelpObserver = observer;
       }
-      const selector = '.st-key-onboarding_new_name_INDEX input';
       const token = 'ROW_TOKEN';
-      if (window.__categorySetupFocus === token) return;
       let attempts = 0;
       function focus() {
-        const input = document.querySelector(selector);
-        if (input && input.getClientRects().length && !input.disabled) {
+        if (window.__categorySetupFocus === token) return;
+        const input = document.querySelector('.st-key-onboarding_new_name_INDEX input');
+        const target = document.querySelector('.st-key-onboarding_new_target_INDEX input');
+        // Streamlit can mount the two columns in different frames.
+        if (input?.getClientRects().length && target?.getClientRects().length &&
+            !input.disabled && !target.disabled) {
           input.focus();
           if (document.activeElement === input) { window.__categorySetupFocus = token; return; }
         }
