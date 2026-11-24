@@ -312,3 +312,27 @@ def test_taxonomy_aggregation_streams_the_same_classified_allocations(monkeypatc
         pytest.fail('The hierarchy materialized all intermediate classified rows')
     monkeypatch.setattr(pd.DataFrame, 'from_records', intermediate_frame)
     pd.testing.assert_frame_equal(aggregate(repeated, taxonomy, taxonomy='ai', **options), expected, check_exact=True)
+
+
+@pytest.mark.parametrize('holdings', [False, True])
+@pytest.mark.parametrize('depth', [None, 0, 1])
+def test_sparse_taxonomy_measure_preserves_every_displayed_amount(monkeypatch, holdings, depth):
+    from portfolio_app.exposure import aggregation
+
+    rows = pd.DataFrame({'asset_id': ['a', 'a', 'b', 'b', 'b', 'c', 'd'],
+                         'value': [3., -1.5, 0., 0., 0., -2., float('nan')]})
+    rows['asset_name'] = rows.asset_id
+    labels = {'a': {'t': (('A',), ('Other',))}, 'b': {'t': (('A', 'Child'),)},
+              'c': {'t': (('A', 'Sibling'),)}}
+    options = dict(taxonomy='t', root=(), depth=depth, include_holdings=holdings)
+    expected = aggregate(rows, labels, **options).set_index('node_id').value
+    visited = []
+    def counted(frame, *args, **kwargs):
+        visited.append(len(frame))
+        return aggregate(frame, *args, **kwargs)
+    monkeypatch.setattr(aggregation, 'aggregate', counted)
+    actual = aggregation.taxonomy_measure(rows, labels, **options).set_index('node_id').value
+    pd.testing.assert_series_equal(actual.reindex(expected.index, fill_value=0.), expected, check_exact=True)
+    assert visited == [4 if holdings else 5]
+    assert aggregation.taxonomy_measure(rows.assign(value=0.), labels, **options).empty
+    assert visited[-1] == 0

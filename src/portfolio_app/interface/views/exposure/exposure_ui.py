@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 from portfolio_app.interface.shared.charts import chart_config
 
-from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, dimension_measure
+from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, dimension_measure, taxonomy_measure
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
 from portfolio_app.interface.shared.display_names import display_name, instrument_name, named_holdings
 from portfolio_app.funds.etf import matching_fund
@@ -487,8 +487,8 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                     allocation['% of portfolio equity'] = allocation.Value * 100 / equity if complete and equity and equity > 0 else float('nan')
                 def measure_totals(measure):
                     if view.startswith("taxonomy:"):
-                        return aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
-                                         include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
+                        return taxonomy_measure(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
+                                                include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
                     return dimension_measure(measure, "holding" if view == "holding" else view.removeprefix("metadata:"))
 
                 if targets is not None:

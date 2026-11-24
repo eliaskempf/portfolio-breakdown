@@ -139,6 +139,23 @@ def aggregate(
     return _tree_from_rows(rows, root=root, depth=depth, include_holdings=include_holdings, root_label=taxonomy)
 
 
+def taxonomy_measure(exposures: pd.DataFrame, classifications: Classifications, *, taxonomy: str,
+                     root: TaxonomyPath = (), depth: int | None = None, include_holdings: bool = False) -> pd.DataFrame:
+    """Return secondary amounts for alignment to the displayed allocation nodes."""
+    if not exposures.empty:
+        active = exposures.value.ne(0).fillna(True)
+        if not active.all():
+            if not include_holdings and active.any():
+                # Even a zero-only descendant can make its parent's direct amount an
+                # 'Assigned here' leaf. One occurrence per asset retains every path.
+                active |= ~exposures.asset_id.duplicated()
+            columns = ["asset_id", "asset_name", "value"] if include_holdings else ["asset_id", "value"]
+            exposures = exposures.loc[active, columns]
+    nodes = aggregate(exposures, classifications, taxonomy=taxonomy, root=root, depth=depth,
+                      include_holdings=include_holdings)
+    return nodes.loc[:, ["node_id", "value"]]
+
+
 def flat_category_tree(totals, *, root_label, total, denominator):
     """Build one leaf per total while retaining the root's source-order sum."""
     categories = [((key,), value) for key, value in totals.items()]
