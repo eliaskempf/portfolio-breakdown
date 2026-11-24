@@ -461,6 +461,46 @@ def check_exposure(report, expected, surface, profile):
         dimension['digest'] = digest
 
 
+def check_comparison(report, expected, *, surface, name, profile, experiment):
+    if experiment == 'market-chart':
+        print(surface, name, 'market chart first and repeat paint ms',
+              [round(a['paint_ms']) for a in report['actions']], flush=True)
+    elif experiment == 'checklist':
+        for action in report['actions']:
+            if action['digest'] != expected.setdefault(surface, action['digest']):
+                raise AssertionError('Checklist cells or diagnostic tooltips differ across visits or binaries')
+        print(surface, name, 'first and repeat checklist paint ms',
+              [round(a['paint_ms']) for a in report['actions']], flush=True)
+    elif experiment == 'collection':
+        if report['digest'] != expected.setdefault(surface, report['digest']):
+            raise AssertionError('Collection policy changed displayed financial data')
+        print(surface, name, 'median settled ms', round(median(a['settled_ms'] for a in report['actions'])),
+              'server MiB', [round(b / 2**20) for b in report['server_resident_bytes']], flush=True)
+    elif experiment.startswith('risk'):
+        actions = report['actions']
+        if experiment == 'risk-stale' and name == 'candidate':
+            if actions[0]['digest'] == actions[1]['digest']:
+                raise AssertionError('Corrected history did not change the displayed risk matrix')
+            actions = actions[1:]
+        for action in actions:
+            sample = (action['metrics'], action['digest'])
+            if sample != expected.setdefault(surface, sample):
+                raise AssertionError('Risk metrics or correlations changed across actions or binaries')
+        print(surface, name, 'risk chart ms', [round(a['chart_ms']) for a in report['actions']], flush=True)
+    else:
+        check_exposure(report, expected, surface, profile)
+        print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
+              'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
+              'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
+        for visit in report['themes']:
+            if visit.get('show_tickers'):
+                print(surface, name, 'ticker-enabled sector paint / settled ms',
+                      round(visit['chart_ms']), round(visit['settled_ms']), flush=True)
+            for dimension in visit.get('dimensions', []):
+                print(surface, name, dimension['name'], 'paint / settled ms',
+                      round(dimension['chart_ms']), round(dimension['settled_ms']), flush=True)
+
+
 def run_comparison(candidate, reference, destination, surfaces, pairs, profile, experiment):
     destination.mkdir(parents=True, exist_ok=False)
     result = dict(experiment=experiment, profile=profile, platform=sys.platform, revision=os.environ.get('GITHUB_SHA'),
@@ -476,47 +516,28 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                     workspace = Path(tmp) / 'synthetic'
                     create_workspace(workspace, profile, today=as_of, checklist=experiment == 'checklist',
                                      large_risk_matrix=experiment == 'risk' and profile == 'mixed-history')
-                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, experiment,
-                                       themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
-                    if experiment == 'market-chart':
-                        print(surface, name, 'market chart first and repeat paint ms',
-                              [round(a['paint_ms']) for a in report['actions']], flush=True)
-                    elif experiment == 'checklist':
-                        for action in report['actions']:
-                            if action['digest'] != expected.setdefault(surface, action['digest']):
-                                raise AssertionError('Checklist cells or diagnostic tooltips differ across visits or binaries')
-                        print(surface, name, 'first and repeat checklist paint ms',
-                              [round(a['paint_ms']) for a in report['actions']], flush=True)
-                    elif experiment == 'collection':
-                        if report['digest'] != expected.setdefault(surface, report['digest']):
-                            raise AssertionError('Collection policy changed displayed financial data')
-                        print(surface, name, 'median settled ms', round(median(a['settled_ms'] for a in report['actions'])),
-                              'server MiB', [round(b / 2**20) for b in report['server_resident_bytes']], flush=True)
-                    elif experiment.startswith('risk'):
-                        actions = report['actions']
-                        if experiment == 'risk-stale' and name == 'candidate':
-                            if actions[0]['digest'] == actions[1]['digest']:
-                                raise AssertionError('Corrected history did not change the displayed risk matrix')
-                            actions = actions[1:]
-                        for action in actions:
-                            sample = (action['metrics'], action['digest'])
-                            if sample != expected.setdefault(surface, sample):
-                                raise AssertionError('Risk metrics or correlations changed across actions or binaries')
-                        print(surface, name, 'risk chart ms', [round(a['chart_ms']) for a in report['actions']], flush=True)
+                    trial = Path(tmp) / 'trial'
+                    identity = dict(variant=name, surface=surface, pair=pair)
+                    print('Starting', experiment, surface, name, 'pair', pair + 1, flush=True)
+                    try:
+                        report = benchmark(exe, workspace, trial, name, surface, experiment,
+                                           themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
+                        trial_expected = expected.copy()
+                        check_comparison(report, trial_expected, surface=surface, name=name,
+                                         profile=profile, experiment=experiment)
+                    except Exception as error:
+                        failure = dict(**identity, error=str(error))
+                        detail = trial / 'market-chart-failure.json'
+                        if detail.is_file():
+                            failure['market_chart'] = json.loads(detail.read_text(encoding='utf-8'))
+                        result.setdefault('failures', []).append(failure)
+                        print('Failed', experiment, surface, name, 'pair', pair + 1, str(error), flush=True)
                     else:
-                        check_exposure(report, expected, surface, profile)
-                        print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
-                              'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
-                              'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
-                        for visit in report['themes']:
-                            if visit.get('show_tickers'):
-                                print(surface, name, 'ticker-enabled sector paint / settled ms',
-                                      round(visit['chart_ms']), round(visit['settled_ms']), flush=True)
-                            for dimension in visit.get('dimensions', []):
-                                print(surface, name, dimension['name'], 'paint / settled ms',
-                                      round(dimension['chart_ms']), round(dimension['settled_ms']), flush=True)
-                    result['runs'].append(dict(variant=name, surface=surface, pair=pair, **report))
+                        expected = trial_expected
+                        result['runs'].append(dict(**identity, **report))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+    if result.get('failures'):
+        raise RuntimeError(f"{len(result['failures'])} comparison trial(s) failed; see {destination / 'results.json'}")
 
 
 if __name__ == '__main__':

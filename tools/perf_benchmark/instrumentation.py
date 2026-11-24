@@ -147,11 +147,11 @@ def observe_server(trial):
         def observe_market_request(session, client_state=None):
             if client_state is not None:
                 fragment = client_state.fragment_id
-                for widget in client_state.widget_states.widgets:
-                    if 'position_edit_history_' in widget.id and widget.id.endswith('_period'):
-                        record('market_range_requested', selection=list(widget.string_array_value.data),
-                               fragment=fragment, registered=not fragment or session._fragment_storage.contains(fragment),
-                               automatic=client_state.is_auto_rerun)
+                period = next((w for w in client_state.widget_states.widgets
+                               if 'position_edit_history_' in w.id and w.id.endswith('_period')), None)
+                record('market_range_requested', selection=list(period.string_array_value.data) if period else None,
+                       fragment=fragment, registered=not fragment or session._fragment_storage.contains(fragment),
+                       automatic=client_state.is_auto_rerun)
             return handle_request(session, client_state)
 
         enqueue = ScriptRunContext.enqueue

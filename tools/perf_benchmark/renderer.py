@@ -443,6 +443,14 @@ TABLE_CONTEXT = CONTEXT + """
 """
 
 
+def market_chart_failure(trial, start_event, action):
+    lines = (trial / 'server.jsonl').read_bytes().split(b'\n')[start_event:-1]
+    events = [json.loads(line) for line in lines]
+    detail = dict(**action, server_events=events)
+    (trial / 'market-chart-failure.json').write_text(json.dumps(detail), encoding='utf-8')
+    return RuntimeError(f"{action['error']}: {json.dumps(action['state'])}")
+
+
 def exercise_market_chart(evaluate, trial):
     """Click through saved price ranges and verify every plotted trading date and close."""
     fixture = json.loads((trial / 'market-chart.json').read_text())
@@ -517,21 +525,19 @@ def exercise_market_chart(evaluate, trial):
                 if (exception() || elapsed > 45000) {
                     const selected = [...(dialog()?.querySelectorAll('[aria-label="Period"] [aria-checked="true"]') ?? [])].find(visible);
                     const plots = [...(dialog()?.querySelectorAll(plotSelector) ?? [])];
-                    w.marketChartVisit = {error:'Saved market chart did not settle: '+JSON.stringify({
+                    w.marketChartVisit = {error:'Saved market chart did not settle', state:{
                         visit:c.visit, requested:c.label, selected:selected?.textContent?.trim(), running:activeRun, sawRunning, exception:exception(),
                         plots:plots.map(el => ({visible:visible(el), points:el.data?.[0]?.x?.length})),
                         expectedPoints:c.points, tracePoints:trace?.x?.length, renderedPoints:plot?.calcdata?.[0]?.length,
                         line:!!line?.getAttribute('d'), currency:plot?.layout?.yaxis?.tickprefix,
                         lastDate:trace?.x?.at(-1), stale:!!plot?.closest('[data-stale=true]'), paint
-                    })};
+                    }};
                 } else w.requestAnimationFrame(frame);
             }
             w.requestAnimationFrame(frame); return true;""")
         action = wait(lambda: read("return w.marketChartVisit;"), timeout=50)
         if 'error' in action:
-            events = (trial / 'server.jsonl').read_bytes().splitlines()[start_event:]
-            server = [json.loads(line) for line in events]
-            raise RuntimeError(f"{action['error']}; server events since click: {server[-20:]}")
+            raise market_chart_failure(trial, start_event, action)
         action['event_range'] = [start_event, event_count(trial)]
         actions.append(action)
     return dict(ready_at=ready_at, actions=actions)
