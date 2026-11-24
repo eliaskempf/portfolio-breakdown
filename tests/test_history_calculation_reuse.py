@@ -297,3 +297,58 @@ def test_scalar_twr_still_detects_interior_conflicting_closing_fx():
                     (Observation('inverse', 'fx', 'EUR/USD', days[1], 2, 'EUR', target='USD'),))
     with pytest.raises(DataError, match='Conflicting direct and inverse'):
         full_history_time_weighted(HistoryCalculation(journal, store), scope, date.fromisoformat(days[-1]), 'EUR')
+
+
+def test_one_way_fx_closes_do_not_require_daily_scope_valuations(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from test_daily_twr import example
+
+    first = date(2024, 1, 1)
+    days = [(first + timedelta(days=i)).isoformat() for i in range(90)]
+    journal, scope, store = example((), quantity=2, prices=[(day, 100+i) for i, day in enumerate(days)])
+    prices = tuple(replace(p, currency='USD') for p in store.observations)
+    # Quotes change direction on alternate days. An unrelated reciprocal pair
+    # and a before-flow USD quote cannot conflict with a USD closing rate.
+    rates = tuple(
+        Observation('fx-'+day, 'fx', 'USD/EUR', day, '.5', 'USD', target='EUR') if i % 2
+        else Observation('fx-'+day, 'fx', 'EUR/USD', day, '2', 'EUR', target='USD')
+        for i, day in enumerate(days))
+    other = (Observation('gbp', 'fx', 'GBP/EUR', days[3], 1, 'GBP', target='EUR'),
+             Observation('gbp-back', 'fx', 'EUR/GBP', days[3], 3, 'EUR', target='GBP'),
+             Observation('before', 'fx', 'EUR/USD', days[3], 3, 'EUR', target='USD',
+                         side='before', boundary='invented'))
+    store = replace(store, observations=(*prices, *rates, *other))
+    calculation = HistoryCalculation(journal, store)
+    today = date.fromisoformat(days[-1])
+    expected = history_view(journal, scope, store, 'All', today=today).all_result.time_weighted
+    assert expected == pytest.approx(.89)
+    value, calls = calculation.value, set()
+    def observe(scope, stamp, target):
+        calls.add(stamp)
+        return value(scope, stamp, target)
+    monkeypatch.setattr(calculation, 'value', observe)
+    assert full_history_time_weighted(calculation, scope, today, 'EUR') == expected
+    assert calls <= {days[0], days[-1]}
+
+
+def test_scalar_twr_checks_reciprocal_fx_carried_into_the_valuation_interval():
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from portfolio_app.portfolio.holdings import DataError
+    from test_daily_twr import example
+    friday, saturday, monday = '2024-01-05', '2024-01-06', '2024-01-08'
+    journal, scope, _ = example((), quantity=1)
+    book = journal.securities[0]
+    journal = replace(journal, securities=(replace(book, records=(replace(book.records[0], date=saturday),)),))
+    store = ObservationStore((
+        Observation('saturday-price', 'price', 'invented', saturday, 100, 'USD'),
+        Observation('monday-price', 'price', 'invented', monday, 110, 'USD'),
+        Observation('friday-rate', 'fx', 'USD/EUR', friday, 1, 'USD', target='EUR'),
+        Observation('inverse', 'fx', 'EUR/USD', friday, 2, 'EUR', target='USD'),
+        Observation('monday-rate', 'fx', 'USD/EUR', monday, 1, 'USD', target='EUR')))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        full_history_time_weighted(HistoryCalculation(journal, store), scope, date.fromisoformat(monday), 'EUR')
+    corrected = replace(store, observations=(*store.observations,
+        Observation('correction', 'fx', 'EUR/USD', friday, 1, 'EUR', target='USD', replaces='inverse')))
+    assert full_history_time_weighted(HistoryCalculation(journal, corrected), scope,
+                                      date.fromisoformat(monday), 'EUR') == pytest.approx(.1)

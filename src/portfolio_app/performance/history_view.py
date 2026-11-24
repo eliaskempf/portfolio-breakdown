@@ -63,9 +63,9 @@ def _period_result(calculation, scope, target, dates, start, end, negative_dates
 
 def _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
                  *, annualized, valuations=None):
-    if valuations is None and (scope.accounts or recorded.foreign_prices):
-        # Account equity can turn negative between flows. Foreign prices can
-        # reveal conflicting FX on an intermediate close, even after the last flow.
+    if valuations is None and (scope.accounts or recorded.requires_fx_validation):
+        # Account equity can turn negative between flows. Reciprocal FX closes
+        # can also conflict at an intermediate valuation, even after the last flow.
         valuations = {day: calculation.value(scope, day, target) for day in stamps}
 
     def value(day):

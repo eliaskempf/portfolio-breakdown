@@ -172,6 +172,18 @@ class _ObservationIndex:
         self.price_series = {subject: tuple(series[stamp] for stamp in self.price_dates[subject])
                              for subject, series in prices.items()}
 
+    @cached_property
+    def reciprocal_closing_pairs(self):
+        """Currency pairs whose closing conversion may need the reciprocal check in rate()."""
+        reciprocal = set()
+        for day in self.fx.values():
+            if len(day) < 2:
+                continue
+            pairs = {(o.currency, o.target) for o in day if o.side == 'close'}
+            reciprocal.update((source, target) for source, target in pairs if (target, source) in pairs)
+        return frozenset(reciprocal)
+
+
 def index_observations(store):
     return store if isinstance(store, _ObservationIndex) else store.index
 
