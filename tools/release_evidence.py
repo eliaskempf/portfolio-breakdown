@@ -25,7 +25,7 @@ def identity(checkout=ROOT):
 
 def check_source(directory, *, source, lock, target):
     """Recompute coverage from raw collection/execution/JUnit, not a green label."""
-    from run_candidate_tests import final_evidence
+    from run_candidate_tests import final_evidence, worker_phases
     manifest = json.loads((directory / 'manifest.json').read_text())
     result = json.loads((directory / 'results.json').read_text())
     canonical = json.loads((directory / 'canonical.collection.json').read_text())
@@ -36,7 +36,10 @@ def check_source(directory, *, source, lock, target):
             or result.get('status') != 'passed' or canonical.get('skipped_browsers') != []
             or result.get('source_unchanged') is not True):
         raise ValueError('Source validation identity/environment does not match')
-    if set(manifest['groups']) != {'unit-0', 'unit-1', 'responsiveness', 'browser-0', 'browser-1'}:
+    browser_workers = manifest.get('max_processes', 2)
+    if target == 'linux-x64' and browser_workers != 2:
+        raise ValueError('Unexpected Linux source-validation worker count')
+    if set(manifest['groups']) != {name for phase in worker_phases(browser_workers) for name in phase}:
         raise ValueError('Incomplete source-validation groups')
     with TemporaryDirectory(prefix='portfolio-evidence-check-') as temporary:
         verified = final_evidence(directory, manifest['groups'], result['exit_codes'], canonical['nodeids'],

@@ -104,7 +104,10 @@ Python/OS, successful jobs, run attempts and complete disjoint test execution;
 a diagnostic subset cannot satisfy this gate. Missing or expired evidence fails
 closed. Native Linux reuses the complete Linux source run and additionally checks
 native lifecycle behavior with the window extra. Mac retains its full unit suite
-on Python 3.13 as well as native checks. Source checks retain their 45-minute ceiling. Packaging and acceptance
+on Python 3.13 as well as native checks. Source checks retain their 45-minute ceiling.
+Each source runner runs unit tests with two workers, then runs the responsiveness
+suite alone. The remaining browser tests use three workers on Windows and two on Linux.
+Packaging and acceptance
 have separate bounded jobs; these ceilings are not expected durations or a
 billing cap. Separate acceptance runners add setup/download overhead on a fully
 successful run, but a failed check no longer repeats source validation or packaging.

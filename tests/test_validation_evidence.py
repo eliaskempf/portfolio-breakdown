@@ -78,6 +78,24 @@ def test_native_pre_attachment_failure_preserves_logs(tmp_path):
     assert [e['event'] for e in events] == ['launched', 'debugger-ready', 'failure']
 
 
+def test_windows_source_evidence_requires_all_declared_browser_workers(tmp_path, modules):
+    from test_candidate_test_runner import evidence, finish
+    release, _ = modules
+    groups, results, nodes = evidence(tmp_path, browser_workers=3)
+    report = finish(tmp_path, groups, results, nodes)
+    report.update(source='a'*40, lock_sha256='b'*64, system='Windows', python='3.12.14')
+    manifest = dict(source=report['source'], groups=groups, max_processes=3)
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    (tmp_path/'results.json').write_text(json.dumps(report))
+    (tmp_path/'canonical.collection.json').write_text(json.dumps(dict(nodeids=nodes, skipped_browsers=[])))
+    arguments = dict(source=report['source'], lock=report['lock_sha256'], target='windows-x64')
+    assert release.check_source(tmp_path, **arguments)['status'] == 'passed'
+    del groups['browser-2']
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match='Incomplete source-validation groups'):
+        release.check_source(tmp_path, **arguments)
+
+
 @pytest.mark.parametrize('fault', ['source', 'lock', 'system', 'python', 'coverage', 'execution', 'failed_exit'])
 def test_source_evidence_rejects_mismatch_and_partial_tests(tmp_path, modules, fault):
     from test_candidate_test_runner import evidence, finish

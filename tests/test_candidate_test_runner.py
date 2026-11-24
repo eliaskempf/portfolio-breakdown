@@ -12,10 +12,12 @@ runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
 
-def evidence(tmp_path):
+def evidence(tmp_path, *, browser_workers=2):
     groups = {'unit-0': ['tests/test_first.py'], 'unit-1': ['tests/test_second.py'],
               'responsiveness': ['tests/test_market_data_browser.py'], 'browser-0': ['tests/test_first_browser.py'],
               'browser-1': ['tests/test_second_browser.py']}
+    if browser_workers == 3:
+        groups['browser-2'] = ['tests/test_third_browser.py']
     nodeids = []
     for name, files in groups.items():
         node = files[0]+'::test_invented'
@@ -108,6 +110,9 @@ def test_workflow_keeps_ceiling_and_aggregate_artifact_path():
     step = next(s for s in job['steps'] if s.get('name') == 'Tests (including required browser suites)')
     assert step['run'] == 'uv run python tools/run_candidate_tests.py'
     assert step['env']['PORTFOLIO_REQUIRE_BROWSER'] == '1'
+    assert step['env']['PORTFOLIO_BROWSER_WORKERS'] == '${{ matrix.browser_workers }}'
+    assert {row['platform']: row['browser_workers'] for row in job['strategy']['matrix']['include']} == {
+        'linux-x64': '2', 'windows-x64': '3'}
     upload = next(s for s in job['steps'] if s.get('with', {}).get('name') == 'candidate-test-results-${{ matrix.platform }}')
     paths = upload['with']['path'].splitlines()
     assert 'dist/test-results.xml' in paths and 'dist/candidate-tests/*.log' in paths
@@ -198,6 +203,11 @@ def test_schedule_balances_canonical_case_counts_with_deterministic_ties():
     assert [sum(counts[p] for p in groups[g]) for g in ('browser-0', 'browser-1')] == [15, 15]
     assert sorted(p for paths in groups.values() for p in paths) == sorted(weights)
     assert runner.build_schedule(list(weights), nodeids) == (groups, phases, counts)
+
+    three_groups, three_phases, _ = runner.build_schedule(list(weights), nodeids, browser_workers=3)
+    assert three_phases == [*phases[:2], ['browser-0', 'browser-1', 'browser-2']]
+    assert sorted(p for paths in three_groups.values() for p in paths) == sorted(weights)
+    assert [sum(counts[p] for p in three_groups[g]) for g in three_phases[-1]] == [10, 10, 10]
 
 
 @pytest.mark.parametrize('fault', ['missing_responsiveness', 'missing_large_exposure', 'unknown_canonical', 'duplicate_file', 'missing_unit_worker'])

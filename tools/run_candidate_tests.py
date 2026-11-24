@@ -184,7 +184,13 @@ def start_worker(command, *, cwd, env, log_path):
     return process, log
 
 
-def build_schedule(files, nodeids):
+def worker_phases(browser_workers):
+    if type(browser_workers) is not int or browser_workers not in (2, 3):
+        raise ValueError('Source validation supports two or three browser workers')
+    return [['unit-0', 'unit-1'], ['responsiveness'], [f'browser-{i}' for i in range(browser_workers)]]
+
+
+def build_schedule(files, nodeids, *, browser_workers=2):
     """Balance unit/browser files separately; keep responsiveness alone."""
     files = sorted(files)
     counts = Counter(node.split('::')[0] for node in nodeids)
@@ -193,17 +199,17 @@ def build_schedule(files, nodeids):
     responsiveness = ['tests/test_market_data_browser.py', 'tests/test_unified_exposure_browser.py']
     browser = [p for p in files if p.endswith('browser.py') and p not in responsiveness]
     unit = [p for p in files if not p.endswith('browser.py')]
-    groups = {'unit-0': [], 'unit-1': [],
-              'responsiveness': responsiveness, 'browser-0': [], 'browser-1': []}
+    phases = worker_phases(browser_workers)
+    groups = {name: [] for phase in phases for name in phase}
+    groups['responsiveness'] = responsiveness
     if not set(responsiveness) <= set(files):
         raise ValueError('Missing isolated responsiveness test file')
-    for prefix, candidates in (('unit', unit), ('browser', browser)):
-        weights = {prefix+'-0': 0, prefix+'-1': 0}
+    for workers, candidates in ((phases[0], unit), (phases[2], browser)):
+        weights = dict.fromkeys(workers, 0)
         for path in sorted(candidates, key=lambda path: (-counts[path], path)):
             group = min(weights, key=lambda name: (weights[name], name))
             groups[group].append(path)
             weights[group] += counts[path]
-    phases = [['unit-0', 'unit-1'], ['responsiveness'], ['browser-0', 'browser-1']]
     if not all(groups.values()):
         raise ValueError('Expected nonempty unit, responsiveness and browser groups')
     assigned = [path for paths in groups.values() for path in paths]
@@ -276,8 +282,9 @@ def main(args):
                 raise RuntimeError('Canonical worker cleanup failed; inspect evidence')
     canonical = json.loads((output/'canonical.collection.json').read_text())
     assert not canonical['skipped_browsers']
-    groups, phases, counts = build_schedule(files, canonical['nodeids'])
-    manifest = {'source': expected, 'groups': groups, 'phases': phases, 'max_processes': 2,
+    browser_workers = int(os.environ.get('PORTFOLIO_BROWSER_WORKERS', '2'))
+    groups, phases, counts = build_schedule(files, canonical['nodeids'], browser_workers=browser_workers)
+    manifest = {'source': expected, 'groups': groups, 'phases': phases, 'max_processes': browser_workers,
                 'canonical_cases_per_file': counts,
                 'mandatory_browser': True, 'all_test_files': files}
     (output/'manifest.json').write_text(json.dumps(manifest, indent=2))
