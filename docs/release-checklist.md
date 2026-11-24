@@ -184,6 +184,10 @@ not a pending manual task.
       targets fail visibly; `--ignore-workspace-selection` opens the original after
       stopping the app. Native acceptance must use newly built candidate bytes.
 - [ ] Upgrade from an earlier candidate preserves files and shortcuts are refreshed.
+      For builds with assisted updates, exercise **Download update** and
+      **Exit and update** from the running Windows installation. Check that
+      Setup opens and the updated shortcut reopens the saved synthetic workspace.
+      An automated run through the same installed-app workflow covers this check.
 - [ ] Uninstall removes application files/shortcuts only, leaving portfolio data.
 - [ ] Final icon approved and checked as favicon, shortcut and executable icon.
 - [ ] GPL corresponding source and third-party notices included.

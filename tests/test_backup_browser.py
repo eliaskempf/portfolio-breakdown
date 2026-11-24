@@ -14,7 +14,7 @@ from portfolio_app.runtime.launcher import request_instance
 from portfolio_app.portfolio.portfolio_settings import save_settings
 from portfolio_app.workspace.workspace import inventory
 from portfolio_app.workspace.workspace_selection import selection
-from browser_support import open_app_menu, select_tab, settle
+from browser_support import open_app_menu, select_tab, settle, settle_layout
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -222,6 +222,9 @@ def test_app_menu_groups_actions_and_allows_safe_shutdown_cancel(backup_app, wid
         help_section = open_app_menu(page, 'Help')
         playwright.expect(help_section.get_by_role('link', name='User guide')).to_be_visible()
         playwright.expect(confirm).to_be_hidden()
+        # Help first opens locally; its rerun closes Workspace on the server.
+        # Wait for both sections to settle before requesting Workspace again.
+        settle_layout(page)
         open_app_menu(page, 'Workspace')
         stop = opened.get_by_role('button', name='Stop application', exact=True)
         playwright.expect(stop).to_be_visible()

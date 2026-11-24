@@ -65,7 +65,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if not render_startup_intro():
             return
     preserve_view_inputs()
-    data_dir, demo, refresh, settings_panel, workspace_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
+    data_dir, demo, refresh, settings_panel, workspace_panel, notifications_slot = app_header(
+        data_dir, demo_dir, demo=demo, launcher_directory=persistent_data_dir if managed else None)
+    launcher_directory = persistent_data_dir if managed and not demo else None
     from portfolio_app.interface.shared.calendar_ui import configure_calendar
     if settings_panel is not None:
         with settings_panel:
@@ -288,7 +290,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if notifications_panel.open:
         from portfolio_app.interface.shared.notifications_ui import render_notifications
         with notifications_panel:
-            render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo,
+            render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo, launcher_directory=launcher_directory,
                 cache_warning=price_service.cache_warning, exposure_issues=exposure_result.issues if exposure_result else (),
                 prices_pending=background_prices and market_coordinator.pending(market_workspace), journal=journal)
     elif not demo_pending:
@@ -433,7 +435,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     render_tour(empty=holdings.empty)
     if not offline_demo and not tour_active() and not notifications_panel.open:
         from portfolio_app.interface.shared.update_ui import render_update_dialog
-        render_update_dialog()
+        render_update_dialog(launcher_directory=launcher_directory)
     finish_view_inputs()
     mark_view_ready()
 

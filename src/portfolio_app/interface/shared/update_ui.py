@@ -37,7 +37,59 @@ def watch_updates():
     poll()
 
 
-def render_update_settings(*, offline):
+def _release_actions(release, *, target, launcher_directory, surface, link_label, dismiss=None):
+    installer = None
+    if launcher_directory is not None and target == 'windows-x64':
+        from portfolio_app.runtime.windows_update import downloads_for, installed_directory
+        if installed_directory() is not None:
+            installer = downloads_for()
+    if installer is None:
+        st.link_button(link_label, release.url, type='primary' if surface == 'dialog' else 'secondary')
+        if surface == 'dialog' and st.button('Got it', key='updates_close_' + release.tag):
+            dismiss()
+            st.rerun()
+        return
+
+    key = f'updates_{surface}_{release.tag}'
+    status = installer.status()
+    if surface != 'dialog':
+        st.markdown(f'**Version {release.version} available**')
+    if status.phase == 'downloading':
+        # Poll just the progress bar. Rebuild its controls once when verification finishes.
+        @st.fragment(run_every=1)
+        def progress():
+            current = installer.status()
+            if current.phase != 'downloading':
+                st.rerun()
+            st.progress(current.progress, text=f'Downloading {current.tag.removeprefix("v")}…')
+        progress()
+    elif status.tag == release.tag and status.phase == 'ready':
+        st.caption('This closes the app and opens Windows Setup. Save any edits first.')
+        with st.container(horizontal=True):
+            if st.button('Keep working', key=key+'_keep', on_click=dismiss):
+                st.rerun()
+            if st.button('Exit and update', key=key+'_install', type='primary'):
+                from portfolio_app.runtime.launcher import request_instance
+                with st.spinner('Preparing Windows Setup…'):
+                    result = request_instance(launcher_directory, 'update', payload={'tag': release.tag})
+                if result is None or result.get('error'):
+                    error = (result or {}).get('error') or 'Could not reach the launcher. Reopen the app or use View release.'
+                    installer.retry_after_error(release.tag, error)
+                    st.rerun()
+                st.info('Closing the app. Continue in Windows Setup.')
+    else:
+        if status.tag == release.tag and status.error:
+            st.error(status.error)
+        with st.container(horizontal=True):
+            st.button('Download update', key=key+'_download', type='primary',
+                      on_click=installer.start, args=(release.tag,))
+            if surface == 'dialog' and st.button('Later', key=key+'_later'):
+                dismiss()
+                st.rerun()
+    st.link_button('View release', release.url, type='tertiary')
+
+
+def render_update_settings(*, offline, launcher_directory=None):
     installed = app_version()
     st.markdown(f'**Portfolio Breakdown {installed}**')
     st.link_button('GitHub releases', RELEASES_URL)
@@ -79,7 +131,9 @@ def render_update_settings(*, offline):
         if check.get('failed'):
             st.caption('Could not check for updates. Try again later.')
         if release := service.available(raw, installed):
-            st.link_button(f'View release {release.version}', release.url)
+            _release_actions(release, target=service.target, surface='help', launcher_directory=launcher_directory,
+                             link_label=f'View release {release.version}',
+                             dismiss=lambda: st.session_state.update(app_menu=False))
         elif version_number(installed) is None:
             st.caption('This build cannot be compared with stable release versions.')
         elif check.get('checked') and not check.get('failed'):
@@ -108,7 +162,7 @@ def _unread(raw, tag):
     return raw['seen'] != tag and st.session_state.get('updates_read') != tag
 
 
-def release_notification(*, opened=False):
+def release_notification(*, opened=False, launcher_directory=None):
     service = updates_for()
     raw = _read(service)
     release = _notification(service, raw)
@@ -117,7 +171,9 @@ def release_notification(*, opened=False):
     unread = _unread(raw, release.tag)
     if opened:
         with st.container(border=True):
-            st.link_button(f'Version {release.version} available', release.url)
+            _release_actions(release, target=service.target, surface='notification', launcher_directory=launcher_directory,
+                             link_label=f'Version {release.version} available',
+                             dismiss=lambda: st.session_state.update(workspace_notifications=False))
             if raw['checks'][service.target]['failed']:
                 st.caption('Last known release · Latest check unavailable')
             if st.button('Clear notification', key='updates_clear_' + release.tag):
@@ -132,7 +188,7 @@ def release_notification(*, opened=False):
     return unread
 
 
-def render_update_dialog():
+def render_update_dialog(*, launcher_directory=None):
     # Run after the views and their dialogs, including dialogs opened by fragments.
     # The editor, tour or an actionable monitoring alert gets the modal slot first.
     from streamlit.runtime.scriptrunner import get_script_run_ctx
@@ -155,8 +211,6 @@ def render_update_dialog():
     def dialog():
         st.write(f'Portfolio Breakdown {release.version} is available.')
         st.caption(f'Installed version: {app_version()}')
-        st.link_button('View release', release.url, type='primary')
-        if st.button('Got it', key='updates_close_' + release.tag):
-            dismiss()
-            st.rerun()
+        _release_actions(release, target=service.target, surface='dialog', launcher_directory=launcher_directory,
+                         link_label='View release', dismiss=dismiss)
     dialog()

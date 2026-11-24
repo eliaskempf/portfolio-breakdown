@@ -40,11 +40,37 @@ def update_service():
                 raise TimeoutError('Synthetic release was not supplied')
             time.sleep(.05)
         return Release((root/'release-ready').read_text())
-    return UpdateService(root/'app-state', 'linux-x64', fetch=fetch)
+    return UpdateService(root/'app-state', 'windows-x64' if (root/'windows').exists() else 'linux-x64', fetch=fetch)
 update_ui.updates_for = update_service
 update_ui.app_version = lambda: '0.2.0'
 coordinator.schedule = lambda *args, **kwargs: False
-render_app(root/'synthetic', ignore_selection=True,
+launch = root/'synthetic'
+managed = (root/'windows').exists()
+if managed:
+    from portfolio_app.runtime import launcher, windows_update
+    from portfolio_app.workspace.workspace_selection import Selection, save_selection, selection_file
+    launch = root/'launch'
+    if not selection_file(launch).exists():
+        save_selection(launch, Selection(root/'synthetic', 1))
+    class SyntheticDownload(windows_update.InstallerDownload):
+        def _download(self, tag):
+            deadline = time.monotonic() + 30
+            while not (root/'download-ready').exists() and time.monotonic() < deadline:
+                time.sleep(.05)
+            self._set(windows_update.DownloadStatus(tag, 'ready', 1))
+    @st.cache_resource
+    def downloads():
+        return SyntheticDownload(root/'downloads')
+    windows_update.downloads_for = downloads
+    windows_update.installed_directory = lambda: root/'invented-install'
+    def handoff(directory, action, *, payload):
+        assert directory == launch and action == 'update' and payload == {'tag': 'v0.2.1'}
+        record = root/'handoff'
+        failed = not record.exists()
+        record.write_text('verification failed' if failed else 'installer requested')
+        return {'error': 'Invented verification failure.' if failed else ''}
+    launcher.request_instance = handoff
+render_app(launch, managed=managed, ignore_selection=not managed,
            price_service=PriceService(StaticProvider(root/'synthetic'/'demo_prices.json')))
 ''')
     with socket.socket() as sock:
@@ -133,4 +159,48 @@ def test_upgrade_notification_and_manual_check_after_optout(update_page):
     settle(page)
     assert (root.parent / 'checks').read_text().splitlines() == ['check', 'check']
     assert store.read()['enabled'] is False
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_windows_update_download_resume_cancel_and_handoff(update_page):
+    page, url, root, store = update_page
+    state = root.parent
+    (state / 'windows').touch()
+    (state / 'release-ready').write_text('v0.2.1')
+    before = (root / 'holdings.csv').read_bytes()
+    page.set_viewport_size({'width': 640, 'height': 900})
+    page.goto(url)
+    popup = page.get_by_role('dialog', name='Update available')
+    download = popup.get_by_role('button', name='Download update', exact=True)
+    playwright.expect(download).to_be_visible(timeout=45000)
+    download.click()
+    playwright.expect(popup.get_by_role('progressbar')).to_be_visible()
+    popup.get_by_role('button', name='Close', exact=True).click()
+    playwright.expect(popup).to_have_count(0)
+    settle(page)
+    assert store.read()['seen'] == 'v0.2.1'
+    assert not (state / 'handoff').exists()
+    bell = page.locator('.st-key-header_notifications').get_by_test_id('stPopoverButton').filter(visible=True)
+    bell.click()
+    playwright.expect(page.get_by_role('progressbar')).to_be_visible()
+    (state / 'download-ready').touch()
+    keep = page.get_by_role('button', name='Keep working', exact=True)
+    finish = page.get_by_role('button', name='Exit and update', exact=True)
+    playwright.expect(keep).to_be_visible()
+    keep.focus()
+    page.keyboard.press('Tab')
+    playwright.expect(finish).to_be_focused()
+    keep.click()
+    playwright.expect(finish).not_to_be_visible()
+    assert not (state / 'handoff').exists()
+
+    help_section = open_app_menu(page, 'Help')
+    help_section.get_by_role('button', name='Exit and update', exact=True).click()
+    playwright.expect(help_section.get_by_text('Invented verification failure.')).to_be_visible()
+    assert (state / 'handoff').read_text() == 'verification failed'
+    help_section.get_by_role('button', name='Download update', exact=True).click()
+    help_section.get_by_role('button', name='Exit and update', exact=True).click()
+    playwright.expect(help_section.get_by_text('Closing the app. Continue in Windows Setup.')).to_be_visible()
+    assert (state / 'handoff').read_text() == 'installer requested'
+    assert (root / 'holdings.csv').read_bytes() == before
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

@@ -106,13 +106,13 @@ def _card(notice, directory, *, on_navigate=None):
 
 
 def render_notifications(directory, funds, revision, valued, status, *, demo=False,
-                         cache_warning='', exposure_issues=(), prices_pending=False, journal=None):
+                         cache_warning='', exposure_issues=(), prices_pending=False, journal=None, launcher_directory=None):
     from portfolio_app.interface.shared.notification_model import Notice, Destination
     from portfolio_app.monitoring.monitoring_store import mark_events
     from portfolio_app.interface.views.derivatives.settlement_archive_ui import settlement_notices
     st.subheader('Notifications')
     if not demo:
-        release_notification(opened=True)
+        release_notification(opened=True, launcher_directory=launcher_directory)
     doc = _monitoring_document(directory)
     events = [e for e in doc['events'] if not e.get('resolved') and not e['acknowledged']]
     st.caption(f"{len(events)} active rule alert(s) · Opening this panel marks entries read; acknowledgment is separate.")

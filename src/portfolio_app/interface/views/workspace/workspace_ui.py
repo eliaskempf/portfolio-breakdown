@@ -9,7 +9,7 @@ from portfolio_app.settings import app_version, icon_path
 from portfolio_app.interface.shared.view_state import reset_workspace
 
 
-def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
+def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool, launcher_directory: Path | None = None):
     """Workspace selection and global actions; no persistent portfolio writes."""
     from portfolio_app.interface.views.onboarding.tour import active, demo_directory
     default_index = int(demo)
@@ -62,7 +62,7 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
             watch_updates()
         if menu.open and help_section.open:
             with help_section:
-                render_update_settings(offline=offline)
+                render_update_settings(offline=offline, launcher_directory=None if demo else launcher_directory)
     return data_dir, demo, refresh, preferences, workspace_panel, notifications
 
 

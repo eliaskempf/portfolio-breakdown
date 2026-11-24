@@ -123,11 +123,21 @@ checks for a compatible stable release. **GitHub releases** opens the downloads
 even when the check fails.
 
 Installed builds check daily while open. When a newer version is available, an
-**Update available** popup links to the release. Close it to acknowledge that
-version. Its download link stays in **Notifications** until you install the update
+**Update available** popup shows the new version. Close it to acknowledge that
+version. The update stays in **Notifications** until you install it
 or choose **Clear notification**. A later version gets its own popup and entry.
 **Check automatically** in Help controls background checks across workspaces.
 Source checkouts default to manual checks. The offline demo and tour pause checks.
+
+In the Windows app installed by Setup, choose **Download update** to download
+the installer while you continue working. You can return to it from
+**Notifications** or **App menu → Help**. Once the installer size and SHA-256
+checksum match the GitHub release, choose **Keep working** to leave the
+installer ready for later. When you are ready, save pending edits, close any
+other Portfolio Breakdown windows, and choose **Exit and update**. The app
+closes its server and opens Windows Setup. Complete the wizard and
+reopen your workspace. If a download fails verification, you can retry it or
+open **View release**. Portable builds and other platforms use the release page.
 
 Read the [version 0.2.1 release and upgrade notes](releases.md#upgrade-021)
 before updating an existing workspace. When upgrading from 0.1.0, also review
