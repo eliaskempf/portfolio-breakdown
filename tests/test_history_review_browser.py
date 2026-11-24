@@ -60,10 +60,10 @@ def test_delayed_accept_click_cannot_accept_an_unseen_holding(import_page):
     assert not path.exists(), 'Acceptance must not publish holdings'
     reviewed = {first}
     apply = page.get_by_role('button', name='Apply reviewed holdings', exact=True)
+    shares = page.get_by_role('row').filter(has=page.get_by_text('Shares', exact=True)).get_by_role('cell').nth(2)
     for count in range(2, 7):
         shown = holding.input_value()
         assert shown not in reviewed, 'A single click should advance to an unreviewed holding'
-        shares = page.get_by_role('row').filter(has=page.get_by_text('Shares', exact=True)).get_by_role('cell').nth(2)
         playwright.expect(shares).to_have_text(str(quantities[shown]))
         playwright.expect(apply).to_be_disabled()
         accept.click(); settle(page)
@@ -74,7 +74,9 @@ def test_delayed_accept_click_cannot_accept_an_unseen_holding(import_page):
     playwright.expect(apply).to_be_enabled()
     holding.click()
     page.get_by_role('option', name=first+' · Reviewed', exact=True).click(); settle(page)
+    playwright.expect(shares).to_have_text(str(quantities[first]))
     playwright.expect(accept).to_have_count(0)
-    apply.click(); settle(page)
+    apply.click()
+    playwright.expect(page.get_by_text('Reviewed transactions applied.', exact=True)).to_be_visible()
     saved = effective_holdings(read_snapshot(path).holdings, load_journal(path.parent)[0].securities)
     assert dict(zip(saved.name, saved.shares)) == quantities

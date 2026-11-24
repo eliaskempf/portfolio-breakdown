@@ -12,7 +12,7 @@ from urllib.request import urlopen
 import yaml
 
 from test_ux_browser import playwright, click_slice
-from browser_support import select_tab
+from browser_support import select_tab, settle_layout
 
 
 def test_navigation_close_and_save_do_not_wait_for_market_data(tmp_path):
@@ -118,6 +118,9 @@ render_app(directory)
             page.get_by_text('Category structure',exact=True).click()
             playwright.expect(page.get_by_role('button', name='Save categories')).to_be_visible()
             timings['open_structure'] = time.monotonic() - start
+            # Opening the expander reruns Streamlit. Start the save interaction
+            # on its finished layout while the synthetic providers remain blocked.
+            settle_layout(page)
             before = (tmp_path / 'allocation.yaml').stat().st_mtime_ns
             start = time.monotonic()
             page.get_by_role('button', name='Save categories').click()

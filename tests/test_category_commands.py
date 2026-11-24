@@ -58,15 +58,21 @@ def test_failed_pair_save_rolls_back_both_documents(workspace, monkeypatch):
     assert {name:(directory/name).read_bytes() for name in originals} == originals
 
 
-def test_next_workspace_access_recovers_pending_category_save(workspace):
-    directory, config = workspace
-    originals = {name:(directory/name).read_text() for name in ('holdings.csv','allocation.yaml')}
-    documents = {name: {'before':content, 'after':content+'\n'} for name,content in originals.items()}
+@pytest.mark.parametrize('newline', ['\n', '\r\n'], ids=['lf', 'crlf'])
+def test_next_workspace_access_recovers_pending_category_save(workspace, newline):
+    directory, _ = workspace
+    originals = {}
+    for name in ('holdings.csv', 'allocation.yaml'):
+        path = directory/name
+        originals[name] = path.read_text(encoding='utf-8').replace('\n', newline)
+        path.write_bytes(originals[name].encode('utf-8'))
+    documents = {name: {'before': content, 'after': content+'\n'} for name, content in originals.items()}
     (directory/INTENT).write_text(json.dumps({'version':1, 'documents':documents}))
-    (directory/'holdings.csv').write_text(documents['holdings.csv']['after'])
+    (directory/'holdings.csv').write_bytes(documents['holdings.csv']['after'].encode('utf-8'))
     read_snapshot(directory/'holdings.csv')
     assert not (directory/INTENT).exists()
-    assert {name:(directory/name).read_text() for name in originals} == originals
+    for name, content in originals.items():
+        assert (directory/name).read_bytes() == content.encode('utf-8')
 
 
 @pytest.mark.parametrize('clear_targets',[False,True])
