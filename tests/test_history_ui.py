@@ -537,14 +537,15 @@ def test_interval_switches_reuse_ledgers_and_previous_points(tmp_path, monkeypat
     monkeypatch.setattr(ui, 'date', FixedDate)
     journal, scope, store = chart_fixture()
     calls, replays = [], []
-    calculate, replay = charts.calculate_history, performance.replay_securities
+    # Observe cache misses at the calculation itself, including calls from other views.
+    calculate, replay = performance._calculate_history, performance.replay_securities
     def counted(*args, **kwargs):
         calls.append((args[3], args[4], kwargs.get('annualized', True)))
         return calculate(*args, **kwargs)
     def replayed(*args, **kwargs):
         replays.append(kwargs.get('as_of'))
         return replay(*args, **kwargs)
-    monkeypatch.setattr(charts, 'calculate_history', counted)
+    monkeypatch.setattr(performance, '_calculate_history', counted)
     monkeypatch.setattr(performance, 'replay_securities', replayed)
     def view(period): return ui.prepared_history_view(tmp_path, journal, scope, store, 'synthetic', period)
     all_view = view('All')
