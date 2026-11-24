@@ -122,8 +122,12 @@ class HistoryCalculation:
         return self._facts[key]
 
     def event_dates(self, scope):
-        from portfolio_app.performance.gain_accounting import scope_dates
-        return self._get(('scope_dates', scope), lambda: scope_dates(self.journal, scope))
+        from portfolio_app.performance.gain_accounting import ScopeEventDates
+        def build():
+            books = ((book, self._events[book.position_id]) for book in self.journal.securities)
+            return ScopeEventDates(self.journal, self._account_events, books)
+        index = self._get(('event_dates_by_component',), build)
+        return self._get(('scope_dates', scope), lambda: index.dates(scope))
 
     def observation_dates(self, scope, target):
         from portfolio_app.performance.history_valuation import scope_observation_dates

@@ -160,3 +160,38 @@ def test_chart_and_negative_equity_check_share_scoped_dates(monkeypatch):
     assert scans == ['EUR']
     assert calculation.observation_dates(scope, 'USD').negative_equity_dates == {'2024-01-04'}
     assert scans == ['EUR', 'USD']
+
+
+def test_many_scope_date_requests_visit_each_selected_event_once(monkeypatch):
+    from portfolio_app.performance import gain_accounting
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    books = tuple(SecurityBook(f'asset-{i}', 'INVENTED', ('0', '', ''),
+        records=(SecurityEvent(f'start-{i}', 'opening', f'2024-01-{i+1:02}'),), active_ids=(f'start-{i}',))
+        for i in range(12))
+    journal = Journal(version=2, securities=books)
+    calculation = HistoryCalculation(journal, ObservationStore())
+    visits = []
+    affected = gain_accounting.affected_positions
+    def counted(book, event):
+        visits.append((book.position_id, event.id))
+        return affected(book, event)
+    monkeypatch.setattr(gain_accounting, 'affected_positions', counted)
+    for book in books:
+        assert calculation.event_dates(HistoryScope((book.position_id,))) == [book.records[0].date]
+    assert calculation.event_dates(HistoryScope(tuple(b.position_id for b in books))) == [b.records[0].date for b in books]
+    assert visits == [(book.position_id, book.records[0].id) for book in books]
+
+
+def test_corrected_and_voided_dates_across_cash_accounts():
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    opening = Event('cash', '2024-01-01', 'cash_open', 'a', 'EUR', 100)
+    transfer = Event('move', '2024-01-03', 'transfer', 'a', 'EUR', 20, other_account_id='b')
+    corrected = replace(transfer, id='corrected', replaces='move', date='2024-01-04')
+    voided = Event('void', '2024-01-05', 'void', replaces=corrected.id)
+    journal = Journal(version=2, accounts=(Account('a', 'First'), Account('b', 'Second')),
+                      events=(opening, transfer, corrected))
+    for snapshot, received in ((journal, ['2024-01-04']), (replace(journal, events=(*journal.events, voided)), [])):
+        calculation = HistoryCalculation(snapshot, ObservationStore())
+        for accounts, expected in (((), []), (('b',), received), (('a', 'b'), ['2024-01-01', *received])):
+            scope = HistoryScope(accounts=accounts)
+            assert scope_dates(snapshot, scope) == calculation.event_dates(scope) == expected

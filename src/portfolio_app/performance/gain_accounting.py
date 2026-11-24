@@ -6,6 +6,7 @@ signs. Adding their gains therefore cancels internal movements, including income
 already held in cash. Futures are valued inside their accounts, never added again
 from the funded-investment display projection.
 """
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 import math
@@ -64,33 +65,51 @@ def amount(value):
     return Decimal(str(value)) if value is not None and math.isfinite(value) else None
 
 
+class ScopeEventDates:
+    """Dates indexed by the position or cash account affected by each effective event."""
+    def __init__(self, journal, account_events, book_events):
+        self.positions = defaultdict(set)
+        self.accounts = defaultdict(set)
+        owners = {p.id: p.account_id for p in journal.positions}
+        openings = {(e.account_id, e.currency): e.date for e in account_events if e.kind == 'cash_open'}
+
+        def affects_cash(account, currency, stamp, value_date=''):
+            opening = openings.get((account, currency))
+            # Match derived postings: the opening includes earlier settled payments.
+            return not opening or stamp > opening or bool(value_date and value_date != stamp)
+
+        for book, events in book_events:
+            for event in events:
+                if event.date:
+                    for identity in affected_positions(book, event):
+                        self.positions[identity].add(event.date)
+                    if (book.account_id and event.kind in {'buy', 'sell', 'distribution', 'fee', 'tax'}
+                            and affects_cash(book.account_id, event.currency, event.date, event.value_date)):
+                        self.accounts[book.account_id].add(event.date)
+                if event.kind != 'opening':
+                    for charge in event.charges:
+                        stamp = charge.date or event.date
+                        self.positions[book.position_id].add(stamp)
+                        if book.account_id and not charge.external and affects_cash(book.account_id, charge.currency, stamp):
+                            self.accounts[book.account_id].add(stamp)
+        for event in account_events:
+            for account in (event.account_id, event.other_account_id, owners.get(event.position_id)):
+                if account:
+                    self.accounts[account].add(event.date)
+
+    def dates(self, scope):
+        dates = set()
+        for identity in scope.positions:
+            dates.update(self.positions.get(identity, ()))
+        for account in scope.accounts:
+            dates.update(self.accounts.get(account, ()))
+        return sorted(dates)
+
+
 def scope_dates(journal, scope):
     """Every effective balance/cash date, including linked securities and fees."""
-    owners = {p.id: p.account_id for p in journal.positions}
-    account_events = effective_events(journal)
-    openings = {(e.account_id, e.currency): e.date for e in account_events if e.kind == 'cash_open'}
-    def affects_cash(account, currency, stamp, value_date=''):
-        opening = openings.get((account, currency))
-        # Match derived postings: the opening includes earlier settled payments.
-        return not opening or stamp > opening or bool(value_date and value_date != stamp)
-    dates = []
-    for book in journal.securities:
-        asset_inside = book.position_id in scope.positions
-        cash_inside = book.account_id in scope.accounts
-        for event in selected_events(book):
-            affected = bool(affected_positions(book, event).intersection(scope.positions))
-            cash_event = (cash_inside and event.kind in {'buy', 'sell', 'distribution', 'fee', 'tax'}
-                and affects_cash(book.account_id, event.currency, event.date, event.value_date))
-            if event.date and (affected or cash_event):
-                dates.append(event.date)
-            if event.kind != 'opening':
-                dates.extend(charge.date or event.date for charge in event.charges
-                    if asset_inside or (cash_inside and not charge.external
-                        and affects_cash(book.account_id, charge.currency, charge.date or event.date)))
-    dates += [e.date for e in account_events
-              if e.account_id in scope.accounts or e.other_account_id in scope.accounts
-              or owners.get(e.position_id) in scope.accounts]
-    return sorted(set(dates))
+    books = ((book, selected_events(book)) for book in journal.securities)
+    return ScopeEventDates(journal, effective_events(journal), books).dates(scope)
 
 
 def current_component_values(valued, journal, *, calculation=None):
