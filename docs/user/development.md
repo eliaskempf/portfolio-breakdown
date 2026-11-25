@@ -799,6 +799,9 @@ including the unknown balance before the first cash opening, and counts
 portfolio and single-member valuations during each range change. Historical closes
 span EUR, USD and GBP with changing direct and inverse rates. The benchmark
 checks the converted balances and bounds FX lookups by the currencies valued.
+Of the purchases, 156 have estimated payments. The benchmark checks that the
+gain summary retains its estimate qualification and counts how often the
+calculation checks which positions those purchases affect.
 
 The mixed-history profile uses the same holdings and prices. Some overlapping
 constituents have only fund-local identifiers and company names. It also includes

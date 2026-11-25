@@ -142,6 +142,9 @@ def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchas
 
     if long_history:
         from decimal import Decimal
+        estimates = [e for b in journal.securities for e in b.records if e.estimated]
+        assert len(estimates) == expected['estimated_purchases'] == 39
+        assert all(e.kind == 'buy' and e.gross == 100 for e in estimates)
         store, _ = load_observations(workspace)
         first_quotes = {o.subject: o.currency for o in store.observations if o.kind == 'price' and o.date == expected['start']}
         currencies = [first_quotes[b.position_id] for b in journal.securities]

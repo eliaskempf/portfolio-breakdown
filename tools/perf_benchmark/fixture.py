@@ -95,7 +95,7 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         for i, target in enumerate((.4, .3, .3))), encoding='utf-8')
     rows = read_snapshot(directory / 'holdings.csv').holdings
     gap_offsets = {duration - offset for offset in range(15, 345, 15)} if purchase_fx else set()
-    journal, books, observations = Journal(version=2), [], []
+    journal, books, observations = Journal(version=5 if long_history else 2), [], []
     multi_currency = long_history and not purchase_fx
     quote_currencies = []
     instrument_order = {asset: i for i, asset in enumerate(rows.id.unique())}
@@ -103,7 +103,8 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         book = book_for(journal, row)
         stagger = index % 12 if long_history else 0
         buys = tuple(SecurityEvent(f'b-{index}-{t}', 'buy', day(t * 30 + (stagger if t else 0)), quantity=Decimal(1),
-            price=Decimal(100), currency='USD' if purchase_fx else 'EUR', charges_known=not (checklist and index % 4 == 0 and t == 1))
+            price=Decimal(100), currency='USD' if purchase_fx else 'EUR', charges_known=not (checklist and index % 4 == 0 and t == 1),
+            estimated=long_history and index % 4 == 0 and t % 10 == 1)
             for t in range(purchases))
         books.append(reconstruction_candidate(replace(book, records=buys),
             tuple(event.id for event in buys), starts_at_zero=True))
@@ -134,6 +135,7 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
                         closing_prices=rows.manual_price.tolist(), purchases=purchases)
         if long_history:
             expected['quote_currencies'] = quote_currencies
+            expected['estimated_purchases'] = sum(e.estimated for b in books for e in b.records if e.kind == 'buy')
         (directory.parent / 'cash-history.json').write_text(json.dumps(expected), encoding='utf-8')
     save_journal(directory, replace(journal, securities=tuple(books)), None)
     save_observations(directory, ObservationStore(tuple(observations)), None)

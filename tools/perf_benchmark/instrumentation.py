@@ -39,6 +39,14 @@ def observe_server(trial):
             return original_capital(calculation, scope, *args)
 
         if scenario == 'long-history':
+            from portfolio_app.performance import gain_accounting
+            original_members = gain_accounting.affected_positions
+            def measured_members(book, event):
+                if event.estimated and getattr(work, 'scope', None) is not None:
+                    work.estimate_checks += 1
+                return original_members(book, event)
+            gain_accounting.affected_positions = measured_members
+
             original_fx = performance.valuation_fx
             def measured_fx(*args, **kwargs):
                 if getattr(work, 'scope', None) is not None:
@@ -60,16 +68,17 @@ def observe_server(trial):
 
         original_chart = views.history_view
         def measured_chart(*args, **kwargs):
-            work.positions = work.closes = work.member_closes = work.valuations = work.fx_lookups = 0
+            work.positions = work.closes = work.member_closes = work.valuations = work.fx_lookups = work.estimate_checks = 0
             work.scope = args[1] if len(args) > 1 else kwargs['scope']
             try:
                 result = original_chart(*args, **kwargs)
                 record('cash_history_calculated', points=len(result.points), positions=work.positions,
                        closes=work.closes, member_closes=work.member_closes,
-                       valuations=work.valuations, fx_lookups=work.fx_lookups)
+                       valuations=work.valuations, fx_lookups=work.fx_lookups,
+                       estimate_checks=work.estimate_checks, estimated_gain=result.all_known.coverage_note == 'Estimated gain')
                 return result
             finally:
-                del work.positions, work.closes, work.member_closes, work.valuations, work.fx_lookups, work.scope
+                del work.positions, work.closes, work.member_closes, work.valuations, work.fx_lookups, work.estimate_checks, work.scope
 
         performance._period_capital = measured_capital
         views.history_view = measured_chart

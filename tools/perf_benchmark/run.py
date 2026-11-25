@@ -94,6 +94,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         settings = json.loads((workspace.parent / 'cash-history.json').read_bytes())
         start, end = (date.fromisoformat(settings[key]) for key in ('start', 'end'))
         long_history = scenario == 'long-history'
+        if long_history:
+            report['estimated_purchases'] = settings['estimated_purchases']
         for i, action in enumerate(report['actions']):
             action.pop('dispatch_ms')
             during = interval(action)
@@ -109,6 +111,17 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
             if len(points) != (end-first).days+1:
                 raise AssertionError(f'Incomplete cash-history range: {action["period"]}, {len(points)} closes')
             if long_history:
+                # The first visit may build the index and qualify its summary.
+                # Later ranges reuse that index. A cached chart needs no checks.
+                estimates = settings['estimated_purchases']
+                checks = sum(chart['estimate_checks'] for chart in charts)
+                if i == 0 and not checks:
+                    raise AssertionError('The cold chart did not exercise the estimated purchase probe')
+                if checks > estimates * (2 if i == 0 else 1):
+                    raise AssertionError(f'{action["period"]}: {checks} scope checks for {estimates} estimated purchases')
+                if any(not chart['estimated_gain'] for chart in charts):
+                    raise AssertionError(f'{action["period"]}: gain lost its estimate qualification')
+                action['estimated_purchase_checks'] = checks
                 closes = sum(e['closes'] for e in charts)
                 if i > 0 and closes > len(points) + 2:
                     raise AssertionError(f'{action["period"]} recalculated {closes} portfolio closes for {len(points)} dates')
@@ -395,7 +408,8 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
         summary += (f"\n{check['surface']} ten-year history paint/settle: {actions}. "
                     f"The All chart used {all_days['portfolio_closes_calculated']} whole-portfolio and "
                     f"{all_days['member_closes_calculated']} single-member valuations with {all_days['fx_lookups']} "
-                    f"FX lookups for {all_days['closes']} dates.\n")
+                    f"FX lookups and {all_days['estimated_purchase_checks']} scope checks on {check['estimated_purchases']} estimated purchases "
+                    f"for {all_days['closes']} dates.\n")
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
