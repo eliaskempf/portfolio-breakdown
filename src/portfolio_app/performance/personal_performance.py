@@ -162,6 +162,7 @@ class HistoryCalculation:
         # Daily chart gains depend on the complete ledger and observation snapshot.
         # Keep these scalar pairs through turnover of the much larger set of member facts.
         self._chart_gains = OrderedDict()
+        self._last_chart_member_capitals = None
         # The selected chart owns this compact summary. Comparison series can
         # read it without displacing it with sibling scopes.
         self._validated_history_dates = {}
@@ -414,7 +415,7 @@ class HistoryCalculation:
         return False
 
     def period_capital(self, scope, start, end, target):
-        """Opening value, cash and cost evidence are independent of the closing mark."""
+        """Share one basis object within each scoped ledger interval, independently of closing prices."""
         key = ('period_capital', scope, start, target)
         latest = self._facts.get(key)
         if (latest is not None and (latest.since is None or latest.since <= end)

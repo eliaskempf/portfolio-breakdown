@@ -779,3 +779,78 @@ def test_daily_gain_amounts_only_qualify_the_displayed_endpoint(monkeypatch, mis
     for point in view.points:
         detail = summarize_known_gain(journal, scope, store, point['Date'])
         assert (point['Invested capital'], point['Total gain']) == (detail.capital, detail.amount)
+
+
+def test_chart_reuses_member_capital_across_prices_but_rechecks_dated_member_marks_and_cash(monkeypatch):
+    from portfolio_app.performance.gain_accounting import chart_gain_amounts
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    purchase = E('buy', 'buy', START, quantity=2, price=10, currency='EUR', charges_known=True)
+    security = reconstruction_candidate(book(purchase), ('buy',), starts_at_zero=True)
+    days = [f'2024-01-{i:02}' for i in range(2, 8)]
+    journal = Journal(version=5, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),
+                              Event('deposit', days[3], 'cash_flow', 'cash', 'EUR', 50)))
+    scope = HistoryScope(('stock',), ('cash',))
+    member = HistoryScope(('stock',))
+    store = observations(journal, scope, [('stock', day, 11 + i) for i, day in enumerate(days)],
+                         extra=(O('stock-override', 'value', member.key, days[1], 80, 'EUR'),))
+    calculation = HistoryCalculation(journal, store)
+    reference = HistoryCalculation(journal, store)
+    expected = [summarize_known_gain(journal, scope, store, day, calculation=reference) for day in days]
+    member_lookups = []
+    period_capital = calculation.period_capital
+
+    def measured(owner, start, end, target):
+        if owner != scope:
+            member_lookups.append(end)
+        return period_capital(owner, start, end, target)
+
+    monkeypatch.setattr(calculation, 'period_capital', measured)
+    for i in (0, 1, 2, 3, 4, 5, 1, 0):
+        day = days[i]
+        close, values = calculation.close_with_members(scope, day, 'EUR')
+        assert close.amount is not None and len(values) == 2
+        assert chart_gain_amounts(calculation, scope, day, 'EUR', member_closes=values) == (
+            expected[i].capital, expected[i].amount)
+    assert expected[1].amount == 60
+    assert expected[3].capital - expected[2].capital == 50
+    assert member_lookups == [days[0]] * 2 + [days[3]] * 2 + [days[1]] * 2
+    # A price-only day can use a supplied, partial caller projection as well.
+    day = days[0]
+    _, values = calculation.close_with_members(scope, day, 'EUR')
+    incomplete = [None, values[1]]
+    assert chart_gain_amounts(calculation, scope, day, 'EUR', member_closes=incomplete) == chart_gain_amounts(
+        reference, scope, day, 'EUR', member_closes=incomplete)
+
+    from decimal import localcontext
+    with localcontext() as context:
+        context.prec = 5
+        values = [D('10000001'), D('-10000000')]
+        capital, gain = chart_gain_amounts(calculation, scope, day, 'EUR', member_closes=values)
+        assert capital == 120 and gain == 0
+        assert gain != sum(values, D(0)) - capital
+
+
+def test_member_capital_reuse_stops_at_a_cost_correction():
+    from portfolio_app.performance.gain_accounting import chart_gain_amounts
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    days = [f'2024-01-{i:02}' for i in range(2, 8)]
+    security = book(E('open', 'opening', START, quantity=2, amount=20, currency='EUR'),
+                    E('cost', 'cost', days[2], amount=23, currency='EUR'))
+    journal = Journal(version=2, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open-cash', days[0], 'cash_open', 'cash', 'EUR', 100),))
+    scope = HistoryScope(('stock',), ('cash',))
+    store = observations(journal, scope, [('stock', day, 13) for day in [START, *days]])
+    calculation = HistoryCalculation(journal, store)
+    actual = []
+    for day in (*days, *reversed(days)):
+        _, members = calculation.close_with_members(scope, day, 'EUR')
+        pair = chart_gain_amounts(calculation, scope, day, 'EUR', member_closes=members)
+        detailed = summarize_known_gain(journal, scope, store, day)
+        assert pair == (detailed.capital, detailed.amount)
+        actual.append(pair)
+    assert actual[:2] == [(120, 6)] * 2
+    assert actual[2:6] == [(None, 3)] * 4
+    assert actual[6:] == actual[:6][::-1]

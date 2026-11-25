@@ -202,25 +202,40 @@ def _estimate_notes(calculation, scope, end):
     return estimate_notes
 
 
+def _member_values(calculation, scope, parts, end, target, closes):
+    """Apply a supplied member close to that member alone, in the original scope order."""
+    overrides = calculation._get(('gain_member_overrides', scope), lambda: tuple(
+        (i, part.scope.key) for i, part in enumerate(parts)
+        if ('value', part.scope.key) in calculation.observations.scope_rows))
+    if overrides:
+        closes = list(closes)
+        for i, subject in overrides:
+            mark = lookup(calculation.observations, 'value', subject, end, currency=target)
+            if mark is not None:
+                closes[i] = mark.amount
+    return closes
+
+
 def _calculate_gain(calculation, scope, end, target, *, estimate_notes, member_closes, current_values=None, summary_rows=None):
     # None requests just the plotted (capital, gain) pair. An empty list is a
     # detailed summary whose ledger has no supplied estimates.
     detailed = estimate_notes is not None
+    scope_basis = None
     # When a movement connects positions, value the selected boundary
     # as a whole before component fallbacks. Missing internal transfer marks must
     # not prevent cancellation or make a known portfolio gain partial.
     if len(scope.positions) + len(scope.accounts) > 1 and not scope.unresolved:
         dates = calculation.event_dates(scope)
         if dates and dates[0] <= end:
-            basis = calculation.period_capital(scope, dates[0], end, target)
+            scope_basis = calculation.period_capital(scope, dates[0], end, target)
             value = calculation.close(scope, end, target).amount
-            if basis.invested_capital is not None:
+            if scope_basis.invested_capital is not None:
                 if current_values is not None:
                     values = [current_values.get(i) for i in scope.positions]
                     values += [current_values.get('account:'+a) for a in scope.accounts]
                     value = sum(values, ZERO) if all(v is not None for v in values) else None
                 if value is not None:
-                    capital = basis.invested_capital
+                    capital = scope_basis.invested_capital
                     if not detailed:
                         return capital, value-capital
                     count = len(scope.positions)+len(scope.accounts)
@@ -232,6 +247,15 @@ def _calculate_gain(calculation, scope, end, target, *, estimate_notes, member_c
                     return GainSummary(value-capital, value, capital, count, count, tuple(reasons), end, target)
     rows = {} if summary_rows is None else summary_rows.set_index('position_id').to_dict('index')
     parts = calculation._get(('gain_members', scope), lambda: _gain_members(calculation, scope))
+    if member_closes is not None:
+        member_closes = _member_values(calculation, scope, parts, end, target, member_closes)
+        previous = calculation._last_chart_member_capitals
+        if not detailed and previous is not None:
+            prior_basis, capitals = previous
+            if scope_basis is prior_basis and len(member_closes) == len(capitals) and None not in member_closes:
+                # Subtract in member order. Subtracting the two totals can round differently.
+                gains = (value - cost for value, cost in zip(member_closes, capitals, strict=True))
+                return sum(capitals, ZERO), sum(gains, ZERO)
     if rows:
         parts = [part for part in parts if part.book or part.scope.accounts or rows.get(part.identity, {}).get('shares') != 0]
     gains, values, capitals = [], [], []
@@ -244,11 +268,6 @@ def _calculate_gain(calculation, scope, end, target, *, estimate_notes, member_c
             historical_value = calculation.close(member, end, target).amount if has_history or current_values is None else None
         else:
             historical_value = member_closes[index]
-            if ('value', member.key) in calculation.observations.scope_rows:
-                # A supplied member close overrides its own calculated amount only.
-                mark = lookup(calculation.observations, 'value', member.key, end, currency=target)
-                if mark is not None:
-                    historical_value = mark.amount
         value = historical_value if current_values is None else current_values.get(identity)
         values.append(value)
         gain = capital = None
@@ -302,6 +321,10 @@ def _calculate_gain(calculation, scope, end, target, *, estimate_notes, member_c
     known_capital = sum(capitals, ZERO) if capitals and all(v is not None for v in capitals) and not scope.unresolved else None
     known_gain = sum(gains, ZERO) if gains else None
     if not detailed:
+        if member_closes is not None and scope_basis is not None and known_capital is not None:
+            # The scope basis is shared only within one interval of its ledger,
+            # linked books and receipts. All member bases are stable inside it.
+            calculation._last_chart_member_capitals = scope_basis, tuple(capitals)
         return known_capital, known_gain
     known_value = sum(values, ZERO) if values and all(v is not None for v in values) else None
     return GainSummary(known_gain, known_value, known_capital,
