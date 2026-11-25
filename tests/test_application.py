@@ -4,6 +4,7 @@ import json
 from unittest.mock import Mock
 
 import pandas as pd
+import pytest
 
 from portfolio_app.application import (PortfolioInputs, historical_for, load_leverage_context,
     prepare_application, prepare_exposure, select_price_service)
@@ -89,3 +90,66 @@ def test_exposure_cache_uses_effective_leverage_inputs_and_currency(tmp_path):
     assert key(replace(ctx, settings=LeverageSettings(liabilities=(replace(liability, balance_eur=None),)))) != original
     valued.attrs['reporting_currency'] = 'USD'
     assert key(ctx) != original
+
+
+def test_repeated_valuation_reuses_original_costs_and_requests_current_dated_fx(monkeypatch):
+    from decimal import localcontext
+    from portfolio_app.market.fx import DatedRate
+    from portfolio_app.market.prices import PriceService, UnavailableProvider
+    from portfolio_app.performance import cost_basis
+    from portfolio_app.performance.performance import ValuationCostCache
+
+    holdings = parse_holdings('id,name,ticker,shares,acquisition_price,acquisition_currency\n'
+                              'a,Invented share,SYNTH-A,2,50,USD\n')
+    row = holdings.iloc[0]
+    parts = [cost_basis.component(2, 100, 'USD', '2023-01-10')]
+    document = cost_basis.encode_components(parts, row)
+    holdings[cost_basis.FIELD] = document
+    inputs = PortfolioInputs(HoldingsSnapshot(holdings, 'invented'), None, {}, [])
+    prices = PriceService(UnavailableProvider())
+    history = Mock()
+    history.get.side_effect = [DatedRate(.9, '2023-01-10'), DatedRate(.8, '2023-01-10')]
+    read = Mock(wraps=cost_basis.read_details)
+    monkeypatch.setattr(cost_basis, 'read_details', read)
+    cache = ValuationCostCache()
+    def cost(target='EUR'):
+        return prepare_application(inputs, prices, reporting_currency=target, historical=history,
+                                   cost_cache=cache).valued.cost_basis_reporting.item()
+
+    assert cost() == 90 and cost() == 80
+    assert history.get.call_count == 2 and read.call_count == 1
+    assert cost('USD') == 100 and read.call_count == 1
+    # Editors receive fresh documents, separate from the valuation snapshot.
+    cost_basis.active_components(row.to_dict() | {cost_basis.FIELD: document})[0]['amount'] = '999'
+    assert cost('USD') == 100
+    holdings.loc[0, 'acquisition_price'] = 51
+    assert cost('USD') == 102  # The edited summary supersedes the saved components.
+    holdings.loc[0, 'acquisition_price'] = 51.27
+    with localcontext() as precision:
+        precision.prec = 3
+        assert cost('USD') == 103
+    assert cost('USD') == 102.54
+    holdings.loc[0, cost_basis.FIELD] = cost_basis.encode_components(
+        [cost_basis.component(2, 98, 'USD')], holdings.iloc[0])
+    assert cost('USD') == 98
+
+
+def test_cached_valuation_validates_replaced_cash_document_before_summary_or_fx():
+    from portfolio_app.performance import cost_basis
+    from portfolio_app.performance.performance import ValuationCostCache, cash_balance_only, position_performance
+    from portfolio_app.portfolio.holdings import DataError
+
+    row = dict(position_id='invented-cash', instrument_type='cash', shares=0,
+               acquisition_price=0, acquisition_currency='EUR')
+    rows = pd.DataFrame([row])
+    cache = ValuationCostCache()
+    for amount, balance_only in [(None, True), (0, False)]:
+        rows[cost_basis.FIELD] = cost_basis.encode_components([cost_basis.component(0, amount, 'EUR')], row)
+        for _ in range(2):
+            assert cash_balance_only(rows, cost_cache=cache).item() == balance_only
+    rows[cost_basis.FIELD] = 'invalid document'
+    rows['acquisition_currency'] = pd.NA
+    history = Mock()
+    with pytest.raises(DataError, match='Stored cost details are invalid'):
+        position_performance(rows, historical=history, cost_cache=cache)
+    history.get.assert_not_called()

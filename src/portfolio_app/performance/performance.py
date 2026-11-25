@@ -1,21 +1,56 @@
 """Reporting-currency unrealized gains, with native costs kept separately."""
 from dataclasses import dataclass
+from datetime import date
+from decimal import getcontext
 import math
 import pandas as pd
 
-from portfolio_app.performance.cost_basis import active_components, resolve_cost
+from portfolio_app.performance.cost_basis import FIELD, active_components, fingerprint, resolve_cost
+
+
+class ValuationCostCache:
+    """Original acquisition evidence for read-only calculations on one holdings snapshot."""
+
+    def __init__(self):
+        self._positions = {}
+        self._validation = None
+
+    def _reader(self):
+        # Stored quantities are reconciled with Decimal arithmetic and purchase
+        # dates are checked against today. Keep those validation rules live.
+        context = getcontext()
+        validation = (date.today(), context.prec, context.rounding, context.Emin, context.Emax,
+                      context.clamp, tuple(context.traps.items()))
+        if validation != self._validation:
+            self._positions.clear()
+            self._validation = validation
+        return self._components
+
+    def _components(self, row):
+        document, identity = row.get(FIELD), row.get('position_id')
+        if not isinstance(identity, str) or not identity or not isinstance(document, str) or not document:
+            return active_components(row)
+        # An external summary edit can supersede the saved document. Neither
+        # the converted amount nor a market/FX response belongs in this cache.
+        previous = self._positions.get(identity)
+        if previous is not None and previous[0] == document and previous[1] == fingerprint(row):
+            return previous[2]
+        parts = active_components(row)
+        self._positions[identity] = document, fingerprint(row), parts
+        return parts
 
 
 def _no_recorded_cost(parts):
     return not any(part.get('amount') not in ('', None) for part in parts)
 
 
-def cash_balance_only(positions):
+def cash_balance_only(positions, *, cost_cache=None):
     """Cash without a recorded cost is a balance, not an incomplete purchase."""
     cash = positions.get('instrument_type', pd.Series('', index=positions.index)).eq('cash')
     result = pd.Series(False, index=positions.index)
     if cash.any():
-        result.loc[cash] = [_no_recorded_cost(active_components(row)) for row in positions.loc[cash].to_dict('records')]
+        components = cost_cache._reader() if cost_cache is not None else active_components
+        result.loc[cash] = [_no_recorded_cost(components(row)) for row in positions.loc[cash].to_dict('records')]
     return result
 
 
@@ -25,12 +60,13 @@ def cash_performance_note(currency, reporting_currency):
     return 'Cash balance: purchase-based return is not applicable. Interest is separate.'
 
 
-def position_performance(valued, fx_to_reporting=None, *, reporting_currency='EUR', historical=None):
+def position_performance(valued, fx_to_reporting=None, *, reporting_currency='EUR', historical=None, cost_cache=None):
     rates = fx_to_reporting or {}
     marks = []
     rows = valued.to_dict('records')
     # Validate cash evidence before any historical FX requests, including closed balances.
-    cash_parts = {i: active_components(row) for i, row in enumerate(rows) if row.get('instrument_type') == 'cash'}
+    components = cost_cache._reader() if cost_cache is not None else active_components
+    cash_parts = {i: components(row) for i, row in enumerate(rows) if row.get('instrument_type') == 'cash'}
     for i, row in enumerate(rows):
         mark = {}
         marks.append(mark)
@@ -53,7 +89,7 @@ def position_performance(valued, fx_to_reporting=None, *, reporting_currency='EU
                     mark['unrealized_gain'] = current - basis
                     if basis > 0 and math.isfinite(100 * (current - basis) / basis):
                         mark['native_return_pct'] = 100 * (current - basis) / basis
-        resolved = resolve_cost(parts if parts is not None else active_components(row), reporting_currency, historical)
+        resolved = resolve_cost(parts if parts is not None else components(row), reporting_currency, historical)
         note = resolved.note
         if resolved.amount is not None:
             mark['cost_basis_reporting'] = resolved.amount

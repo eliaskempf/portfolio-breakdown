@@ -228,11 +228,15 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return background_reader.still_current()
         return market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
 
+    from portfolio_app.performance.performance import ValuationCostCache
+    cost_cache = cached_input('valuation_cost_evidence',
+        (market_workspace, snapshot.revision, leverage_context.journal_revision),
+        ValuationCostCache, immutable=True)
     account_state = None
     with valuation_requests(price_service, historical) as valuation_history:
         with st.spinner('Valuing portfolio…'):
             prepared = prepare_application(inputs, price_service, refresh=refresh,
-                reporting_currency=reporting_currency, historical=valuation_history)
+                reporting_currency=reporting_currency, historical=valuation_history, cost_cache=cost_cache)
         valued, status = prepared.valued, prepared.status
         ordinary_valued = valued
         if actual_active:
