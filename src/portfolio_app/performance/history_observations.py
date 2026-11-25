@@ -1,8 +1,9 @@
 """Versioned dated valuation evidence and coverage attestations, never cash posts."""
+from collections import OrderedDict
 from dataclasses import asdict, dataclass, field, replace
 from decimal import Decimal
 from hashlib import sha256
-from functools import cached_property, lru_cache
+from functools import cached_property
 import json
 from pathlib import Path
 from threading import Lock
@@ -215,10 +216,24 @@ def from_dict(raw):
         tuple(raw.get('classifications', ())), raw['version'])
 
 
-@lru_cache(maxsize=2)
-def _observations_from_bytes(content):
-    """Exact-version parse reuse; all loaded fields are immutable value objects."""
-    return from_dict(json.loads(content))
+_parsed_stores = OrderedDict()
+_parsed_stores_lock = Lock()
+
+
+def _store_for_revision(content, revision):
+    """Retain two validated snapshots by the SHA-256 of their file bytes."""
+    with _build_lock(revision):
+        with _parsed_stores_lock:
+            if revision in _parsed_stores:
+                _parsed_stores.move_to_end(revision)
+                return _parsed_stores[revision]
+        store = from_dict(json.loads(content))
+        with _parsed_stores_lock:
+            _parsed_stores[revision] = store
+            evicted = _parsed_stores.popitem(last=False) if len(_parsed_stores) > 2 else None
+    # Releasing the last reference may tear down a large store and its indices.
+    del evicted
+    return store
 
 
 def load_observations(directory):
@@ -228,8 +243,7 @@ def load_observations(directory):
     try:
         content = path.read_bytes()
         revision = sha256(content).hexdigest()
-        with _build_lock(revision):
-            return _observations_from_bytes(content), revision
+        return _store_for_revision(content, revision), revision
     except (ValueError, TypeError, KeyError, OSError) as exc:
         raise DataError(f'Invalid historical observations; file retained: {exc}') from exc
 

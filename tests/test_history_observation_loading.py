@@ -1,5 +1,6 @@
 """Exact-version parsing and invalidation using only invented dated observations."""
 from concurrent.futures import ThreadPoolExecutor
+from collections import OrderedDict
 from dataclasses import FrozenInstanceError, asdict, replace
 from decimal import Decimal as D
 import json
@@ -20,7 +21,7 @@ def content(amount=10):
 
 def test_repeated_loads_parse_once_and_preserve_immutable_evidence(tmp_path, monkeypatch):
     import portfolio_app.performance.history_observations as module
-    module._observations_from_bytes.cache_clear()
+    monkeypatch.setattr(module, '_parsed_stores', OrderedDict())
     path = tmp_path / module.FILE
     path.write_text(content())
     original, calls = module.from_dict, []
@@ -56,11 +57,44 @@ def test_byte_changes_invalidate_even_with_identical_size_and_mtime(tmp_path):
     assert load_observations(tmp_path) == (ObservationStore(), None)
 
 
+def test_revision_cache_releases_file_bytes_and_retains_two_recent_valid_stores(tmp_path, monkeypatch):
+    from gc import collect
+    from weakref import ref
+    import portfolio_app.performance.history_observations as module
+
+    monkeypatch.setattr(module, '_parsed_stores', OrderedDict())
+    path = tmp_path / module.FILE
+    read, released = Path.read_bytes, []
+    class Payload(bytes):
+        def __del__(self):
+            released.append(True)
+    monkeypatch.setattr(Path, 'read_bytes', lambda file: Payload(read(file)))
+
+    def load(amount):
+        path.write_text(content(amount))
+        return ref(load_observations(tmp_path)[0])
+
+    first, second = load(41), load(42)
+    assert load(41)() is first() and first() is not None
+    path.write_text('{invalid')
+    with pytest.raises(DataError):
+        load_observations(tmp_path)
+    collect()
+    assert len(released) == 4 and second() is not None
+    locked_at_eviction = []
+    on_eviction = ref(second(), lambda _: locked_at_eviction.append(module._parsed_stores_lock.locked()))
+    third = load(43)
+    collect()
+    assert len(released) == 5
+    assert first() is not None and third() is not None and second() is None
+    assert on_eviction() is None and locked_at_eviction == [False]
+
+
 def test_concurrent_readers_share_one_parse_without_blocking_a_corrected_version(tmp_path, monkeypatch):
     import portfolio_app.performance.history_observations as module
     path = tmp_path / module.FILE
     path.write_text(content(21))
-    module._observations_from_bytes.cache_clear()
+    monkeypatch.setattr(module, '_parsed_stores', OrderedDict())
     parsing, second_snapshot, release = Event(), Event(), Event()
     parse, read = module.from_dict, Path.read_bytes
     calls = []
