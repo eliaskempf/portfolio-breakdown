@@ -680,10 +680,13 @@ class SecurityTimeline:
             self._cursors.pop(evicted, None)
         return snapshot
 
-    def closing_positions(self, identities, stamp):
-        """Use only the globally validated prefix, including for a single security."""
+    def validate_through(self, stamp):
+        """Validate the whole ledger prefix before reusing facts about an individual book."""
         if bisect_right(self.dates, stamp) > self._validated_index:
             self.at(stamp)
+
+    def closing_positions(self, identities, stamp):
+        self.validate_through(stamp)
         return self._closings.positions(identities, stamp)
 
 

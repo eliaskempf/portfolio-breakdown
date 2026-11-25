@@ -154,9 +154,9 @@ class HistoryCalculation:
         events = [event for selected in self._events.values() for event in selected]
         self.has_estimated_inputs = _has_estimated_inputs(events)
         # Holdings change on event dates; separately dated charges also change cash.
-        self._security_dates = sorted({event.date for event in events} |
-            {charge.date for event in events for charge in event.charges if charge.date})
-        self._flow_dates = sorted(set(self._security_dates) | {e.date for e in self._account_events})
+        security_dates = {event.date for event in events} | {
+            charge.date for event in events for charge in event.charges if charge.date}
+        self._flow_dates = sorted(security_dates | {e.date for e in self._account_events})
         self.fingerprint = history_fingerprint(journal)
         self._facts = OrderedDict()
         # Daily chart gains depend on the complete ledger and observation snapshot.
@@ -205,17 +205,25 @@ class HistoryCalculation:
     def securities(self, stamp=None):
         return self._security_timeline.at(stamp)
 
+    def _security_gain_interval(self, identity, stamp):
+        self._security_timeline.validate_through(stamp)
+        # Scope dates include transfers, swaps, fees paid in other assets and
+        # separately dated charges. Another book's independent trade changes none.
+        dates = self._get(('security_gain_dates', identity), lambda:
+            self.event_dates(HistoryScope((identity,))) if identity in self._books else ())
+        return bisect_right(dates, stamp)
+
     def security_gains(self, identity, stamp, target):
         from portfolio_app.performance.gain_components import recorded_security_gains
-        interval = bisect_right(self._security_dates, stamp)
+        book = self._books[identity]
+        interval = self._security_gain_interval(identity, stamp)
         def load():
-            book = self._books[identity]
             return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target, self._events[identity])
         return self._get(('security_gains', identity, interval, target), load)
 
     def partial_lot_costs(self, identity, stamp, target):
         from portfolio_app.performance.gain_components import partial_lot_costs
-        interval = bisect_right(self._security_dates, stamp)
+        interval = self._security_gain_interval(identity, stamp)
         return self._get(('partial_lot_costs', identity, interval, target), lambda:
             partial_lot_costs(self.securities(stamp).positions.get(identity), self.observations, target))
 
