@@ -7,7 +7,7 @@ from datetime import date
 from portfolio_app.performance.history_observations import index_observations
 from portfolio_app.performance.personal_performance import PersonalPerformance, HistoryCalculation, calculate_history, known_negative_equity_dates
 from portfolio_app.performance.history_twr import chart_returns
-from portfolio_app.performance.gain_accounting import GainSummary, summarize_known_gain
+from portfolio_app.performance.gain_accounting import GainSummary, chart_gain_amounts, summarize_known_gain
 
 PERIODS = ('1M', '3M', '6M', 'YTD', '1Y', '3Y', '5Y', 'All')
 
@@ -154,20 +154,26 @@ def _chart_valuations(calculation, scope, target, stamps, beginning, first, last
     if not collect:
         return {day: calculation.value(scope, day, target) for day in days}, {}, None
 
-    valuations, gains, last_gain = {}, {}, None
+    valuations, gains, last_members = {}, {}, None
     for day in days:
+        members = ()
         cached = calculation._chart_gains.get((scope, day, target))
         if not first <= day <= last or cached is not None:
             valuations[day] = calculation.value(scope, day, target)
             if cached is not None and first <= day <= last:
                 gains[day] = cached  # A very long chart can evict this before rendering the point.
-            continue
-        valuations[day], members = calculation.value_with_members(scope, day, target)
+        else:
+            valuations[day], members = calculation.value_with_members(scope, day, target)
+        # Only a later supported close establishes that the previous one needs
+        # chart amounts. The final supported close supplies the detailed summary.
+        if last_members is not None and valuations[day].amount is not None:
+            prior, subtotals = last_members
+            calculation.retain_value(scope, prior, target, valuations[prior])
+            gains[prior] = chart_gain_amounts(calculation, scope, prior, target, member_closes=subtotals)
+            last_members = None
         if members:
-            last_gain = summarize_known_gain(calculation.journal, scope, calculation.observations, day, target,
-                                             calculation=calculation, _member_closes=members)
-            gains[day] = last_gain.capital, last_gain.amount
-    return valuations, gains, last_gain
+            last_members = day, members
+    return valuations, gains, last_members
 
 
 def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None, annualized=True, period_annualized=True):
@@ -183,7 +189,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     stamps, extra = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last)
     coverage = calculation._validated_history_dates.get((scope, target, beginning, last))
     full_scan = first <= beginning or (_requires_full_valuation_scan(scope, recorded) and coverage is None)
-    valuations, projected_gains, last_gain = _chart_valuations(calculation, scope, target, stamps, beginning,
+    valuations, projected_gains, last_members = _chart_valuations(calculation, scope, target, stamps, beginning,
         first, last, full_scan=full_scan, include_points=include_points)
     values = {stamp: valuation.amount for stamp, valuation in valuations.items()}
     available = [stamp for stamp, value in values.items() if value is not None]
@@ -197,18 +203,17 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         # chart availability even when the visible window is entirely empty.
         useful = any(calculation.value(scope, day, target).amount is not None
                      for day in reversed(stamps) if day < min(first, all_end))
-    def known_gain(day):
-        if day in valuations:
-            calculation.retain_value(scope, day, target, valuations[day])
-        return summarize_known_gain(journal, scope, observations, day, target, calculation=calculation)
-
     def gain_point(day):
         if day in projected_gains:
             return projected_gains.pop(day)
-        known = known_gain(day)
-        return known.capital, known.amount
+        calculation.retain_value(scope, day, target, valuations[day])
+        return chart_gain_amounts(calculation, scope, day, target)
 
-    all_known = last_gain if last_gain is not None and last_gain.as_of == all_end else known_gain(all_end)
+    if all_end in valuations:
+        calculation.retain_value(scope, all_end, target, valuations[all_end])
+    members = last_members[1] if last_members is not None and last_members[0] == all_end else None
+    all_known = summarize_known_gain(journal, scope, observations, all_end, target,
+                                     calculation=calculation, _member_closes=members)
     window = [stamp for stamp in available if first <= stamp <= last]
     start,end = (window[0],window[-1]) if window else (first,last)
     if first <= all_start:

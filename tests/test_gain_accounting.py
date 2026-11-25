@@ -655,10 +655,18 @@ def test_overlapping_chart_ranges_reuse_partial_gain_for_the_same_scope_and_curr
         requested.append((selected, stamp))
         return original(source, selected, observations, stamp, *args, **kwargs)
     monkeypatch.setattr(views, 'summarize_known_gain', count)
+    projected = []
+    amounts = views.chart_gain_amounts
+    def count_point(calculation, selected, stamp, target, **kwargs):
+        projected.append((selected, stamp, target))
+        return amounts(calculation, selected, stamp, target, **kwargs)
+    monkeypatch.setattr(views, 'chart_gain_amounts', count_point)
     view = history_view(journal, scope, store, '1M', today=today, calculation=calculation)
     assert view == expected
     assert requested == [(scope, dates[-1])]  # The endpoint also supplies detailed metric explanations.
+    assert projected == []
     foreign = history_view(journal, scope, store, '1M', today=today, target='USD', calculation=calculation)
+    assert projected and all(selected == scope and target == 'USD' for selected, _, target in projected)
     assert foreign == history_view(journal, scope, store, '1M', today=today, target='USD')
     assert foreign.points[-2]['Total gain'] == 1.5 * view.points[-2]['Total gain']
     other_scope = HistoryScope(('stock',), ('other',))
@@ -718,3 +726,47 @@ def test_member_closes_keep_flat_portfolio_and_individual_account_rounding():
     assert close.amount == calculation.value(scope, START, 'EUR').amount
     assert members == [D('1e23'), D('0.00008')]
     assert close.amount == D('1e23') and close.amount != sum(members)
+
+
+@pytest.mark.parametrize('missing_last', [False, True])
+def test_daily_gain_amounts_only_qualify_the_displayed_endpoint(monkeypatch, missing_last):
+    from portfolio_app.performance import gain_accounting as gains, history_view as views
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    purchase = E('buy', 'buy', START, quantity=2, price=10, currency='EUR', charges_known=True, estimated=True)
+    security = reconstruction_candidate(book(purchase), ('buy',), starts_at_zero=True)
+    journal = Journal(version=5, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),))
+    scope = HistoryScope(('stock',), ('cash',))
+    dates = [f'2024-01-{d:02}' for d in range(1, 16)]
+    end = dates[-2] if missing_last else dates[-1]
+    store = observations(journal, scope, [('stock', day, 10+i) for i, day in enumerate(dates) if day <= end],
+                         extra=(O('scope-mark', 'value', scope.key, dates[3], 150, 'EUR'),))
+    calculation = HistoryCalculation(journal, store)
+    calculation.event_dates(scope)  # Isolate gain qualification from indexing ledger dates.
+    checks = []
+    original = gains.affected_positions
+
+    def counted(book, event):
+        checks.append(event.id)
+        return original(book, event)
+
+    projections = {}
+    def chart_amounts(calculation, scope, day, target, **kwargs):
+        projections[day] = bool(kwargs.get('member_closes'))
+        return gains.chart_gain_amounts(calculation, scope, day, target, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(gains, 'affected_positions', counted)
+        patch.setattr(views, 'chart_gain_amounts', chart_amounts)
+        view = history_view(journal, scope, store, 'All', today=date.fromisoformat(dates[-1]), calculation=calculation)
+    assert checks == [purchase.id]
+    assert end not in projections
+    assert projections[dates[2]] and not projections[dates[3]]
+    assert view.all_end == end
+    assert view.all_known == summarize_known_gain(journal, scope, store, end)
+    assert view.all_known.coverage_note == 'Estimated gain'
+    assert view.all_result.opening_capital is None
+    for point in view.points:
+        detail = summarize_known_gain(journal, scope, store, point['Date'])
+        assert (point['Invested capital'], point['Total gain']) == (detail.capital, detail.amount)
