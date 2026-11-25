@@ -239,14 +239,14 @@ def _decode_observations(content):
     return from_dict(json.loads(content, object_hook=share_row_text))
 
 
-def _store_for_revision(content, revision):
+def _store_for_revision(revision, load):
     """Retain two validated snapshots by the SHA-256 of their file bytes."""
     with _build_lock(revision):
         with _parsed_stores_lock:
             if revision in _parsed_stores:
                 _parsed_stores.move_to_end(revision)
                 return _parsed_stores[revision]
-        store = _decode_observations(content)
+        store = load()
         with _parsed_stores_lock:
             _parsed_stores[revision] = store
             evicted = _parsed_stores.popitem(last=False) if len(_parsed_stores) > 2 else None
@@ -262,15 +262,19 @@ def load_observations(directory):
     try:
         content = path.read_bytes()
         revision = sha256(content).hexdigest()
-        return _store_for_revision(content, revision), revision
+        return _store_for_revision(revision, lambda: _decode_observations(content)), revision
     except (ValueError, TypeError, KeyError, OSError) as exc:
         raise DataError(f'Invalid historical observations; file retained: {exc}') from exc
 
 
 def save_observations(directory, store, expected_revision):
     content = json.dumps(asdict(store), default=str, indent=2, allow_nan=False) + '\n'
-    from_dict(json.loads(content))
+    validated = _decode_observations(content)
+    revision = sha256(content.encode('utf-8')).hexdigest()
     save_document(Path(directory) / FILE, content, expected_revision)
+    # Publish only after the guarded write succeeds. Readers of a different
+    # file version continue to use the revision of the bytes they actually read.
+    _store_for_revision(revision, lambda: validated)
 
 
 def add_observation(store, observation):

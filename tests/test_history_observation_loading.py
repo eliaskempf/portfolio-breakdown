@@ -115,6 +115,77 @@ def test_revision_cache_releases_file_bytes_and_retains_two_recent_valid_stores(
     assert on_eviction() is None and locked_at_eviction == [False]
 
 
+def test_save_reuses_its_independently_validated_bytes_on_reload(tmp_path, monkeypatch):
+    from hashlib import sha256
+    from unittest.mock import Mock
+    import portfolio_app.performance.history_observations as module
+
+    monkeypatch.setattr(module, '_parsed_stores', OrderedDict())
+    initial = module.from_dict(json.loads(content(45)))
+    correction = replace(initial.observations[0], id='invented-correction', amount=D('46.50'),
+                         source='Invented Börsenkurs', replaces=initial.observations[0].id)
+    edited = module.add_observation(initial, correction)
+    parse = Mock(wraps=module.from_dict)
+    monkeypatch.setattr(module, 'from_dict', parse)
+    module.save_observations(tmp_path, initial, None)
+    first, revision = module.load_observations(tmp_path)
+    assert first == initial and first is not initial and parse.call_count == 1
+    before = (tmp_path / module.FILE).read_bytes()
+    module.save_observations(tmp_path, edited, revision)
+    second, changed = module.load_observations(tmp_path)
+    assert second == edited and second is not edited and parse.call_count == 2
+    assert second.active == (correction,) and changed == sha256((tmp_path / module.FILE).read_bytes()).hexdigest()
+    assert next((tmp_path / '.backups').glob('*.json')).read_bytes() == before
+
+    with pytest.raises(DataError, match='Data changed'):
+        module.save_observations(tmp_path, replace(edited, reviews=(), observations=()), revision)
+    assert parse.call_count == 3 and set(module._parsed_stores) == {revision, changed}
+    assert module.load_observations(tmp_path)[0] is second and parse.call_count == 3
+    # A direct editor may correct the same file without going through the saver.
+    (tmp_path / module.FILE).write_text(content(47))
+    assert module.load_observations(tmp_path)[0].observations[0].amount == 47 and parse.call_count == 4
+
+
+def test_delayed_cache_publication_cannot_hide_a_newer_saved_revision(tmp_path, monkeypatch):
+    import portfolio_app.performance.history_observations as module
+
+    first = module.from_dict(json.loads(content(61)))
+    second = module.from_dict(json.loads(content(62)))
+    written, release = Event(), Event()
+    write = module.save_document
+    def pause_after_first_write(path, text, expected):
+        write(path, text, expected)
+        if expected is None:
+            written.set()
+            assert release.wait(10)
+    monkeypatch.setattr(module, 'save_document', pause_after_first_write)
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        saving = worker.submit(module.save_observations, tmp_path, first, None)
+        try:
+            assert written.wait(10)
+            loaded, revision = module.load_observations(tmp_path)
+            assert loaded == first
+            module.save_observations(tmp_path, second, revision)
+            newer, changed = module.load_observations(tmp_path)
+        finally:
+            release.set()
+        saving.result(timeout=10)
+    current, actual = module.load_observations(tmp_path)
+    assert current is newer and current == second and actual == changed != revision
+
+
+def test_save_validates_persisted_field_types_before_publication(tmp_path):
+    import portfolio_app.performance.history_observations as module
+
+    # A tuple is hashable in memory but serializes to a list. The round-trip
+    # validator must reject that invalid boundary before replacing the file.
+    malformed = Observation('invented', 'value', 'scope', '2024-01-02', D(1), 'EUR',
+                            side='before', boundary=('flow',))
+    with pytest.raises(TypeError):
+        module.save_observations(tmp_path, ObservationStore((malformed,)), None)
+    assert not (tmp_path / module.FILE).exists()
+
+
 def test_concurrent_readers_share_one_parse_without_blocking_a_corrected_version(tmp_path, monkeypatch):
     import portfolio_app.performance.history_observations as module
     path = tmp_path / module.FILE
