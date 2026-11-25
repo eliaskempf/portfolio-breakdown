@@ -3,7 +3,7 @@ from collections import OrderedDict
 from dataclasses import asdict, dataclass, field, replace
 from decimal import Decimal
 from hashlib import sha256
-from functools import cached_property
+from functools import cached_property, lru_cache
 import json
 from pathlib import Path
 from threading import Lock
@@ -220,6 +220,25 @@ _parsed_stores = OrderedDict()
 _parsed_stores_lock = Lock()
 
 
+def _decode_observations(content):
+    # JSON shares object keys, but each close otherwise owns new copies of its
+    # subject, date, currency and provenance. Keep the pool local to this read.
+    @lru_cache(maxsize=8192)
+    def shared_text(value):
+        return value
+
+    def share_row_text(row):
+        if 'kind' in row:
+            for name in ('kind', 'subject', 'date', 'currency', 'target', 'side', 'source', 'basis',
+                         'listing', 'calendar', 'exchange_timezone'):
+                value = row.get(name)
+                if isinstance(value, str) and value:
+                    row[name] = shared_text(value)
+        return row
+
+    return from_dict(json.loads(content, object_hook=share_row_text))
+
+
 def _store_for_revision(content, revision):
     """Retain two validated snapshots by the SHA-256 of their file bytes."""
     with _build_lock(revision):
@@ -227,7 +246,7 @@ def _store_for_revision(content, revision):
             if revision in _parsed_stores:
                 _parsed_stores.move_to_end(revision)
                 return _parsed_stores[revision]
-        store = from_dict(json.loads(content))
+        store = _decode_observations(content)
         with _parsed_stores_lock:
             _parsed_stores[revision] = store
             evicted = _parsed_stores.popitem(last=False) if len(_parsed_stores) > 2 else None

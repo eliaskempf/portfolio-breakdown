@@ -57,6 +57,31 @@ def test_byte_changes_invalidate_even_with_identical_size_and_mtime(tmp_path):
     assert load_observations(tmp_path) == (ObservationStore(), None)
 
 
+def test_loading_shares_repeated_history_text_without_changing_evidence(tmp_path):
+    import portfolio_app.performance.history_observations as module
+
+    rows = [
+        dict(id=f'invented-{i}', kind='price', subject=f'invented-asset-{i % 2}', date=day,
+             amount=str(i + 10), currency='USD', source='Invented closing feed',
+             listing='SYNTH', calendar='XNYS', exchange_timezone='America/New_York')
+        for i, day in enumerate(('2024-02-01', '2024-02-01', '2024-02-02', '2024-02-02'))]
+    raw = dict(version=1, observations=rows)
+    path = tmp_path / module.FILE
+    path.write_text(json.dumps(raw))
+    loaded, _ = load_observations(tmp_path)
+    assert loaded == module.from_dict(raw)
+    first, second, third, fourth = loaded.observations
+    for field in ('kind', 'currency', 'source', 'listing', 'calendar', 'exchange_timezone'):
+        assert getattr(first, field) is getattr(fourth, field)
+    assert first.date is second.date and first.subject is third.subject
+    assert first.id != third.id and third.amount == D(12)
+
+    rows[0]['listing'] = ['malformed']
+    path.write_text(json.dumps(raw))
+    with pytest.raises(DataError, match='Invalid listing provenance'):
+        load_observations(tmp_path)
+
+
 def test_revision_cache_releases_file_bytes_and_retains_two_recent_valid_stores(tmp_path, monkeypatch):
     from gc import collect
     from weakref import ref
