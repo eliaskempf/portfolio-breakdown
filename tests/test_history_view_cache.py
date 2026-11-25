@@ -69,7 +69,7 @@ def test_background_view_uses_one_complete_revision_and_leaves_inputs_untouched(
 
 
 @pytest.mark.parametrize('points', [False, True])
-@pytest.mark.parametrize('old_schema', [1, 2, 3])
+@pytest.mark.parametrize('old_schema', [1, 2, 3, 4])
 def test_recomputes_stored_view_after_calculation_changes(tmp_path, monkeypatch, points, old_schema):
     from portfolio_app.performance import history_view_cache
 

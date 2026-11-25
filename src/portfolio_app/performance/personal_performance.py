@@ -182,14 +182,14 @@ class HistoryCalculation:
         return self._get(('partial_lot_costs', identity, interval, target), lambda:
             partial_lot_costs(self.securities(stamp).positions.get(identity), self.observations, target))
 
+    @cached_property
+    def _account_postings(self):
+        return cash_postings(self.journal, security_cash=self.securities().cash)
+
     def accounts(self, stamp):
         from portfolio_app.ledger.account_timeline import AccountTimeline
-        # Cash postings are derived once from the same immutable journal snapshot.
-        # Pending receipts still require explicit receive events: value_date alone
-        # does not change account balances and must not advance this timeline.
-        postings = self._get(('account_postings',), lambda: cash_postings(
-            self.journal, security_cash=self.securities().cash))
-        timeline = self._get(('account_timeline',), lambda: AccountTimeline(self.journal, postings))
+        # The opening and subsequent account states use the same rounded cash postings.
+        timeline = self._get(('account_timeline',), lambda: AccountTimeline(self.journal, self._account_postings))
         return timeline.at(stamp)
 
     def value(self, scope, stamp, target):
@@ -214,6 +214,11 @@ class HistoryCalculation:
     def opening(self, scope, stamp, target):
         return self._get(('opening', scope, stamp, target), lambda: opening_value_at(
             self.journal, scope, self.observations, stamp, target, calculation=self))
+
+    @cached_property
+    def _opening_claims(self):
+        ordinary = {a: day for a, day in self._account_starts.items() if a not in self._account_inceptions}
+        return _opening_security_claims(self.journal, ordinary, calculation=self)
 
     def capital(self, scope, stamp, target):
         return self._get(('capital', scope, stamp, target), lambda: capital_at_start(
@@ -303,7 +308,9 @@ class HistoryCalculation:
             dates = self._estimated_account_payment_dates.get(account, ())
             if bisect_right(dates, start) < bisect_right(dates, end):
                 return True
-            if self._account_inceptions.get(account) == start and start in dates:
+            # Canonical postings before an ordinary settled-cash snapshot are
+            # deferred claims. A confirmed inception includes its first-day payments.
+            if self._account_starts.get(account) == start and bisect_right(dates, start):
                 return True
         return False
 
@@ -392,6 +399,31 @@ def initial_security_positions(journal, scope, stamp, *, calculation=None):
     return {b.position_id for b in journal.securities if b.account_id in accounts} if accounts else set()
 
 
+def _opening_security_claims(journal, ordinary, *, calculation=None):
+    """Canonical postings already owed at an ordinary settled-cash snapshot."""
+    accounts = set()
+    for book in journal.securities:
+        start = ordinary.get(book.account_id)
+        if start and book.account_id not in accounts:
+            events = calculation._events[book.position_id] if calculation else selected_events(book)
+            if any(e.date <= start and e.value_date > e.date for e in events):
+                accounts.add(book.account_id)
+    if not accounts:
+        return {}
+    if calculation:
+        postings = calculation._account_postings
+    else:
+        # Standalone opening queries only require the relevant ledger prefix.
+        state = replay_securities(journal.securities, as_of=max(ordinary[a] for a in accounts))
+        postings = cash_postings(journal, security_cash=(c for c in state.cash if c.account_id in accounts
+                                                         and c.date <= ordinary[c.account_id]))
+    claims = defaultdict(list)
+    for event in postings:
+        if event.account_id in accounts and event.date <= ordinary[event.account_id]:
+            claims[event.account_id].append(event)
+    return {account: tuple(entries) for account, entries in claims.items()}
+
+
 def opening_value_at(journal, scope, observations, stamp, target, *, calculation=None):
     """Account cash openings precede same-day account trades/fees/flows.
 
@@ -416,16 +448,33 @@ def opening_value_at(journal, scope, observations, stamp, target, *, calculation
         reasons.extend(value.reasons)
         if value.amount is not None:
             total += value.amount
+    from portfolio_app.ledger.account_inception import account_inceptions
+    inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, events)
+    ordinary = {a: stamp for a in scope.accounts if starts.get(a) == stamp and a not in inceptions}
+    claims = {}
+    if ordinary:
+        claims = calculation._opening_claims if calculation else _opening_security_claims(journal, ordinary)
+    rates = {}
+    declarations = defaultdict(list)
+    for event in events:
+        if event.date == stamp and event.kind in ('cash_open', 'debt_open'):
+            declarations[event.account_id].append(event)
     for account in scope.accounts:
         if starts.get(account) == stamp:
-            for event in events:
-                if event.account_id != account or event.date != stamp or event.kind not in ('cash_open', 'debt_open'):
+            for event in (*declarations[account], *claims.get(account, ())):
+                if event.kind == 'security_unknown':
+                    reasons.append(Issue(f'{account}: unknown opening {event.currency} security payment on {stamp}', 'transaction'))
                     continue
-                value = convert(event.amount * (-1 if event.kind == 'debt_open' else 1), event.currency, target, stamp, observations)
-                if value is None:
+                if not event.amount:
+                    continue
+                if event.currency not in rates:
+                    rates[event.currency], _ = valuation_fx(observations, event.currency, target, stamp)
+                fx = rates[event.currency]
+                if fx is None:
                     reasons.append(Issue(f'{account}: missing opening {event.currency}/{target} FX on {stamp}', 'fx'))
                 else:
-                    total += value
+                    amount = -event.amount if event.kind == 'debt_open' else event.amount
+                    total += amount * fx
         else:
             value = value_for(HistoryScope(accounts=(account,)))
             reasons.extend(value.reasons)
