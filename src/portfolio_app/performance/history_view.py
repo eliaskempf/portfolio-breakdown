@@ -64,10 +64,14 @@ def _period_result(calculation, scope, target, dates, start, end, negative_dates
     return result
 
 
-def _requires_full_valuation_scan(scope, recorded):
-    # Accounts can turn negative between flows. Reciprocal FX quotes can
-    # conflict on an intermediate closing date, including outside a chart window.
-    return bool(scope.accounts) or recorded.requires_fx_validation
+def _requires_full_valuation_scan(calculation, scope, recorded, last, target):
+    if recorded.requires_fx_validation or not scope.accounts:
+        return recorded.requires_fx_validation
+    # A supplied scope close or an unresolved scope can bypass the account
+    # ledger entirely. Preserve that ordering when deciding which dates to read.
+    if scope.unresolved or ('value', scope.key) in calculation.observations.scope_rows:
+        return True
+    return calculation.accounts_need_daily_marks(scope.accounts, last, target)
 
 
 @dataclass(frozen=True)
@@ -83,8 +87,8 @@ def _all_history(calculation, scope, target, dates, recorded, beginning, last, s
         return valuations[day] if valuations is not None else calculation.close(scope, day, target)
 
     new_coverage = None
-    needs_scan = _requires_full_valuation_scan(scope, recorded)
-    if needs_scan and coverage is None and valuations is None:
+    if (coverage is None and valuations is None
+            and _requires_full_valuation_scan(calculation, scope, recorded, last, target)):
         valuations = {day: calculation.close(scope, day, target) for day in stamps}
     if coverage is not None:
         negative = coverage.negative_dates
@@ -92,12 +96,12 @@ def _all_history(calculation, scope, target, dates, recorded, beginning, last, s
         negative = calculation._get(('negative_equity_dates', scope, beginning, last, target), lambda:
             known_negative_equity_dates(calculation.journal, scope, calculation.observations, beginning, last,
                                         target, valuations=valuations, calculation=calculation))
-        if retain_for_chart and needs_scan:
+        if retain_for_chart and (scope.accounts or recorded.requires_fx_validation):
             # A window boundary without a recorded close is specific to this range.
             supported = [day for day in stamps if day != extra and value(day).amount is not None]
             new_coverage = coverage = _ValidatedDates(supported[-1] if supported else '', len(supported), negative)
     else:
-        # Long-only securities with positive prices need only explicit negative scope marks.
+        # With nonnegative components, only supplied scope marks can show negative equity.
         negative = tuple(sorted(day for day in recorded.negative_equity_dates if beginning <= day <= last))
     if coverage is None:
         end = next((day for day in reversed(stamps) if value(day).amount is not None), last)
@@ -188,7 +192,8 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     beginning = earliest.isoformat()
     stamps, extra = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last)
     coverage = calculation._validated_history_dates.get((scope, target, beginning, last))
-    full_scan = first <= beginning or (_requires_full_valuation_scan(scope, recorded) and coverage is None)
+    full_scan = first <= beginning or (coverage is None
+        and _requires_full_valuation_scan(calculation, scope, recorded, last, target))
     valuations, projected_gains, last_members = _chart_valuations(calculation, scope, target, stamps, beginning,
         first, last, full_scan=full_scan, include_points=include_points)
     values = {stamp: valuation.amount for stamp, valuation in valuations.items()}

@@ -222,11 +222,41 @@ class HistoryCalculation:
     def _account_postings(self):
         return cash_postings(self.journal, security_cash=self.securities().cash)
 
-    def accounts(self, stamp):
+    @property
+    def _account_timeline(self):
         from portfolio_app.ledger.account_timeline import AccountTimeline
-        # The opening and subsequent account states use the same rounded cash postings.
-        timeline = self._get(('account_timeline',), lambda: AccountTimeline(self.journal, self._account_postings))
-        return timeline.at(stamp)
+        return self._get(('account_timeline',), lambda: AccountTimeline(self.journal, self._account_postings))
+
+    def accounts(self, stamp):
+        return self._account_timeline.at(stamp)
+
+    def accounts_need_daily_marks(self, accounts, end, target):
+        """Check the sign of account components only where the canonical ledger changes."""
+        def check():
+            selected = set(accounts)
+            # Futures P&L can change sign between ledger entries. Closing FX
+            # can also conflict on a price-only date even when balances are positive.
+            if any(position.account_id in selected for position in self.journal.positions):
+                return True
+            reciprocal = {source for source, other in self.observations.reciprocal_closing_pairs if other == target}
+            timeline = self._account_timeline
+            dates = timeline.retained_prefix(end)
+            # Endpoint searches can visit dates in reverse when prices are
+            # missing. A longer ledger needs one forward valuation pass.
+            if dates is None:
+                return True
+            for day in dates:
+                state = timeline.at(day)
+                if (any(owner in selected for owner, currency in state.unknown_cash)
+                        or any(owner in selected and (amount < 0 or (amount and currency in reciprocal))
+                               for (owner, currency), amount in state.cash.items())
+                        or any(owner in selected and amount for (owner, _, _), amount in state.loans.items())
+                        or any(claim.account_id in selected and
+                               (claim.amount < 0 or (claim.amount and claim.currency in reciprocal))
+                               for claim in state.pending.values())):
+                    return True
+            return False
+        return self._get(('accounts_need_daily_marks', accounts, end, target), check)
 
     def close(self, scope, stamp, target):
         """Resolve equity and its ordered source rows without constructing display evidence."""
