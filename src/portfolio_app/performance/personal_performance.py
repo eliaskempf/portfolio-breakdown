@@ -13,7 +13,7 @@ import math
 
 from portfolio_app.ledger.account_journal import effective_events, replay
 from portfolio_app.performance.history_observations import HistoryScope, index_observations, lookup, rate
-from portfolio_app.ledger.security_history import cash_postings, history_fingerprint, replay_securities, selected_events, affected_positions
+from portfolio_app.ledger.security_history import cash_postings, history_fingerprint, replay_securities, selected_events
 
 from portfolio_app.performance.history_diagnostics import HistoryIssue as Issue
 from portfolio_app.performance.history_valuation import price_at, provenance, valuation_fx, ValuationEvidence
@@ -35,6 +35,7 @@ class PeriodCapital:
     net_contributions: Decimal | None
     invested_capital: Decimal | None
     flow_reasons: tuple[str, ...]
+    estimated: bool = False
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class ExternalFlow:
     expense: Decimal = ZERO
     income: Decimal = ZERO
     postings: tuple[str, ...] = ()
+    estimated: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,22 +75,26 @@ class PersonalPerformance:
     estimated: bool = False
 
 
-def estimated_return_inputs(journal, scope, start, end, *, events_by_position=None):
-    """Cost-only estimates do not qualify returns; estimated flows do."""
-    for book in journal.securities:
-        for event in (events_by_position[book.position_id] if events_by_position is not None else selected_events(book)):
-            if not start < event.date <= end:
-                continue
-            inside = book.position_id in scope.positions
-            affected = bool(affected_positions(book, event).intersection(scope.positions)) or book.account_id in scope.accounts
-            if event.estimated and affected and (event.kind in ('buy', 'sell', 'distribution', 'fee', 'tax')
-                    or any(c.amount for c in event.charges)):
-                return True
-            crosses = (inside and event.kind in ('inventory_in', 'inventory_out', 'transfer_in', 'transfer_out')) or (
-                event.kind == 'swap' and inside != (event.other_position_id in scope.positions))
-            if crosses and event.valuation_amount is not None and (event.estimated or event.valuation_quality == 'estimated'):
-                return True
-    return False
+def _has_estimated_inputs(events):
+    return any(e.estimated or e.valuation_quality == 'estimated' for e in events)
+
+
+def estimated_return_inputs(journal, scope, start, end, *, events_by_position=None, calculation=None, target='EUR'):
+    """Whether the selected interval uses supplied estimates for dated payments or flows."""
+    if end < start:
+        return False
+    if calculation is None:
+        groups = (selected_events(b) for b in journal.securities) if events_by_position is None else events_by_position.values()
+        if not any(_has_estimated_inputs(events) for events in groups):
+            return False
+        from portfolio_app.performance.history_observations import ObservationStore
+        calculation = HistoryCalculation(journal, ObservationStore())
+    if not calculation.has_estimated_inputs:
+        return False
+    if calculation.estimated_account_payments(scope, start, end):
+        return True
+    totals = calculation.dated_flows(scope, target)
+    return totals.total_with_estimates(start, end, amount_needed=False)[2]
 
 
 class HistoryCalculation:
@@ -113,10 +119,9 @@ class HistoryCalculation:
             or not e.charges_known) for identity, events in self._events.items()}
         self._cost_dates = {identity: tuple(e.date for e in events if e.kind == 'cost')
                             for identity, events in self._events.items()}
-        self._estimated_events = {identity: tuple(e for e in events if e.estimated or
-            e.valuation_quality == 'estimated') for identity, events in self._events.items()}
         self._unresolved_receipts = unresolved_receipts(journal)
         events = [event for selected in self._events.values() for event in selected]
+        self.has_estimated_inputs = _has_estimated_inputs(events)
         # Holdings change on event dates; separately dated charges also change cash.
         self._security_dates = sorted({event.date for event in events} |
             {charge.date for event in events for charge in event.charges if charge.date})
@@ -278,6 +283,29 @@ class HistoryCalculation:
             latest.clear()
             latest[boundary] = result
         return latest[boundary]
+
+    @cached_property
+    def _estimated_account_payment_dates(self):
+        # Combined asset/cash scopes have internal payments which affect closing
+        # cash even though they never appear among external contributions.
+        payments = [c for c in self.securities().cash if c.estimated and c.account_id and not c.external]
+        if not payments:
+            return {}
+        dates = defaultdict(set)
+        for posting in cash_postings(self.journal, security_cash=payments):
+            dates[posting.account_id].add(posting.date)
+        return {account: sorted(stamps) for account, stamps in dates.items()}
+
+    def estimated_account_payments(self, scope, start, end):
+        if not self.has_estimated_inputs or not scope.accounts:
+            return False
+        for account in scope.accounts:
+            dates = self._estimated_account_payment_dates.get(account, ())
+            if bisect_right(dates, start) < bisect_right(dates, end):
+                return True
+            if self._account_inceptions.get(account) == start and start in dates:
+                return True
+        return False
 
     def period_capital(self, scope, start, end, target):
         """Opening value, cash and cost evidence are independent of the closing mark."""
@@ -666,14 +694,14 @@ def external_flows(journal, scope, observations, start, end, target, *, security
         if dated_issues is not None:
             dated_issues[stamp].append(reason)
 
-    def add(identity, stamp, sequence, amount, currency, *, include_start=False, event_id='', expense=ZERO, income=ZERO):
+    def add(identity, stamp, sequence, amount, currency, *, include_start=False, event_id='', expense=ZERO, income=ZERO, estimated=False):
         if not (start < stamp <= end or (include_start and start == stamp)):
             return
         value = convert(amount, currency, target, stamp, observations)
         reason = '' if value is not None else Issue(f'{identity}: missing cash amount or dated FX', 'transaction' if amount is None else 'fx')
         flows.append(ExternalFlow(identity, stamp, sequence, value, reason, event_id,
             convert(expense, currency, target, stamp, observations) or ZERO,
-            convert(income, currency, target, stamp, observations) or ZERO, (identity,)))
+            convert(income, currency, target, stamp, observations) or ZERO, (identity,), estimated))
         if reason:
             issue(reason, stamp)
 
@@ -684,7 +712,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             continue
         # Asset-only purchases are contributions; account-only payments out are withdrawals.
         amount = None if c.amount is None else -c.amount if asset_inside else c.amount
-        add('security:'+c.id, c.date, c.sequence, amount, c.currency, event_id='security:'+(c.event_id or c.id),
+        add('security:'+c.id, c.date, c.sequence, amount, c.currency, event_id='security:'+(c.event_id or c.id), estimated=c.estimated,
             include_start=include_account_start and (c.position_id in initial_positions
                 or cash_inside and inceptions.get(c.account_id) == start),
             expense=-c.amount if asset_inside and c.kind in ('fee', 'tax') and c.amount is not None else ZERO,
@@ -697,20 +725,23 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             if e.flow_classification == 'external':
                 add(e.id, e.date, e.sequence,
                     None if e.valuation_amount is None else e.valuation_amount*(1 if e.kind == 'inventory_in' else -1),
-                    e.valuation_currency, include_start=initial)
+                    e.valuation_currency, include_start=initial,
+                    estimated=e.valuation_amount is not None and (e.estimated or e.valuation_quality == 'estimated'))
             else:
                 issue(f'{e.id}: inventory origin or purpose unresolved', e.date)
         if e.kind in ('transfer_in', 'transfer_out') and book.position_id in members and inside_interval:
             price = price_at(observations, (book.position_id, book.instrument_id), e.date, events=selected_events(book))
             amount = e.amount if e.amount is not None else e.quantity*price.amount if price else None
             denomination = e.currency if e.amount is not None else price.currency if price else e.currency
-            add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination, include_start=initial)
+            add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination, include_start=initial,
+                estimated=e.amount is not None and e.estimated)
         if e.kind == 'swap' and inside_interval:
             source_inside, dest_inside = book.position_id in members, e.other_position_id in members
             if source_inside != dest_inside:
                 add(e.id, e.date, e.sequence,
                     None if e.valuation_amount is None else e.valuation_amount*(-1 if source_inside else 1),
-                    e.valuation_currency, include_start=initial)
+                    e.valuation_currency, include_start=initial,
+                    estimated=e.valuation_amount is not None and (e.estimated or e.valuation_quality == 'estimated'))
         if e.kind != 'transfer' or not inside_interval:
             continue
         source_inside, dest_inside = book.position_id in members, e.other_position_id in members
@@ -754,6 +785,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             grouped[key] = replace(previous,
                 amount=previous.amount+flow.amount if previous.amount is not None and flow.amount is not None else None,
                 expense=previous.expense+flow.expense, income=previous.income+flow.income,
+                estimated=previous.estimated or flow.estimated,
                 reason=previous.reason or flow.reason, postings=(*previous.postings, *flow.postings))
     return tuple(sorted(grouped.values(), key=lambda f: (f.date, f.sequence, f.id))), tuple(sorted(set(reasons)))
 
@@ -863,7 +895,8 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
 def _period_capital(calculation, scope, start, end, target):
     opening = calculation.opening(scope, start, target)
     coverage = calculation.coverage(scope, start, end)
-    net, missing_flows = calculation.dated_flows(scope, target).total(start, end, amount_needed=not coverage)
+    net, missing_flows, estimated = calculation.dated_flows(scope, target).total_with_estimates(start, end, amount_needed=not coverage)
+    estimated = estimated or calculation.estimated_account_payments(scope, start, end)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
     capital = calculation.capital(scope, start, target)
     # A remaining-cost correction changes neither inventory nor cash. It cannot
@@ -876,7 +909,7 @@ def _period_capital(calculation, scope, start, end, target):
     if cost_boundaries:
         capital = AmountResult(None, (*capital.reasons, *cost_boundaries))
     invested = capital.amount + net if capital.amount is not None and net is not None else None
-    return PeriodCapital(opening, capital, net, invested, flow_reasons)
+    return PeriodCapital(opening, capital, net, invested, flow_reasons, estimated)
 
 
 def _calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None, method='daily'):
@@ -919,4 +952,4 @@ def _calculate_history(journal, scope, observations, start, end, target='EUR', *
             twr_reasons = (reason,) if reason else ()
     return PersonalPerformance(opening.amount, ending.amount, net, invested, gain, mwr, twr, days,
         tuple(dict.fromkeys((*opening.reasons, *ending.reasons))), flow_reasons, mwr_reasons, twr_reasons,
-        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method, estimated_return_inputs(journal, scope, start, end, events_by_position=calculation._estimated_events))
+        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method, basis.estimated)

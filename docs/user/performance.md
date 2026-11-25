@@ -124,8 +124,10 @@ whose connected holdings are reviewed together.
 
 Explicitly supplied estimates can support daily TWR and annualized XIRR. Affected
 results retain the estimate qualification in gain/TWR and annualized-return
-tooltips, without separate estimate captions. Missing transaction details and market
-observations remain separate limitations. An estimated acquisition cost does not by itself
+tooltips, without separate estimate captions. For period returns, an estimated
+fee uses its own payment date. Estimated trade payments on a confirmed new
+account’s first day count from its zero opening. Missing transaction details
+and market observations remain separate limitations. An estimated acquisition cost does not by itself
 make a return estimated when that return uses independently known cash flows and
 market values. Unknown amounts stay unknown; a matching ending quantity does not
 certify complete history. The former separate daily-Dietz diagnostic is retired.

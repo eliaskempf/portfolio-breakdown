@@ -227,12 +227,12 @@ def test_daily_component_totals_only_recompute_on_ledger_dates(monkeypatch):
     j = Journal(version=2, securities=tuple(books))
     store = ObservationStore(tuple(prices))
     calculation = history.HistoryCalculation(j, store)
-    raw_total = DatedFlows.total
+    raw_total = DatedFlows.total_with_estimates
     requests = []
     def counted(self, start, end, **kwargs):
         requests.append((self.scope, end))
         return raw_total(self, start, end, **kwargs)
-    monkeypatch.setattr(DatedFlows, 'total', counted)
+    monkeypatch.setattr(DatedFlows, 'total_with_estimates', counted)
     for day in range(2, 9):
         for index, book in enumerate(books):
             scope = HistoryScope((book.position_id,))

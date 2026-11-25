@@ -69,8 +69,8 @@ def test_background_view_uses_one_complete_revision_and_leaves_inputs_untouched(
 
 
 @pytest.mark.parametrize('points', [False, True])
-@pytest.mark.parametrize('old_schema', [1, 2])
-def test_recomputes_stored_view_after_gain_corrections(tmp_path, monkeypatch, points, old_schema):
+@pytest.mark.parametrize('old_schema', [1, 2, 3])
+def test_recomputes_stored_view_after_calculation_changes(tmp_path, monkeypatch, points, old_schema):
     from portfolio_app.performance import history_view_cache
 
     journal, scope = setup(tmp_path)
@@ -81,6 +81,7 @@ def test_recomputes_stored_view_after_gain_corrections(tmp_path, monkeypatch, po
     with monkeypatch.context() as previous:
         previous.setattr(history_view_cache, '_versions', lambda: (old_schema, *versions[1:]))
         stale_gain = replace(view.all_known, amount=Decimal('123.45'))
-        load_or_compute(tmp_path, signature, lambda: replace(view, all_known=stale_gain))
+        stale_return = replace(view.all_result, estimated=not view.all_result.estimated)
+        load_or_compute(tmp_path, signature, lambda: replace(view, all_known=stale_gain, all_result=stale_return))
     assert load_or_compute(tmp_path, signature, lambda: view) == view
     assert load_or_compute(tmp_path, signature, lambda: pytest.fail('updated snapshot should be reusable')) == view

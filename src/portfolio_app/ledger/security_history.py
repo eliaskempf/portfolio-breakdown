@@ -358,6 +358,7 @@ class SecurityCash:
     value_date: str = ''
     external: bool = False
     event_id: str = ''
+    estimated: bool = False
 
 
 @dataclass(frozen=True)
@@ -595,11 +596,12 @@ class _SecurityReplay:
                     gross = e.gross if e.kind in ('buy', 'sell') else e.amount
                     sign = -1 if e.kind in ('buy', 'fee', 'tax') else 1
                     new_cash.append(SecurityCash(e.id, book.position_id, book.account_id, e.date, e.sequence,
-                        e.currency, None if gross is None else sign*gross, e.kind, e.value_date, event_id=e.id))
+                        e.currency, None if gross is None else sign*gross, e.kind, e.value_date, event_id=e.id,
+                        estimated=e.estimated and gross is not None))
                 for i, c in enumerate(e.charges):
                     new_cash.append(SecurityCash(f'{e.id}:charge:{i}', book.position_id, book.account_id,
                         c.date or e.date, e.sequence, c.currency, None if c.amount is None else -c.amount,
-                        c.kind, external=c.external, event_id=e.id))
+                        c.kind, external=c.external, event_id=e.id, estimated=e.estimated and bool(c.amount)))
                 if e.kind in ('buy', 'sell', 'distribution') and not e.charges_known:
                     new_cash.append(SecurityCash(f'{e.id}:unknown-charges', book.position_id, book.account_id,
                         e.date, e.sequence, e.currency, None, 'fee', event_id=e.id))

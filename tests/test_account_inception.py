@@ -52,7 +52,7 @@ def test_first_day_linked_purchase_counts_cash_and_funding_once(start, include_s
     from portfolio_app.performance.history_observations import Observation
     events = (SecurityEvent('empty', 'opening', '2024-01-02', source='confirmed_zero_start'),
               SecurityEvent('buy', 'buy', '2024-01-02', sequence=1, quantity=1, price=100,
-                            currency='EUR', charges=(Charge(D(fee), 'EUR'),), charges_known=True))
+                            currency='EUR', charges=(Charge(D(fee), 'EUR'),), charges_known=True, estimated=bool(fee)))
     book = SecurityBook('stock', 'invented', ('0', '', ''), account_id='a', records=events,
                         active_ids=tuple(e.id for e in events))
     journal = Journal(version=5, accounts=(Account('a', 'Invented new account'),), securities=(book,), events=(
@@ -68,6 +68,7 @@ def test_first_day_linked_purchase_counts_cash_and_funding_once(start, include_s
     assert result.opening_value == 0
     assert result.ending_value == (100 if include_security else 0)
     assert result.net_contributions == (100 + fee if include_security else 0)
+    assert result.estimated == bool(fee)
     assert result.gain == (-fee if include_security else 0)
     assert result.opening_capital == 0
     assert result.invested_capital == (100 + fee if include_security else 0)
