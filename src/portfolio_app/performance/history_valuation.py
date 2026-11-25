@@ -142,6 +142,11 @@ class ValuationEvidence:
 
 
 def valuation_fx(observations, source, target, stamp):
+    value, rows = valuation_fx_quotes(observations, source, target, stamp)
+    return value, tuple(provenance(row, stamp) for row in rows)
+
+
+def valuation_fx_quotes(observations, source, target, stamp):
     """Dated closing FX, or the prior close across documented closed sessions.
 
     This is a daily valuation convention, not transaction conversion evidence.
@@ -163,10 +168,10 @@ def valuation_fx(observations, source, target, stamp):
             previous -= timedelta(days=1)
     if value is None:
         return None, ()
-    evidence = tuple(provenance(o, stamp) for o in observations.fx.get(as_of, ())
+    rows = tuple(o for o in observations.fx.get(as_of, ())
         if o.side == 'close' and ((o.currency, o.target) == (source, target)
                                  or (o.currency, o.target) == (target, source)))
-    return value, evidence
+    return value, rows
 
 
 def price_at(observations, subjects, stamp, *, events=(), contract=None):

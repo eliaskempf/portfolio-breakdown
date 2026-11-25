@@ -613,12 +613,12 @@ def test_chart_gain_reuses_the_close_and_preserves_individual_marks(monkeypatch)
         return result
     monkeypatch.setattr(views, '_all_history', evict_middle)
     calculated = []
-    original = personal_performance.value_at
+    original = personal_performance._resolve_close
     def track(source, selection, observations, stamp, currency, **options):
         if selection == scope:
             calculated.append(stamp)
         return original(source, selection, observations, stamp, currency, **options)
-    monkeypatch.setattr(personal_performance, 'value_at', track)
+    monkeypatch.setattr(personal_performance, '_resolve_close', track)
     chart = history_view(journal, scope, store, 'All', today=date.fromisoformat(END), calculation=calculation)
     point = next(p for p in chart.points if p['Date'] == middle)
     assert (point['Value'], point['Invested capital'], point['Total gain']) == (777, 200, 23)
@@ -697,12 +697,12 @@ def test_partial_gain_values_members_once_and_keeps_scope_marks_separate(monkeyp
     calculation = perf.HistoryCalculation(journal, store)
     calculation.value(scope, day, 'EUR')  # A summary may already have validated this portfolio close.
     calls = []
-    original = perf.value_at
+    original = perf._resolve_close
     def count(source, selected, observations, stamp, target, **options):
         if stamp in (day, late):
             calls.append((selected, stamp))
         return original(source, selected, observations, stamp, target, **options)
-    monkeypatch.setattr(perf, 'value_at', count)
+    monkeypatch.setattr(perf, '_resolve_close', count)
     view = history_view(journal, scope, store, 'All', today=date.fromisoformat(END), calculation=calculation)
     chart = {row['Date']: row for row in view.points}
     assert (chart[day]['Value'], chart[day]['Invested capital'], chart[day]['Total gain']) == (210, 200, 26)
@@ -711,6 +711,7 @@ def test_partial_gain_values_members_once_and_keeps_scope_marks_separate(monkeyp
 
 
 def test_member_closes_keep_flat_portfolio_and_individual_account_rounding():
+    from decimal import localcontext
     from portfolio_app.performance.personal_performance import HistoryCalculation
 
     journal = Journal(accounts=(Account('a', 'Invented A'), Account('b', 'Invented B')), events=(
@@ -726,6 +727,14 @@ def test_member_closes_keep_flat_portfolio_and_individual_account_rounding():
     assert close.amount == calculation.value(scope, START, 'EUR').amount
     assert members == [D('1e23'), D('0.00008')]
     assert close.amount == D('1e23') and close.amount != sum(members)
+    numeric_only = HistoryCalculation(journal, store)
+    assert numeric_only.close(scope, START, 'EUR').amount == close.amount
+    for cached in (calculation, numeric_only):
+        with localcontext() as context:
+            context.prec = 50
+            fresh, subtotals = cached.value_with_members(scope, START, 'EUR')
+            assert fresh.amount == sum(subtotals) == D('100000000000000000000000.00008')
+        assert cached.value(scope, START, 'EUR') == close
 
 
 @pytest.mark.parametrize('missing_last', [False, True])

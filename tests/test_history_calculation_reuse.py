@@ -44,6 +44,54 @@ def test_standalone_negative_equity_scan_reuses_its_calculation(monkeypatch):
     assert module.calculate_history(journal, scope, obs, START, END).time_weighted == pytest.approx(.2)
 
 
+def test_chart_validation_leaves_exact_close_details_for_the_requested_endpoint(monkeypatch):
+    from datetime import timedelta
+    from test_daily_twr import example
+    from portfolio_app.performance import personal_performance as performance, history_valuation
+    first = date(2024, 1, 1)
+    days = [(first + timedelta(days=i)).isoformat() for i in range(150)]
+    journal, scope, store = example((), quantity=2, prices=[(d, 100+i) for i, d in enumerate(days)], account=True)
+    calculation = HistoryCalculation(journal, store)
+    requested = []
+    original = history_valuation.provenance
+    def observe(row, day):
+        requested.append(day)
+        return original(row, day)
+    monkeypatch.setattr(performance, 'provenance', observe)
+    monkeypatch.setattr(history_valuation, 'provenance', observe)
+    for period in ('1M', 'All'):
+        view = history_view(journal, scope, store, period, today=date.fromisoformat(days[-1]), calculation=calculation)
+        assert view.all_result.ending_value == 698
+        assert view.all_result.valuation_evidence[0].as_of == days[-1]
+    assert days[-1] in requested and len(set(requested)) <= 4
+    assert days[35] not in requested
+    close = calculation.value(scope, days[35], 'EUR')
+    assert close.evidence == (original(store.observations[35], days[35]),)
+    assert close.amount == 470
+    calls = len(requested)
+    assert calculation.value(scope, days[35], 'EUR') is close
+    assert len(requested) == calls
+
+
+@pytest.mark.parametrize('supplied', [False, True])
+def test_retained_missing_or_supplied_close_needs_no_member_revaluation(monkeypatch, supplied):
+    import portfolio_app.performance.personal_performance as performance
+    scope = HistoryScope(('stock',))
+    rows = (Observation('total', 'value', scope.key, START, 150, 'EUR'),) if supplied else ()
+    store = ObservationStore(rows)
+    journal = Journal()
+    complete = performance.value_at(journal, scope, store, START, 'EUR')
+    assert complete.amount == (150 if supplied else None)
+    calc = HistoryCalculation(journal, store)
+    calc.retain_value(scope, START, 'EUR', complete)
+    def unexpected(*args, **kwargs):
+        pytest.fail('A retained aggregate or missing close has no derived member amounts')
+    monkeypatch.setattr(performance, '_resolve_close', unexpected)
+    result, members = calc.value_with_members(scope, START, 'EUR')
+    assert result is complete and not members
+    assert calc.close(scope, START, 'EUR').carried_dates('price', START) == []
+
+
 def test_unrelated_fx_does_not_add_chart_points_or_missing_prices():
     journal = Journal(version=2, securities=(book(E('opening', 'opening', START, quantity=1, amount=10, currency='EUR')),))
     scope = HistoryScope(('stock',))
@@ -296,12 +344,12 @@ def test_full_history_scalars_visit_only_required_closes(monkeypatch, summary):
     view = history_view(journal, scope, store, 'All', today=today)
     assert view.all_result.time_weighted is not None
     calculation = HistoryCalculation(journal, store)
-    value = calculation.value
+    value = calculation.close
     dates = set()
     def observe(scope, stamp, target):
         dates.add(stamp)
         return value(scope, stamp, target)
-    monkeypatch.setattr(calculation, 'value', observe)
+    monkeypatch.setattr(calculation, 'close', observe)
     needed = {today.isoformat(), prices[-1][0], '2024-01-31', start.isoformat()}
     if summary:
         result = full_history_summary(calculation, scope, today, 'EUR')
@@ -309,7 +357,7 @@ def test_full_history_scalars_visit_only_required_closes(monkeypatch, summary):
         needed.add(prices[-2][0])
     else:
         assert full_history_time_weighted(calculation, scope, today, 'EUR') == view.all_result.time_weighted
-    assert dates <= needed
+    assert dates and dates <= needed
 
 
 @pytest.mark.parametrize('case', ['negative close', 'negative boundary', 'corrected boundary',
@@ -383,13 +431,13 @@ def test_one_way_fx_closes_do_not_require_daily_scope_valuations(monkeypatch):
     today = date.fromisoformat(days[-1])
     expected = history_view(journal, scope, store, 'All', today=today).all_result.time_weighted
     assert expected == pytest.approx(.89)
-    value, calls = calculation.value, set()
+    value, calls = calculation.close, set()
     def observe(scope, stamp, target):
         calls.add(stamp)
         return value(scope, stamp, target)
-    monkeypatch.setattr(calculation, 'value', observe)
+    monkeypatch.setattr(calculation, 'close', observe)
     assert full_history_time_weighted(calculation, scope, today, 'EUR') == expected
-    assert calls <= {days[0], days[-1]}
+    assert calls and calls <= {days[0], days[-1]}
 
 
 def test_scalar_twr_checks_reciprocal_fx_carried_into_the_valuation_interval():
@@ -679,11 +727,11 @@ def test_dated_close_shares_fx_across_members_and_preserves_per_member_evidence(
     scope = HistoryScope(('invented',), ('first', 'second'))
     prices = tuple(Observation('p-'+day, 'price', 'invented', day, 20, 'USD') for day in (saturday, monday))
     store = ObservationStore((*prices, Observation('friday-fx', 'fx', 'EUR/USD', friday, 2, 'EUR', target='USD')))
-    calls, original = [], module.valuation_fx
+    calls, original = [], module.valuation_fx_quotes
     def observed(store, source, target, stamp):
         calls.append((source, stamp))
         return original(store, source, target, stamp)
-    monkeypatch.setattr(module, 'valuation_fx', observed)
+    monkeypatch.setattr(module, 'valuation_fx_quotes', observed)
     calc = HistoryCalculation(journal, store)
     weekend, members = calc.value_with_members(scope, saturday, 'EUR')
     assert weekend.amount == D('20.5') and members == [10, 5, D('5.5')]

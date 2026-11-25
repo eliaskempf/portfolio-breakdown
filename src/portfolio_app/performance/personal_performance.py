@@ -12,11 +12,11 @@ from functools import cached_property
 import math
 
 from portfolio_app.ledger.account_journal import effective_events, replay
-from portfolio_app.performance.history_observations import HistoryScope, index_observations, lookup, rate
+from portfolio_app.performance.history_observations import HistoryScope, Observation, index_observations, lookup, rate
 from portfolio_app.ledger.security_history import cash_postings, history_fingerprint, replay_securities, selected_events
 
 from portfolio_app.performance.history_diagnostics import HistoryIssue as Issue
-from portfolio_app.performance.history_valuation import price_at, provenance, valuation_fx, ValuationEvidence
+from portfolio_app.performance.history_valuation import price_at, provenance, valuation_fx_quotes, ValuationEvidence
 
 ZERO = Decimal(0)
 
@@ -26,6 +26,30 @@ class AmountResult:
     amount: Decimal | None
     reasons: tuple[str, ...] = ()
     evidence: tuple[ValuationEvidence, ...] = ()
+
+    def carried_dates(self, kind, stamp):
+        return sorted({row.as_of for row in self.evidence if row.kind == kind and row.as_of != stamp})
+
+    @property
+    def supplied(self):
+        return bool(self.evidence and self.evidence[0].kind == 'value')
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedClose:
+    amount: Decimal | None
+    reasons: tuple[str, ...] = ()
+    quotes: tuple[Observation, ...] = ()
+
+    def carried_dates(self, kind, stamp):
+        return sorted({row.date for row in self.quotes if row.kind == kind and row.date != stamp})
+
+    @property
+    def supplied(self):
+        return bool(self.quotes and self.quotes[0].kind == 'value')
+
+    def detailed(self, stamp):
+        return AmountResult(self.amount, self.reasons, tuple(provenance(row, stamp) for row in self.quotes))
 
 
 @dataclass(frozen=True)
@@ -204,18 +228,36 @@ class HistoryCalculation:
         timeline = self._get(('account_timeline',), lambda: AccountTimeline(self.journal, self._account_postings))
         return timeline.at(stamp)
 
-    def value(self, scope, stamp, target):
-        return self._get(('value', scope, stamp, target), lambda: value_at(
+    def close(self, scope, stamp, target):
+        """Resolve equity and its ordered source rows without constructing display evidence."""
+        return self._get(('value', scope, stamp, target), lambda: _resolve_close(
             self.journal, scope, self.observations, stamp, target, calculation=self))
+
+    def value(self, scope, stamp, target):
+        return self._detailed_value(scope, stamp, target, self.close(scope, stamp, target))
+
+    def _detailed_value(self, scope, stamp, target, close):
+        if isinstance(close, AmountResult):
+            return close
+        # Once requested, keep the detail in the same bounded slot as the source rows.
+        value = close.detailed(stamp)
+        key = ('value', scope, stamp, target)
+        if self._facts.get(key) is close:
+            self._remember(self._facts, key, value)
+        return value
 
     def value_with_members(self, scope, stamp, target):
         """Value one date with each member subtotal for a fully supported, derived close."""
+        close, members = self.close_with_members(scope, stamp, target)
+        return self._detailed_value(scope, stamp, target, close), members
+
+    def close_with_members(self, scope, stamp, target):
         cached = self._facts.get(('value', scope, stamp, target))
-        if cached is not None and (cached.amount is None or (cached.evidence and cached.evidence[0].kind == 'value')):
-            return self.value(scope, stamp, target), ()
+        if cached is not None and (cached.amount is None or cached.supplied):
+            return self.close(scope, stamp, target), ()
         members = []
-        close = value_at(self.journal, scope, self.observations, stamp, target,
-                         calculation=self, member_amounts=members)
+        close = _resolve_close(self.journal, scope, self.observations, stamp, target,
+                               calculation=self, member_amounts=members)
         self.retain_value(scope, stamp, target, close)
         return close, members
 
@@ -498,7 +540,7 @@ def opening_value_at(journal, scope, observations, stamp, target, *, calculation
                 if not event.amount:
                     continue
                 if event.currency not in rates:
-                    rates[event.currency], _ = valuation_fx(observations, event.currency, target, stamp)
+                    rates[event.currency], _ = valuation_fx_quotes(observations, event.currency, target, stamp)
                 fx = rates[event.currency]
                 if fx is None:
                     reasons.append(Issue(f'{account}: missing opening {event.currency}/{target} FX on {stamp}', 'fx'))
@@ -557,7 +599,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
                 total += cost.exact_amount
         else:
             members = HistoryScope((identity,))
-            value = (calculation.value(members, stamp, target) if calculation else
+            value = (calculation.close(members, stamp, target) if calculation else
                      value_at(journal, members, observations, stamp, target))
             reasons.extend(value.reasons)
             if value.amount is not None:
@@ -574,15 +616,21 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
 
 def value_at(journal, scope, observations, stamp, target, *, calculation=None, member_amounts=None):
     """Dated equity with supported closing-price and FX closure conventions."""
+    close = _resolve_close(journal, scope, observations, stamp, target, calculation=calculation,
+                           member_amounts=member_amounts)
+    return close.detailed(stamp)
+
+
+def _resolve_close(journal, scope, observations, stamp, target, *, calculation=None, member_amounts=None):
     if scope.unresolved:
-        return AmountResult(None, scope.unresolved)
+        return _ResolvedClose(None, scope.unresolved)
     supplied = lookup(observations, 'value', scope.key, stamp, currency=target)
     if supplied:
-        return AmountResult(supplied.amount, evidence=(provenance(supplied, stamp),))
+        return _ResolvedClose(supplied.amount, quotes=(supplied,))
     states = _security_positions_at(journal, scope, stamp, calculation)
     accounts = (calculation.accounts(stamp) if calculation else replay(journal, as_of=stamp)) if scope.accounts else None
     books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
-    total, reasons, evidence = ZERO, [], []
+    total, reasons, quotes = ZERO, [], []
 
     # Every component of this close uses the same dated evidence for its currency.
     rates = {}
@@ -592,8 +640,8 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None, m
         if amount == 0:
             return
         if denomination not in rates:
-            rates[denomination] = valuation_fx(observations, denomination, target, stamp)
-        fx, fx_evidence = rates[denomination]
+            rates[denomination] = valuation_fx_quotes(observations, denomination, target, stamp)
+        fx, fx_quotes = rates[denomination]
         value = amount*fx if amount is not None and fx is not None else None
         if value is None:
             reasons.append(Issue(f'{identity}: missing value or {denomination}/{target} FX on {stamp}', 'fx'))
@@ -601,7 +649,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None, m
             total += value
             if member_amounts is not None:
                 member_amounts[-1] += value
-            evidence.extend(fx_evidence)
+            quotes.extend(fx_quotes)
 
     for identity in scope.positions:
         if member_amounts is not None:
@@ -623,7 +671,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None, m
         if price is None:
             reasons.append(Issue(f'{identity}: missing price on {stamp}', 'price'))
         else:
-            evidence.append(provenance(price, stamp))
+            quotes.append(price)
             add(state.quantity * price.amount, price.currency, identity)
     events = calculation._account_events if calculation else effective_events(journal)
     from portfolio_app.ledger.account_inception import account_inceptions
@@ -656,14 +704,14 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None, m
             if price is None or price.currency != balance.contract.currency:
                 reasons.append(Issue(f'{identity}: missing exact-contract mark on {stamp}', 'price'))
             else:
-                evidence.append(provenance(price, stamp))
+                quotes.append(price)
                 add(balance.unsettled_pnl(price.amount), balance.contract.currency, identity)
         for identity, claim in accounts.pending.items():
             if claim.account_id == account:
                 add(claim.amount, claim.currency, identity)
     if reasons and member_amounts:
         member_amounts.clear()
-    return AmountResult(None if reasons else total, tuple(reasons), tuple(evidence))
+    return _ResolvedClose(None if reasons else total, tuple(reasons), tuple(quotes))
 
 
 def unresolved_receipts(journal):
@@ -957,7 +1005,7 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
         if not start <= stamp <= end or stamp in negative:
             continue
         value = (valuations[stamp] if valuations is not None and stamp in valuations else
-                 calculation.value(scope, stamp, target))
+                 calculation.close(scope, stamp, target))
         if value.amount is not None and value.amount < 0:
             negative.add(stamp)
     return tuple(sorted(negative))

@@ -213,7 +213,7 @@ def _calculate_gain(calculation, scope, end, target, *, estimate_notes, member_c
         dates = calculation.event_dates(scope)
         if dates and dates[0] <= end:
             basis = calculation.period_capital(scope, dates[0], end, target)
-            value = calculation.value(scope, end, target).amount
+            value = calculation.close(scope, end, target).amount
             if basis.invested_capital is not None:
                 if current_values is not None:
                     values = [current_values.get(i) for i in scope.positions]
@@ -241,7 +241,7 @@ def _calculate_gain(calculation, scope, end, target, *, estimate_notes, member_c
         has_history = part.first_date is not None and part.first_date <= end
         # Historical valuations also validate dated FX when a current quote overrides them.
         if member_closes is None:
-            historical_value = calculation.value(member, end, target).amount if has_history or current_values is None else None
+            historical_value = calculation.close(member, end, target).amount if has_history or current_values is None else None
         else:
             historical_value = member_closes[index]
             if ('value', member.key) in calculation.observations.scope_rows:

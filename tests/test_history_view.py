@@ -270,15 +270,15 @@ def test_short_chart_uses_visible_closes_and_preserves_all_history(monkeypatch):
     today = date.fromisoformat(dates[-1])
     all_history = history_view(journal, scope, store, 'All', today=today)
     calculation = HistoryCalculation(journal, store)
-    value_at, requested = calculation.value, set()
+    value_at, requested = calculation.close, set()
     def observe(scope, day, target):
         requested.add(day)
         return value_at(scope, day, target)
-    monkeypatch.setattr(calculation, 'value', observe)
+    monkeypatch.setattr(calculation, 'close', observe)
     chart = history_view(journal, scope, store, '1M', today=today, calculation=calculation)
     assert chart.all_result == all_history.all_result and chart.all_known == all_history.all_known
     assert chart.useful and chart.points == tuple(p for p in all_history.points if p['Date'] >= chart.requested_start)
-    assert requested <= {dates[0], *(day for day in dates if day >= chart.requested_start)}
+    assert requested and requested <= {dates[0], *(day for day in dates if day >= chart.requested_start)}
 
 
 @pytest.mark.parametrize('earlier_marks', [0, 1, 2])
@@ -324,18 +324,18 @@ def test_cash_scope_reuses_validated_closes_after_point_cache_eviction(monkeypat
                  include_points=False, calculation=calculation)
     calculation._facts.clear()
     requested = set()
-    original = calculation.value
+    original = calculation.close
     def track(selection, day, target):
         if selection == scope:
             if not requested:
                 calculation._validated_history_dates.clear()
             requested.add(day)
         return original(selection, day, target)
-    monkeypatch.setattr(calculation, 'value', track)
+    monkeypatch.setattr(calculation, 'close', track)
     view = history_view(journal, scope, store, '1M', today=today, calculation=calculation)
     assert view == history_view(journal, scope, store, '1M', today=today)
     assert view.all_result.time_weighted is None
-    assert not requested.intersection(days[1:130])
+    assert requested and not requested.intersection(days[1:130])
 
 
 def test_unrecorded_range_boundary_can_extend_only_its_own_supported_history():

@@ -80,12 +80,12 @@ class _ValidatedDates:
 def _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
                  *, annualized, coverage, valuations=None, extra=None, retain_for_chart=False):
     def value(day):
-        return valuations[day] if valuations is not None else calculation.value(scope, day, target)
+        return valuations[day] if valuations is not None else calculation.close(scope, day, target)
 
     new_coverage = None
     needs_scan = _requires_full_valuation_scan(scope, recorded)
     if needs_scan and coverage is None and valuations is None:
-        valuations = {day: calculation.value(scope, day, target) for day in stamps}
+        valuations = {day: calculation.close(scope, day, target) for day in stamps}
     if coverage is not None:
         negative = coverage.negative_dates
     elif valuations is not None:
@@ -141,7 +141,7 @@ def full_history_summary(calculation, scope, today, target):
     """Return the checklist metrics and whether two distinct dates have supported valuations."""
     start, end, result, stamps = _full_interval(calculation, scope, today, target, annualized=True)
     useful = result.ending_value is not None and any(
-        calculation.value(scope, day, target).amount is not None for day in reversed(stamps) if day < end)
+        calculation.close(scope, day, target).amount is not None for day in reversed(stamps) if day < end)
     return HistorySummary(start, end, result, useful)
 
 
@@ -152,18 +152,18 @@ def _chart_valuations(calculation, scope, target, stamps, beginning, first, last
     collect = (include_points and not scope.unresolved and len(scope.positions) + len(scope.accounts) > 1
                and calculation.capital(scope, beginning, target).amount is None)
     if not collect:
-        return {day: calculation.value(scope, day, target) for day in days}, {}, None
+        return {day: calculation.close(scope, day, target) for day in days}, {}, None
 
     valuations, gains, last_members = {}, {}, None
     for day in days:
         members = ()
         cached = calculation._chart_gains.get((scope, day, target))
         if not first <= day <= last or cached is not None:
-            valuations[day] = calculation.value(scope, day, target)
+            valuations[day] = calculation.close(scope, day, target)
             if cached is not None and first <= day <= last:
                 gains[day] = cached  # A very long chart can evict this before rendering the point.
         else:
-            valuations[day], members = calculation.value_with_members(scope, day, target)
+            valuations[day], members = calculation.close_with_members(scope, day, target)
         # Only a later supported close establishes that the previous one needs
         # chart amounts. The final supported close supplies the detailed summary.
         if last_members is not None and valuations[day].amount is not None:
@@ -201,7 +201,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     if validated_useful is None and not useful and not full_scan and all_result.ending_value is not None:
         # The last supported endpoint is known; an earlier close can establish
         # chart availability even when the visible window is entirely empty.
-        useful = any(calculation.value(scope, day, target).amount is not None
+        useful = any(calculation.close(scope, day, target).amount is not None
                      for day in reversed(stamps) if day < min(first, all_end))
     def gain_point(day):
         if day in projected_gains:
@@ -248,8 +248,8 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         points.append({'Date':stamp, 'Value':float(values[stamp]) if values[stamp] is not None else None,
             'Invested capital':float(invested) if invested is not None else None,
             'Total gain':float(gain) if gain is not None else None,
-            'Price as of': ', '.join(sorted({e.as_of for e in valuations[stamp].evidence if e.kind == 'price' and e.as_of != stamp})),
-            'FX as of': ', '.join(sorted({e.as_of for e in valuations[stamp].evidence if e.kind == 'fx' and e.as_of != stamp})),
+            'Price as of': ', '.join(valuations[stamp].carried_dates('price', stamp)),
+            'FX as of': ', '.join(valuations[stamp].carried_dates('fx', stamp)),
             'TWR':returns.get(stamp)})
     # Rendering may join neighbors; missing observations stay missing in math.
     gaps = tuple((stamp,valuations[stamp].reasons) for stamp in stamps if start <= stamp <= end and values[stamp] is None)

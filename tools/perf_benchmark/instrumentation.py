@@ -47,14 +47,14 @@ def observe_server(trial):
                 return original_members(book, event)
             gain_accounting.affected_positions = measured_members
 
-            original_fx = performance.valuation_fx
+            original_fx = performance.valuation_fx_quotes
             def measured_fx(*args, **kwargs):
                 if getattr(work, 'scope', None) is not None:
                     work.fx_lookups += 1
                 return original_fx(*args, **kwargs)
-            performance.valuation_fx = measured_fx
+            performance.valuation_fx_quotes = measured_fx
 
-            original_value = performance.value_at
+            original_value = performance._resolve_close
             def measured_value(journal, scope, *args, **kwargs):
                 selected = getattr(work, 'scope', None)
                 if selected is not None:
@@ -64,7 +64,7 @@ def observe_server(trial):
                 elif selected is not None and len(scope.positions) + len(scope.accounts) == 1:
                     work.member_closes += 1
                 return original_value(journal, scope, *args, **kwargs)
-            performance.value_at = measured_value
+            performance._resolve_close = measured_value
 
         original_chart = views.history_view
         def measured_chart(*args, **kwargs):

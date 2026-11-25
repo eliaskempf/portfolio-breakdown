@@ -41,7 +41,7 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
     value = current_value
     if value is None:
         scope = HistoryScope((identity,))
-        value = (calculation.value(scope, end, target) if calculation else
+        value = (calculation.close(scope, end, target) if calculation else
                  value_at(journal, scope, observations, end, target)).amount
     if recorded.remaining_cost is not None:
         return replace(recorded, unrealized=value-recorded.remaining_cost if value is not None else None)

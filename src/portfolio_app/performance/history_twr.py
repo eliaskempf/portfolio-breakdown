@@ -35,7 +35,7 @@ def _daily_boundaries(calculation, scope, start, end, target, opening, ending, f
         # Other history metrics share this dated monetary value. Use their
         # precision even while the return ratios compound at higher precision.
         with localcontext(valuation_context):
-            return calculation.value(scope, day, target)
+            return calculation.close(scope, day, target)
 
     with localcontext() as context:
         context.prec = 50

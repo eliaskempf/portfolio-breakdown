@@ -171,11 +171,11 @@ def test_opening_values_cash_debt_and_claim_with_the_same_closing_fx(monkeypatch
                                           side='after', boundary='funding'),
                               Observation('close', 'fx', 'USD/EUR', OPEN, D('.8'), 'USD', target='EUR')))
     calls = []
-    original = performance.valuation_fx
+    original = performance.valuation_fx_quotes
     def rate(*args):
         calls.append(args[1:])
         return original(*args)
-    monkeypatch.setattr(performance, 'valuation_fx', rate)
+    monkeypatch.setattr(performance, 'valuation_fx_quotes', rate)
     scope = HistoryScope(accounts=('cash',))
     assert opening_value_at(journal, scope, store, OPEN, 'EUR').amount == 88
     assert calls == [('USD', 'EUR', OPEN)]
