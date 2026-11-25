@@ -165,7 +165,15 @@ class _ObservationIndex:
         for observation in self.active:
             if observation.kind == 'price' and observation.side == 'close':
                 series = self.closing_prices.setdefault(observation.subject, {})
-                series.setdefault(observation.date, []).append(observation)
+                # Most dates have one close. Allocate a group only when another
+                # active row competes for the same subject and date.
+                previous = series.get(observation.date)
+                if previous is None:
+                    series[observation.date] = observation
+                elif isinstance(previous, list):
+                    previous.append(observation)
+                else:
+                    series[observation.date] = [previous, observation]
                 continue
             key = observation.kind, observation.subject, observation.date, observation.side, observation.boundary
             self.values.setdefault(key, []).append(observation)
@@ -268,13 +276,16 @@ def lookup(store, kind, subject, stamp, *, side='close', boundary='', currency=N
         values = series.get(stamp, ()) if series is not None else ()
     else:
         values = index.values.get((kind, subject, stamp, side, boundary), ())
-    if len(values) == 1:
+    if isinstance(values, Observation):
+        row = values
+    elif len(values) == 1:
         row = values[0]
-        return row if row.boundary == boundary and (currency is None or row.currency == currency) else None
-    if not values:
+    elif not values:
         return None
-    matches = [o for o in values if o.boundary == boundary and (currency is None or o.currency == currency)]
-    return matches[0] if len(matches) == 1 else None
+    else:
+        matches = [o for o in values if o.boundary == boundary and (currency is None or o.currency == currency)]
+        return matches[0] if len(matches) == 1 else None
+    return row if row.boundary == boundary and (currency is None or row.currency == currency) else None
 
 
 class ObservationFX:

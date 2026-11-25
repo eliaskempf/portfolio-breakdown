@@ -156,6 +156,21 @@ def test_validated_active_rows_are_shared_and_rebuilt_for_corrections():
         replace(current, observations=(*current.observations, replace(first, id='competing')))
 
 
+def test_closing_index_allocates_candidate_groups_only_for_ambiguous_dates():
+    from datetime import date, timedelta
+    from portfolio_app.performance.history_observations import lookup
+    quotes = tuple(Observation(str(i), 'price', 'A', (date(2024, 1, 1) + timedelta(days=i)).isoformat(),
+                               10, 'EUR') for i in range(300))
+    alternate = replace(quotes[-1], id='alternate', currency='USD')
+    third = replace(quotes[-1], id='third', currency='CHF')
+    index = ObservationStore((*quotes, alternate, third)).index
+    series = index.closing_prices['A']
+    assert all(series[q.date] is q for q in quotes[:-1])
+    assert lookup(index, 'price', 'A', quotes[-1].date) is None
+    for row in (quotes[-1], alternate, third):
+        assert lookup(index, 'price', 'A', row.date, currency=row.currency) is row
+
+
 def test_exact_and_carried_lookups_share_the_corrected_close_candidates(monkeypatch):
     from portfolio_app.performance.history_observations import lookup
     from portfolio_app.performance import history_observations, history_valuation

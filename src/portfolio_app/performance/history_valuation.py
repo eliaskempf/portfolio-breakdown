@@ -185,10 +185,9 @@ def price_at(observations, subjects, stamp, *, events=(), contract=None):
         index = bisect_right(dates, stamp)-1
         if index < 0:
             continue
-        candidates = observations.closing_prices[subject][dates[index]]
-        if len(candidates) != 1:
+        previous = observations.closing_prices[subject][dates[index]]
+        if isinstance(previous, list):
             continue
-        previous = candidates[0]
         if contract is not None:
             from portfolio_app.derivatives.futures_sessions import closed_interval as futures_closed_interval
             if futures_closed_interval(contract, previous.date, stamp):
