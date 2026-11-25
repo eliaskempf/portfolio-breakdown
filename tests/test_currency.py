@@ -247,6 +247,73 @@ def test_missing_current_fx_is_unknown_not_zero():
     assert pd.isna(result.unrealized_gain_reporting.iloc[0])
 
 
+def test_forced_portfolio_valuation_reads_each_held_cost_fx_leg_once_per_pass():
+    from collections import Counter
+
+    class ChangingProvider(InventedPrices):
+        def __init__(self):
+            self.requests = Counter()
+
+        def price(self, ticker):
+            if ticker == 'SYN-MISSING':
+                raise ValueError('No invented quote')
+            return super().price(ticker)
+
+        def fx(self, currency):
+            self.requests[currency] += 1
+            rates = {'USD': .8, 'GBP': 1.25 if self.requests['GBP'] == 1 else 1., 'CHF': 1.1}
+            return Quote(rates.get(currency, .5), 'EUR', NOW)
+
+    frame = parse_holdings(
+        'id,name,ticker,shares,acquisition_price,acquisition_currency\n'
+        'same,Invented USD,SYN-ONE,1,100,USD\n'
+        'cross,Invented CHF,SYN-TWO,2,20,CHF\n'
+        'zero,Invented zero basis,SYN-THREE,1,0,CHF\n'
+        'sold,Invented sold,SYN-SOLD,0,10,CAD\n'
+        'unknown,Invented no cost,SYN-FOUR,1,,AUD\n'
+        'missing,Invented no price,SYN-MISSING,1,20,NZD\n')
+    provider = ChangingProvider()
+    prices = PriceService(provider, now=lambda: NOW)
+    for run, gbp in enumerate((1.25, 1.), start=1):
+        result = prepare_portfolio(frame, prices, refresh=True, reporting_currency='GBP').set_index('id')
+        assert provider.requests == {'USD': run, 'GBP': run, 'CHF': run, 'NZD': run}
+        assert result.at['same', 'unrealized_gain'] == 20
+        assert result.at['cross', 'current_value_reporting'] == pytest.approx(240 * .8 / gbp)
+        assert result.at['cross', 'unrealized_gain'] == pytest.approx(240 * .8 / 1.1 - 40)
+        assert result.at['zero', 'unrealized_gain'] == pytest.approx(120 * .8 / 1.1)
+        assert result.loc[['missing', 'sold', 'unknown'], 'unrealized_gain'].isna().all()
+        assert result.unrealized_gain_reporting.drop('zero').isna().all()
+        assert result.at['zero', 'unrealized_gain_reporting'] == pytest.approx(120 * .8 / gbp)
+
+
+def test_manual_value_and_native_gain_share_fallback_until_next_refresh():
+    from portfolio_app.market.prices import QuoteSnapshot
+
+    class IntermittentProvider(InventedPrices):
+        attempts = 0
+
+        def fx(self, currency):
+            if currency == 'GBP':
+                self.attempts += 1
+                if self.attempts == 2:
+                    raise ValueError('Invented temporary outage')
+                return Quote(1.25 if self.attempts == 1 else 1., 'EUR', NOW)
+            return Quote({'USD': .8, 'CHF': 1.1}[currency], 'EUR', NOW)
+
+    provider = IntermittentProvider()
+    prices = PriceService(provider, now=lambda: NOW)
+    prices.fx('GBP')
+    rows = holding(currency='CHF').assign(manual_price=120., manual_price_currency='USD',
+                                           manual_price_date='2026-09-01')
+    quotes = QuoteSnapshot(prices)
+    for source, status, rate in ((quotes, 'stale', 1.25), (quotes, 'stale', 1.25), (prices, 'fresh', 1.)):
+        row = prepare_portfolio(rows, source, refresh=True, reporting_currency='GBP').iloc[0]
+        assert row.fx_status == status
+        assert row.current_value_reporting == pytest.approx(120 * .8 / rate)
+        assert row.unrealized_gain == pytest.approx(120 * .8 / 1.1 - 100)
+    assert provider.attempts == 3
+
+
 def test_stale_rates_cannot_be_confirmed_as_new_estimates(prices):
     from datetime import timedelta
     current_rate(prices, 'USD', 'EUR')
