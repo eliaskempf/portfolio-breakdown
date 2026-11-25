@@ -18,7 +18,7 @@ from portfolio_app.workspace.workspace_lock import workspace_lock
 _RECORDS = {cls.__name__: cls for cls in (HistoryView, PersonalPerformance, ValuationEvidence, GainSummary)}
 _LIMIT = 2 * 1024 * 1024
 # Increment for changes to valuation, coverage, calendar or return semantics.
-_SCHEMA = 2
+_SCHEMA = 3
 
 
 @lru_cache(maxsize=1)
