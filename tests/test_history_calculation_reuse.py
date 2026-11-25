@@ -511,6 +511,37 @@ def test_position_capital_tracks_its_payments_and_delayed_charges(monkeypatch):
     assert rebuilt == [days[0], days[1], days[3]]
 
 
+def test_capital_searches_event_dates_only_when_crossing_an_interval(monkeypatch):
+    import portfolio_app.performance.personal_performance as module
+    journal = Journal(version=2, securities=(book(
+        E('open', 'opening', '2024-01-05', source='confirmed_zero_start'),
+        E('buy', 'buy', '2024-01-10', quantity=1, price=10, currency='EUR', charges_known=True)),))
+    store, scope, start = ObservationStore(), HistoryScope(('stock',)), '2024-01-01'
+    days = [f'2024-01-{day:02}' for day in (2, 4, 5, 9, 6, 10, 17, 14, 9, 5, 2, 3)]
+    expected = [module._period_capital(HistoryCalculation(journal, store), scope, start, day, 'EUR') for day in days]
+    calculation = HistoryCalculation(journal, store)
+    dates = calculation.event_dates(scope)
+    searched = []
+    bisect = module.bisect_right
+    def counted(sequence, day):
+        if sequence is dates:
+            searched.append(day)
+        return bisect(sequence, day)
+    monkeypatch.setattr(module, 'bisect_right', counted)
+    actual = [calculation.period_capital(scope, start, day, 'EUR') for day in days]
+    assert actual == expected
+    assert [basis.invested_capital for basis in actual] == [0, 0, 0, 0, 0, 10, 10, 10, 0, 0, 0, 0]
+    assert len(searched) <= 5  # Five intervals visited, including two revisits.
+
+    # A later opening can need a price and the other reporting currency needs FX.
+    for lower, target in [('2024-01-10', 'EUR'), (start, 'USD'), (start, 'EUR')]:
+        day = '2024-01-17'
+        assert calculation.period_capital(scope, lower, day, target) == module._period_capital(
+            HistoryCalculation(journal, store), scope, lower, day, target)
+    calculation._facts.clear()
+    assert calculation.period_capital(scope, start, days[0], 'EUR') == expected[0]
+
+
 def test_cashflows_change_capital_without_rechecking_unchanged_ledger_coverage(monkeypatch):
     from portfolio_app.ledger.account_journal import Account, Event
     import portfolio_app.performance.personal_performance as module

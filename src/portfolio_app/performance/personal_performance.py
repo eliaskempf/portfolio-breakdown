@@ -38,6 +38,13 @@ class PeriodCapital:
     estimated: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class _CapitalInterval:
+    since: str | None
+    until: str | None
+    capital: PeriodCapital
+
+
 @dataclass(frozen=True)
 class ExternalFlow:
     id: str
@@ -141,11 +148,17 @@ class HistoryCalculation:
     def _get(self, key, load, *, cache=None):
         cache = self._facts if cache is None else cache
         if key not in cache:
-            cache[key] = load()
+            return self._remember(cache, key, load())
+        cache.move_to_end(key)
+        return cache[key]
+
+    @staticmethod
+    def _remember(cache, key, value):
+        cache[key] = value
         cache.move_to_end(key)
         while len(cache) > 8192:
             cache.popitem(last=False)
-        return cache[key]
+        return value
 
     def event_dates(self, scope):
         from portfolio_app.performance.gain_accounting import ScopeEventDates
@@ -316,16 +329,21 @@ class HistoryCalculation:
 
     def period_capital(self, scope, start, end, target):
         """Opening value, cash and cost evidence are independent of the closing mark."""
-        latest = self._get(('period_capital', scope, start, target), dict)
+        key = ('period_capital', scope, start, target)
+        latest = self._facts.get(key)
+        if (latest is not None and (latest.since is None or latest.since <= end)
+                and (latest.until is None or end < latest.until)):
+            self._facts.move_to_end(key)
+            return latest.capital
         dates = self._capital_dates
         if len(scope.positions) == 1 and not scope.accounts:
             dates = self._get(('position_capital_dates', scope.positions[0]), lambda: self._position_capital_dates(scope))
         boundary = bisect_right(dates, end)
-        if boundary not in latest:
-            result = _period_capital(self, scope, start, end, target)
-            latest.clear()
-            latest[boundary] = result
-        return latest[boundary]
+        capital = _period_capital(self, scope, start, end, target)
+        since = dates[boundary-1] if boundary else None
+        until = dates[boundary] if boundary < len(dates) else None
+        self._remember(self._facts, key, _CapitalInterval(since, until, capital))
+        return capital
 
     def flow_inputs(self):
         def load():
