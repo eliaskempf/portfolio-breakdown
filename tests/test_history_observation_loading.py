@@ -154,3 +154,61 @@ def test_validated_active_rows_are_shared_and_rebuilt_for_corrections():
         replace(current, observations=(*current.observations, replace(corrected, id='fork')))
     with pytest.raises(DataError, match='competing valuation'):
         replace(current, observations=(*current.observations, replace(first, id='competing')))
+
+
+def test_exact_and_carried_lookups_share_the_corrected_close_candidates(monkeypatch):
+    from portfolio_app.performance.history_observations import lookup
+    from portfolio_app.performance import history_observations, history_valuation
+
+    first = Observation('first', 'price', 'A', '2024-01-01', 10, 'EUR',
+                        listing='invented', calendar='XNYS', exchange_timezone='America/New_York')
+    corrected = replace(first, id='corrected', replaces=first.id, amount=12)
+    usd = replace(first, id='usd', currency='USD', amount=14)
+    boundary = replace(first, id='before-sale', side='before', boundary='sale')
+    store = ObservationStore((first, usd, boundary, corrected))
+    key = ('price', 'A', first.date)
+    assert lookup(store, *key, currency='EUR') is corrected
+    assert 'index' not in vars(store)
+    for source in (store, store.index):
+        assert lookup(source, *key) is None
+        assert lookup(source, *key, currency='USD') is usd
+        assert lookup(source, *key, currency='EUR') is corrected
+        assert lookup(source, *key, currency='GBP') is None
+        assert lookup(source, *key, side='before', boundary='sale') is boundary
+        assert lookup(source, *key, side='after', boundary='sale') is None
+    monkeypatch.setattr(history_valuation, 'closed_interval', lambda *args: True)
+    assert history_valuation.price_at(store, ('A',), '2024-01-02') is None
+    single = ObservationStore((first, corrected))
+    assert history_valuation.price_at(single, ('A',), '2024-01-02') is corrected
+    # Previously accepted files may contain a null close boundary. The canonical
+    # exact lookup excludes it, but a carry still requires a single closing row.
+    legacy = replace(usd, boundary=None)
+    both = ObservationStore((first, corrected, legacy))
+    assert lookup(both.index, *key) is corrected
+    assert history_valuation.price_at(both, ('A',), '2024-01-02') is None
+
+    def unexpected_scan(source):
+        pytest.fail('A point lookup scanned a store that already has a validated index')
+
+    monkeypatch.setattr(history_observations, 'active_observations', unexpected_scan)
+    assert lookup(store, *key, currency='USD') is usd
+
+
+def test_indexed_boundary_lookup_only_inspects_the_requested_flow(monkeypatch):
+    from portfolio_app.performance.history_observations import lookup
+
+    rows = tuple(Observation(str(i), 'value', 'scope', '2024-01-01', i, 'EUR',
+                             side='before', boundary=f'flow-{i}') for i in range(100))
+    index = ObservationStore(rows).index
+    checked = []
+    original = Observation.__getattribute__
+
+    def observed(row, name):
+        if name == 'boundary':
+            checked.append(row)
+        return original(row, name)
+
+    monkeypatch.setattr(Observation, '__getattribute__', observed)
+    for i, row in enumerate(rows):
+        assert lookup(index, 'value', 'scope', '2024-01-01', side='before', boundary=f'flow-{i}') is row
+    assert len(checked) <= len(rows)

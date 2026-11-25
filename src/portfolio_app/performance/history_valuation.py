@@ -181,12 +181,11 @@ def price_at(observations, subjects, stamp, *, events=(), contract=None):
         if exact:
             return exact
     for subject in subjects:
-        series = observations.price_series.get(subject, ())
         dates = observations.price_dates.get(subject, ())
         index = bisect_right(dates, stamp)-1
         if index < 0:
             continue
-        candidates = series[index]
+        candidates = observations.closing_prices[subject][dates[index]]
         if len(candidates) != 1:
             continue
         previous = candidates[0]

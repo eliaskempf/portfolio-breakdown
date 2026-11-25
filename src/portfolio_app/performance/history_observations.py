@@ -161,19 +161,18 @@ class _ObservationIndex:
     def __init__(self, store):
         self.observations, self.reviews, self.classifications = store.observations, store.reviews, store.classifications
         self.active = active_observations(store)
-        self.values, self.fx = {}, {}
-        prices = {}
+        self.closing_prices, self.values, self.fx = {}, {}, {}
         for observation in self.active:
+            if observation.kind == 'price' and observation.side == 'close':
+                series = self.closing_prices.setdefault(observation.subject, {})
+                series.setdefault(observation.date, []).append(observation)
+                continue
             key = observation.kind, observation.subject, observation.date, observation.side, observation.boundary
             self.values.setdefault(key, []).append(observation)
-            if observation.kind == 'price' and observation.side == 'close':
-                prices.setdefault(observation.subject, {}).setdefault(observation.date, []).append(observation)
             if observation.kind == 'fx':
                 self.fx.setdefault(observation.date, []).append(observation)
 
-        self.price_dates = {subject: tuple(sorted(series)) for subject, series in prices.items()}
-        self.price_series = {subject: tuple(series[stamp] for stamp in self.price_dates[subject])
-                             for subject, series in prices.items()}
+        self.price_dates = {subject: tuple(sorted(series)) for subject, series in self.closing_prices.items()}
 
     @cached_property
     def scope_rows(self):
@@ -257,11 +256,24 @@ def rate(store, source, target, stamp, *, side=None):
 
 
 def lookup(store, kind, subject, stamp, *, side='close', boundary='', currency=None):
-    values = (store.values.get((kind, subject, stamp, side, boundary), ()) if isinstance(store, _ObservationIndex)
-              else active_observations(store))
-    matches = [o for o in values if o.kind == kind and o.subject == subject
-               and o.date == stamp and o.side == side and o.boundary == boundary
-               and (currency is None or o.currency == currency)]
+    index = store if isinstance(store, _ObservationIndex) else vars(store).get('index')
+    if index is None:
+        # A single manual correction or supplied valuation need not index the entire history.
+        matches = [o for o in active_observations(store) if o.kind == kind and o.subject == subject
+                   and o.date == stamp and o.side == side and o.boundary == boundary
+                   and (currency is None or o.currency == currency)]
+        return matches[0] if len(matches) == 1 else None
+    if kind == 'price' and side == 'close':
+        series = index.closing_prices.get(subject)
+        values = series.get(stamp, ()) if series is not None else ()
+    else:
+        values = index.values.get((kind, subject, stamp, side, boundary), ())
+    if len(values) == 1:
+        row = values[0]
+        return row if row.boundary == boundary and (currency is None or row.currency == currency) else None
+    if not values:
+        return None
+    matches = [o for o in values if o.boundary == boundary and (currency is None or o.currency == currency)]
     return matches[0] if len(matches) == 1 else None
 
 
