@@ -1,7 +1,7 @@
 """Exact-version parsing and invalidation using only invented dated observations."""
 from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
-from dataclasses import FrozenInstanceError, asdict, replace
+from dataclasses import FrozenInstanceError, asdict, dataclass, replace
 from decimal import Decimal as D
 import json
 import os
@@ -144,6 +144,59 @@ def test_save_reuses_its_independently_validated_bytes_on_reload(tmp_path, monke
     # A direct editor may correct the same file without going through the saver.
     (tmp_path / module.FILE).write_text(content(47))
     assert module.load_observations(tmp_path)[0].observations[0].amount == 47 and parse.call_count == 4
+
+
+def test_observation_document_matches_saved_bytes_without_deep_copying_scalar_rows(monkeypatch):
+    import portfolio_app.performance.history_observations as module
+
+    @dataclass(frozen=True)
+    class NestedEvidence:
+        entries: tuple
+
+    @dataclass(frozen=True)
+    class ExtendedRow(Observation):
+        extension: str = 'invented'
+
+    @dataclass(frozen=True)
+    class ExtendedStore(ObservationStore):
+        extra: tuple = ('invented',)
+
+    row = Observation('invented', 'value', 'scope', '2024-01-02', D('1.2300'), 'EUR',
+                      source='Invented "Börse"\nclose')
+    object.__setattr__(row, 'display_only', 'excluded')
+    nested = replace(row, id='nested', subject='other', basis=NestedEvidence(({'x': D('0.00')},)))
+    extra = ExtendedRow(**(asdict(row) | {'id': 'extension', 'subject': 'third'}))
+    review = module.CoverageReview('review', module.HistoryScope(('scope',)), row.date, row.date, '0' * 64)
+    store = ObservationStore((row, nested, extra), (review,), (('cash', 'income'),))
+    assert store.index.active == store.observations and review.scope.key
+    copied = []
+
+    def tracked_asdict(value):
+        copied.append(value)
+        return asdict(value)
+
+    monkeypatch.setattr(module, 'asdict', tracked_asdict)
+    for source in (ObservationStore(), store, ExtendedStore(store.observations)):
+        expected = json.dumps(asdict(source), default=str, indent=2, allow_nan=False) + '\n'
+        assert module._observation_document(source).encode() == expected.encode()
+    assert all(not value.observations for value in copied if type(value) is ObservationStore)
+    assert all(value is not row for value in copied)
+    assert nested in copied and extra in copied
+
+
+def test_unencodable_nested_evidence_preserves_saved_file_and_backup_state(tmp_path):
+    import portfolio_app.performance.history_observations as module
+
+    row = Observation('invented', 'value', 'scope', '2024-01-02', D(1), 'EUR')
+    module.save_observations(tmp_path, ObservationStore((row,)), None)
+    path = tmp_path / module.FILE
+    original = path.read_bytes()
+    _, revision = load_observations(tmp_path)
+    changed = replace(row, basis={'invented': [float('nan')]})
+    with pytest.raises(ValueError, match='Out of range float'):
+        module.save_observations(tmp_path, ObservationStore((changed,)), revision)
+    assert path.read_bytes() == original
+    assert not (tmp_path / '.backups').exists()
 
 
 def test_delayed_cache_publication_cannot_hide_a_newer_saved_revision(tmp_path, monkeypatch):

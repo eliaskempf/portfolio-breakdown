@@ -1,11 +1,14 @@
 """Versioned dated valuation evidence and coverage attestations, never cash posts."""
 from collections import OrderedDict
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from decimal import Decimal
 from hashlib import sha256
 from functools import cached_property, lru_cache
+from io import StringIO
 import json
+from operator import attrgetter
 from pathlib import Path
+import sys
 from threading import Lock
 from weakref import WeakValueDictionary
 
@@ -267,8 +270,43 @@ def load_observations(directory):
         raise DataError(f'Invalid historical observations; file retained: {exc}') from exc
 
 
+_observation_fields = tuple(field.name for field in fields(Observation))
+_observation_values = attrgetter(*_observation_fields)
+_scalar_field_types = frozenset({str, Decimal})
+
+
+def _observation_record(row):
+    if type(row) is Observation:
+        values = _observation_values(row)
+        if _scalar_field_types.issuperset(map(type, values)):
+            return dict(zip(_observation_fields, values))
+    # Preserve recursive dataclass conversion for legacy or extended records.
+    return asdict(row)
+
+
+def _observation_records(store):
+    if type(store) is ObservationStore and store.observations:
+        document = asdict(replace(store, observations=()))
+        document['observations'] = [_observation_record(row) for row in store.observations]
+        return document
+    return asdict(store)
+
+
+def _observation_document(store):
+    encoder = json.JSONEncoder(default=str, indent=2, allow_nan=False)
+    if sys.version_info >= (3, 13):
+        # The accelerated encoder gained indentation support in CPython 3.13.
+        return encoder.encode(_observation_records(store)) + '\n'
+    # On 3.12 encode() collects millions of small indentation tokens before
+    # joining them. Accumulate the same tokens directly in a text buffer.
+    with StringIO() as output:
+        output.writelines(encoder.iterencode(_observation_records(store)))
+        output.write('\n')
+        return output.getvalue()
+
+
 def save_observations(directory, store, expected_revision):
-    content = json.dumps(asdict(store), default=str, indent=2, allow_nan=False) + '\n'
+    content = _observation_document(store)
     validated = _decode_observations(content)
     revision = sha256(content.encode('utf-8')).hexdigest()
     save_document(Path(directory) / FILE, content, expected_revision)
