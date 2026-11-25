@@ -133,7 +133,6 @@ class HistoryCalculation:
         self._security_dates = sorted({event.date for event in events} |
             {charge.date for event in events for charge in event.charges if charge.date})
         self._flow_dates = sorted(set(self._security_dates) | {e.date for e in self._account_events})
-        self._capital_dates = sorted(set(self._flow_dates) | {stamp for stamp, _ in self._unresolved_receipts if stamp})
         self.fingerprint = history_fingerprint(journal)
         self._facts = OrderedDict()
         # Daily chart gains depend on the complete ledger and observation snapshot.
@@ -273,9 +272,24 @@ class HistoryCalculation:
                     dates[identity].add(stamp)
         return dates
 
-    def _position_capital_dates(self, scope):
-        dates = self.event_dates(scope)
-        receipt_dates = self._receipt_dates_by_position.get(scope.positions[0])
+    @cached_property
+    def _positions_by_account(self):
+        positions = defaultdict(list)
+        for book in self.journal.securities:
+            if book.account_id:
+                positions[book.account_id].append(book.position_id)
+        return positions
+
+    def _linked_positions(self, scope):
+        return {identity for account in scope.accounts for identity in self._positions_by_account.get(account, ())}
+
+    def _scope_capital_dates(self, scope):
+        # Include linked books even when their payments precede an ordinary
+        # account opening. Their evidence can qualify flows or coverage.
+        linked = self._linked_positions(scope).difference(scope.positions)
+        boundary = HistoryScope((*scope.positions, *linked), scope.accounts) if linked else scope
+        dates = self.event_dates(boundary)
+        receipt_dates = {day for identity in boundary.positions for day in self._receipt_dates_by_position.get(identity, ())}
         return sorted(receipt_dates.union(dates)) if receipt_dates else dates
 
     def _coverage_dates(self, scope):
@@ -283,7 +297,7 @@ class HistoryCalculation:
         dates = {e.date for identity in members for e in self._coverage_events.get(identity, ())}
         if scope.accounts:
             accounts = set(scope.accounts)
-            members.update(b.position_id for b in self.journal.securities if b.account_id in accounts)
+            members.update(self._linked_positions(scope))
             # An ordinary cash flow changes contributions. Its conversion is
             # checked separately on its payment date by external_flows.
             dates.update(e.date for e in self._account_events if e.account_id in accounts and e.kind != 'cash_flow')
@@ -335,9 +349,7 @@ class HistoryCalculation:
                 and (latest.until is None or end < latest.until)):
             self._facts.move_to_end(key)
             return latest.capital
-        dates = self._capital_dates
-        if len(scope.positions) == 1 and not scope.accounts:
-            dates = self._get(('position_capital_dates', scope.positions[0]), lambda: self._position_capital_dates(scope))
+        dates = self._get(('scope_capital_dates', scope), lambda: self._scope_capital_dates(scope))
         boundary = bisect_right(dates, end)
         capital = _period_capital(self, scope, start, end, target)
         since = dates[boundary-1] if boundary else None

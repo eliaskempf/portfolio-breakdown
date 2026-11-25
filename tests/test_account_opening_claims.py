@@ -27,6 +27,19 @@ def portfolio(kind, trade, due, *, received='', estimated=False, currency='EUR',
     return Journal(version=5, accounts=(Account('cash', 'Invented'),), securities=(book,), events=events)
 
 
+def test_settled_purchase_before_cash_snapshot_still_qualifies_its_dated_flow():
+    before, trade = '2024-01-01', '2024-01-02'
+    journal = portfolio('buy', trade, trade, estimated=True)
+    scope = HistoryScope(accounts=('cash',))
+    calc = HistoryCalculation(journal, ObservationStore())
+    assert trade not in calc.event_dates(scope)  # No separate change to the settled cash balance.
+    first = calc.period_capital(scope, before, before, 'EUR')
+    next_day = calc.period_capital(scope, before, trade, 'EUR')
+    assert first.net_contributions == 0 and not first.estimated
+    assert next_day.net_contributions == -20 and next_day.estimated
+    assert first.opening_value.amount is None and next_day.opening_value.amount is None
+
+
 @pytest.mark.parametrize('trade,due,received', [
     (OPEN, END, ''), (OPEN, END, END), ('2024-01-02', OPEN, OPEN), ('2024-01-02', OPEN, ''),
     (OPEN, OPEN, ''),

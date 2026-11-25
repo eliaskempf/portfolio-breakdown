@@ -542,6 +542,44 @@ def test_capital_searches_event_dates_only_when_crossing_an_interval(monkeypatch
     assert calculation.period_capital(scope, start, days[0], 'EUR') == expected[0]
 
 
+@pytest.mark.parametrize('scope,net', [
+    (HistoryScope(accounts=('cash',)), -9),
+    (HistoryScope(('stock', 'second')), 12),
+    (HistoryScope(('stock',), ('cash',)), 3),
+])
+def test_only_selected_members_change_a_scopes_capital(scope, net, monkeypatch):
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.ledger.security_history import Charge
+    import portfolio_app.performance.personal_performance as module
+    days = [f'2024-01-{day:02}' for day in range(2, 9)]
+    own = book(E('own-open', 'opening', START),
+               E('own-buy', 'buy', days[1], quantity=1, price=10, currency='EUR', charges_known=True,
+                 charges=(Charge(D(2), 'EUR', date=days[3]),)), account='cash')
+    second = book(E('second-open', 'opening', START), identity='second')
+    other = book(E('outside-open', 'opening', START),
+                 E('outside-buy', 'buy', days[4], quantity=1, price=20, currency='EUR', charges_known=True),
+                 identity='outside', account='outside-cash')
+    journal = Journal(version=2, securities=(own, second, other),
+        accounts=(Account('cash', 'Inside'), Account('outside-cash', 'Outside')),
+        events=(Event('open', START, 'cash_open', 'cash', 'EUR', D(100)),
+                Event('other-open', START, 'cash_open', 'outside-cash', 'EUR', D(100)),
+                Event('other-deposit', days[2], 'cash_flow', 'outside-cash', 'EUR', D(30)),
+                Event('deposit', days[5], 'cash_flow', 'cash', 'EUR', D(3))))
+    store = ObservationStore()
+    expected = [module._period_capital(HistoryCalculation(journal, store), scope, START, day, 'EUR') for day in days]
+    original, rebuilt = module._period_capital, []
+    def counted(calc, selected, start, end, target):
+        rebuilt.append(end)
+        return original(calc, selected, start, end, target)
+    monkeypatch.setattr(module, '_period_capital', counted)
+    calculation = HistoryCalculation(journal, store)
+    actual = [calculation.period_capital(scope, START, day, 'EUR') for day in days]
+    assert actual == expected
+    assert actual[-1].net_contributions == net
+    assert days[2] not in rebuilt and days[4] not in rebuilt
+    assert [calculation.period_capital(scope, START, day, 'EUR') for day in reversed(days)] == expected[::-1]
+
+
 def test_cashflows_change_capital_without_rechecking_unchanged_ledger_coverage(monkeypatch):
     from portfolio_app.ledger.account_journal import Account, Event
     import portfolio_app.performance.personal_performance as module
