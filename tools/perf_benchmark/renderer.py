@@ -34,8 +34,8 @@ def event_count(trial):
 def interact(evaluate, command, control, *, missing_costs=False):
     first_event = event_count(control)
     dispatched = time.monotonic_ns() / 1e6
-    comparison = ('''const result = d.querySelector('.st-key-tour_performance [data-testid=stAlert]');
-        return visible(result) && result.textContent.includes('Add convertible buy-ins');''' if missing_costs else
+    comparison = ('''const captions = d.querySelectorAll('.st-key-tour_performance [data-testid=stCaptionContainer]');
+        return [...captions].some(e => visible(e) && e.textContent.includes('Gain unavailable'));''' if missing_costs else
         "return visible(d.querySelector('.st-key-tour_performance .js-plotly-plot .main-svg'));")
     evaluate('(() => {' + CONTEXT + 'const comparisonReady = () => {' + comparison + '}; const label=' + json.dumps(command) + """;
     const control = [...d.querySelectorAll('[role=radio],button')].find(e => visible(e) && e.textContent.trim() === label);
