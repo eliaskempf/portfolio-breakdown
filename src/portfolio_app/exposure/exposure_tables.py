@@ -96,10 +96,10 @@ def source_contributions(exposures, selected, *, measure=None, portfolio_exposur
         held = (exposures if portfolio_exposures is None else
                 portfolio_exposures.loc[portfolio_exposures.source_position_id.isin(source)])
         totals = held.groupby('source_position_id').value
-        values['Position value'] = source.map(totals.sum().mask(totals.count() < totals.size()))
+        values['Position value'] = totals.sum().mask(totals.count() < totals.size()).reindex(source).array
     else:
         positions = selected.set_index('position_id')
-        values['Position value'] = source.map(positions['current_value_reporting']) if 'current_value_reporting' in positions else float('nan')
+        values['Position value'] = positions['current_value_reporting'].reindex(source).array if 'current_value_reporting' in positions else float('nan')
     values['Asset weight (%)'] = 100 * values['Value'] / values['Position value'].where(values['Position value'].ne(0))
     return values
 
