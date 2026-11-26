@@ -113,27 +113,54 @@ def test_fundamental_refresh_updates_open_position_dialog_without_rebuilding_par
     page.get_by_role('tab', name='Positions', exact=True).click()
     page.get_by_role('radio', name='Valuation', exact=True).click()
     table = page.get_by_role('table', name='Positions', exact=True)
+    playwright.expect(table.get_by_role('button', name='Trailing P/E', exact=True)).to_be_visible()
     page.get_by_role('searchbox', name='Filter positions').fill('Regional')
-    table.locator('tbody tr').first.click()
+    table.get_by_role('row').filter(has_text='Invented Regional').click()
     dialog = page.get_by_role('dialog')
     dialog.locator('[data-position-view-ready="History"]').wait_for(state='attached')
     dialog.get_by_role('radio', name='Key metrics', exact=True).click()
     metric = dialog.get_by_test_id('stMetric').filter(has_text='P/E (trailing)').get_by_test_id('stMetricValue')
-    playwright.expect(metric).to_have_text('10.00')
+    playwright.expect(metric).to_have_text(['10.00'])
     assert (directory / 'requested-SYNTH-B').exists()
     before = (directory / 'full-runs.log').read_text()
     (directory / 'release-SYNTH-B').touch()
     page.wait_for_timeout(800)
-    playwright.expect(metric).to_have_text('10.00')
+    playwright.expect(metric).to_have_text(['10.00'])
     for ticker in ('SYNTH-A', 'SYNTH-C'):
         (directory / ('release-' + ticker)).touch()
-    playwright.expect(metric).to_have_text('20.00', timeout=10000)
+    playwright.expect(metric).to_have_text(['20.00'], timeout=10000)
     assert (directory / 'full-runs.log').read_text() == before
     assert len(list(directory.glob('requested-SYNTH-*'))) == 3
     dialog.get_by_role('button', name='Close', exact=True).last.click()
     playwright.expect(dialog).to_have_count(0)
     playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+@pytest.mark.parametrize('ux_page', ['count_app_runs'], indirect=True)
+def test_click_on_stale_positions_list_completes_parent_render(ux_page):
+    page, directory = ux_page
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    table = page.get_by_role('table', name='Positions', exact=True)
+    search = page.get_by_role('searchbox', name='Filter positions')
+    search.fill('Regional')
+    row = table.get_by_role('row').filter(has_text='Invented Regional')
+    settle(page)
+    runs = directory / 'full-runs.log'
+    before = runs.read_text()
+    # Emulate a delayed browser still showing the outgoing list after the
+    # server has finished building the replacement and its dialog host.
+    row.evaluate("""row => {
+        row.getRootNode().host.closest('[data-testid="stElementContainer"]').dataset.stale = 'true';
+        row.click();
+    }""")
+    dialog = page.get_by_role('dialog')
+    dialog.locator('[data-position-view-ready="History"]').wait_for(state='attached')
+    assert runs.read_text() != before
+    dialog.get_by_role('button', name='Close', exact=True).last.click()
+    playwright.expect(dialog).to_have_count(0)
+    playwright.expect(search).to_have_value('Regional')
+    playwright.expect(row).to_be_visible()
 
 
 @pytest.mark.parametrize('ux_page', ['company_details'], indirect=True)

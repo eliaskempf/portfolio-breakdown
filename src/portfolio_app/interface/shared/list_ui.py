@@ -121,7 +121,13 @@ export default function({parentElement:root,data,setTriggerValue}) {
   if (!columns.some(column => column.key === state.key)) {state.key=data.defaultSort;state.direction=-1;}
   const numeric=new Set(columns.filter(column=>column.numeric).map(column=>column.key));
   const element=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;return node;};
-  const open=(row,action='details')=>{if(!data.interactive)return;state.focus=row.id;state.focusAction='details';persist();setTriggerValue('open',{id:row.id,action,revision:data.revision,context:data.context});};
+  const open=(row,action='details')=>{
+    if(!data.interactive)return;
+    state.focus=row.id;state.focusAction='details';persist();
+    const host=section.getRootNode().host || section;
+    const stale=Boolean(host.closest('[data-stale="true"]'));
+    setTriggerValue('open',{id:row.id,action,revision:data.revision,context:data.context,stale});
+  };
   const groupRows=row=>data.children?.[row.id]||[];
   const expanded=row=>(state.expandedGroups||[]).includes(row.id);
   const toggleGroup=row=>{

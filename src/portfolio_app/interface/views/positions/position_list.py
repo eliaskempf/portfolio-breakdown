@@ -154,6 +154,10 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
     from portfolio_app.interface.shared.freshness_ui import render_freshness
     action = []
     def open_row(event):
+        # A stale row can still receive a click before its replacement reaches
+        # the browser. Let the full rerun finish mounting the new parent list.
+        if event.get('stale'):
+            st.session_state['position_dialog_host_ready'] = False
         on_open(event)
         if st.session_state.get('position_edit_open_request') or st.session_state.get('position_edit_dialog'):
             from portfolio_app.interface.shared.dialog_runtime import route_position_callback

@@ -266,8 +266,11 @@ def test_future_signed_beta_and_core_contribution(ux_page):
             instrument='FMWN', position=asdict(position))))
         page.reload()
         playwright.expect(page.get_by_role('tab', name='Overview', exact=True)).to_have_attribute('aria-selected', 'true')
-        page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-        page.get_by_role('radio', name='Analytics', exact=True).click()
+        settle(page)
+        analytics = page.locator('.st-key-strategic_view[data-stale="false"]').get_by_role('radio', name='Analytics', exact=True)
+        # The second reload restores the Analytics view selected on the first pass.
+        if not analytics.is_checked():
+            page.streamlit_reruns.click(page, analytics)
         page.get_by_role('button', name='Calculate risk').click()
         metric = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Beta', exact=True))
         playwright.expect(metric).to_be_visible()
