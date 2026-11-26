@@ -47,6 +47,50 @@ def test_rule_revision_conflicts_pause_delete_and_history_are_preserved(tmp_path
     assert len(doc['observations']) == 1 and doc['events'][0]['resolved']
 
 
+def test_worker_reuses_validated_revision_and_observes_concurrent_edits(tmp_path, monkeypatch):
+    from portfolio_app.monitoring import monitoring_store as store
+    r = rule()
+    store.save_rule(tmp_path, r)
+    loads = []
+    original = store.load_monitoring
+    def counted(directory):
+        loads.append(directory)
+        return original(directory)
+    monkeypatch.setattr(store, 'load_monitoring', counted)
+    worker = store.EvaluationWriter(tmp_path)
+    assert worker.enabled_rules() == [(r, None)]
+    warning = Evaluation('2026-10-09', -1.5, condition='approaching')
+    assert worker.record(r, [warning], now=NOW)
+    assert not worker.record(r, [warning], now=NOW)
+    assert loads == [tmp_path]
+    event = original(tmp_path)[0]['events'][0]
+    store.mark_events(tmp_path, [event['id']], acknowledge=True)
+    loads.clear()
+    assert worker.record(r, [replace(warning, value=-3., condition='triggered')], now=NOW)
+    assert loads == [tmp_path]
+    assert original(tmp_path)[0]['events'][0]['acknowledged']
+    store.save_rule(tmp_path, replace(r, revision=2, enabled=False), expected_rule_revision=1)
+    assert not worker.record(r, [warning], now=NOW)
+    assert len(original(tmp_path)[0]['observations']) == 2
+
+
+def test_worker_discards_unpublished_changes_after_write_failure(tmp_path, monkeypatch):
+    from portfolio_app.monitoring import monitoring_store as store
+    r = rule()
+    store.save_rule(tmp_path, r)
+    worker = store.EvaluationWriter(tmp_path)
+    value = Evaluation('2026-10-09', -3., condition='triggered')
+    def fail(*args):
+        raise OSError('Invented write failure')
+    with monkeypatch.context() as patch:
+        patch.setattr(store, '_write', fail)
+        with pytest.raises(OSError):
+            worker.record(r, [value], now=NOW)
+    assert not load_monitoring(tmp_path)[0]['events']
+    assert worker.record(r, [value], now=NOW)
+    assert len(load_monitoring(tmp_path)[0]['events']) == 1
+
+
 def test_corrupt_monitoring_is_retained(tmp_path):
     path=tmp_path/'monitoring.json'
     path.write_text('{bad')
@@ -105,3 +149,61 @@ def test_not_applicable_clears_episode_without_mistaking_missing_data_for_recove
     record_evaluations(tmp_path,r,[Evaluation('2026-10-11',quality='not_applicable',note='No debt or backing assets.')],now=NOW)
     doc,_=load_monitoring(tmp_path)
     assert doc['states'][r.id]['condition']=='normal' and doc['events'][0]['resolved']
+
+
+def test_panel_persists_displayed_notices_and_events_in_one_transaction(tmp_path):
+    from unittest.mock import patch
+    from portfolio_app.monitoring import monitoring_store as store
+
+    saved = rule()
+    store.save_rule(tmp_path, saved)
+    warning = Evaluation('2026-10-09', -1.5, condition='approaching')
+    store.record_evaluations(tmp_path, saved, [warning], now=NOW)
+    snapshot = store.load_monitoring(tmp_path)[0]
+    displayed = [event['id'] for event in snapshot['events']]
+    # A new episode level arrives after the panel took its snapshot.
+    store.record_evaluations(tmp_path, saved, [replace(warning, condition='triggered')], now=NOW)
+    with patch.object(store, 'load_monitoring', wraps=store.load_monitoring) as reads, \
+         patch.object(store, '_write', wraps=store._write) as writes:
+        assert store.remember_notices(tmp_path, {'manual'}, opened=True,
+                                      previously_seen=snapshot['notice_seen'], read_events=displayed) == {'manual'}
+        assert reads.call_count == writes.call_count == 1
+        store.remember_notices(tmp_path, {'manual'}, opened=True, previously_seen={'manual'})
+        assert reads.call_count == writes.call_count == 1
+        store.remember_notices(tmp_path, {'manual'}, opened=True, previously_seen={'manual'}, read_events=displayed)
+        assert reads.call_count == 2 and writes.call_count == 1
+    doc = store.load_monitoring(tmp_path)[0]
+    assert doc['notice_seen'] == ['manual']
+    assert [(e['read'], e['acknowledged']) for e in doc['events']] == [(True, False), (False, False)]
+    assert len(doc['observations']) == 2
+
+
+@pytest.mark.parametrize('token', ['NaN', 'Infinity', '-Infinity', '1e999', '-1e999'])
+def test_nonfinite_nested_monitoring_inputs_rejected_while_decoding(tmp_path, token):
+    r = rule()
+    save_rule(tmp_path, r)
+    record_evaluations(tmp_path, r, [Evaluation('2026-10-09', 1., inputs={'path': [12.375]})], now=NOW)
+    path = tmp_path / 'monitoring.json'
+    original = path.read_bytes()
+    invalid = original.replace(b'12.375', token.encode())
+    assert invalid != original
+    path.write_bytes(invalid)
+    with pytest.raises(DataError, match='Invalid monitoring.json'):
+        load_monitoring(tmp_path)
+    assert path.read_bytes() == invalid
+
+
+def test_monitoring_read_preserves_numeric_inputs_without_reserializing_the_archive(tmp_path, monkeypatch):
+    from hashlib import sha256
+    from portfolio_app.monitoring import monitoring_store as store
+
+    r = rule()
+    save_rule(tmp_path, r)
+    inputs = {'finite': [1e308, -1e-300], 'count': 2**60 + 1}
+    record_evaluations(tmp_path, r, [Evaluation('2026-10-09', 1., inputs=inputs)], now=NOW)
+    digest = sha256((tmp_path / 'monitoring.json').read_bytes()).hexdigest()
+    def unexpected_encode(*args, **kwargs):
+        pytest.fail('Reading an archive encoded the entire document again')
+    monkeypatch.setattr(store.json, 'dumps', unexpected_encode)
+    doc, revision = load_monitoring(tmp_path)
+    assert revision == digest and doc['observations'][0]['evaluation']['inputs'] == inputs

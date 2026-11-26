@@ -483,6 +483,7 @@ def test_negative_cash_covered_by_assets_is_not_negative_portfolio_equity():
 def test_partial_gain_reuses_dated_ledger_without_changing_supported_components(monkeypatch, with_price):
     from portfolio_app.performance.personal_performance import HistoryCalculation
     import portfolio_app.performance.gain_components as components
+    import portfolio_app.performance.gain_accounting as accounting
     # Missing opening cost forces the component fallback, including before the
     # income event. Query out of order so cached future cash cannot leak back.
     journal = Journal(version=2, securities=(book(
@@ -496,9 +497,360 @@ def test_partial_gain_reuses_dated_ledger_without_changing_supported_components(
     def unexpected_replay(*args, **kwargs):
         pytest.fail('Component fallback must reuse the calculation ledger')
     monkeypatch.setattr(components, 'replay_securities', unexpected_replay)
+    def unexpected_selection(*args):
+        pytest.fail('Daily gain marks must use the effective events already selected for this calculation')
+    monkeypatch.setattr(accounting, 'selected_events', unexpected_selection)
+    scopes = []
+    def counted_scope(*args, **kwargs):
+        scope = HistoryScope(*args, **kwargs)
+        scopes.append(scope)
+        return scope
+    monkeypatch.setattr(accounting, 'HistoryScope', counted_scope)
     for stamp in dates:
         assert security_gain_components(journal, 'stock', obs, stamp, calculation=calculation) == expected[stamp]
         gain = summarize_known_gain(journal, scope, obs, stamp, calculation=calculation)
         assert gain.amount == (5 if stamp >= '2024-07-01' else None)
         assert gain.capital is None and gain.partial
     assert summarize_known_gain(journal, scope, obs, END, calculation=calculation).value == (120 if with_price else None)
+    assert scopes == [scope]
+
+
+def test_reused_gain_members_follow_current_summary_only_rows():
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    journal, store = Journal(), ObservationStore()
+    calculation = HistoryCalculation(journal, store)
+    scope = HistoryScope(('invented',))
+    for shares, expected in ((1, (1, D(4))), (0, (0, None)), (2, (1, D(4)))):
+        rows = pd.DataFrame([dict(position_id='invented', shares=shares, unrealized_gain_reporting=4)])
+        result = summarize_known_gain(journal, scope, store, END, summary_rows=rows,
+                                      current_values={'invented': D(80)}, calculation=calculation)
+        assert (result.count, result.amount) == expected
+
+
+@pytest.mark.parametrize('estimated_units,recorded_units,expected', [(2, 0, None), (1, 1, D(25)), (0, 2, None)])
+def test_partial_historical_lots_apply_the_same_fx_evidence_rule_as_complete_cost(estimated_units, recorded_units, expected):
+    from portfolio_app.performance.cost_basis import component
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    conversion = {'EUR': {'amount': '60', 'method': 'estimate'}}
+    parts = [component(estimated_units, 80, 'USD', conversions=conversion)]
+    if recorded_units:
+        parts.append(component(recorded_units, 20, 'EUR'))
+    event = E('opening', 'opening', START, quantity=2, costs=tuple(parts))
+    journal = Journal(version=5, securities=(book(event),))
+    store = ObservationStore()
+    for calculation in (None, HistoryCalculation(journal, store)):
+        result = security_gain_components(journal, 'stock', store, END, 'EUR', current_value=D(90), calculation=calculation)
+        assert result.remaining_cost is None and result.unrealized == expected
+        assert 'Estimated cost conversion is not historical evidence' in result.reasons
+    summary = summarize_known_gain(journal, HistoryScope(('stock',)), store, END, current_values={'stock': D(90)})
+    assert summary.value == 90 and summary.amount == expected and summary.capital is None
+    scope = HistoryScope(('stock',))
+    marked = observations(journal, scope, [('stock', '2024-12-31', 40), ('stock', END, 45)])
+    chart = history_view(journal, scope, marked, '1M', today=date.fromisoformat(END))
+    assert chart.points[-1]['Value'] == 90 and chart.points[-1]['Total gain'] == expected
+    # A saved conversion into EUR has no bearing on acquisition cost measured in USD.
+    if not recorded_units:
+        original = security_gain_components(journal, 'stock', store, END, 'USD', current_value=D(90))
+        assert original.remaining_cost == 80 and original.unrealized == 10
+
+
+def test_partial_lot_basis_reuses_only_costs_across_daily_marks(monkeypatch):
+    from portfolio_app.performance import gain_components
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    journal = Journal(version=2, securities=(book(
+        E('open', 'opening', START, quantity=1, currency='EUR'),
+        E('known', 'buy', '2024-02-01', quantity=2, price=6, currency='EUR', charges_known=True),
+        E('foreign', 'buy', '2024-03-01', quantity=1, price=5, currency='USD', charges_known=True)),))
+    obs = ObservationStore()
+    calc = HistoryCalculation(journal, obs)
+    calls = []
+    resolve = gain_components.resolve_cost
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return resolve(*args, **kwargs)
+    monkeypatch.setattr(gain_components, 'resolve_cost', counted)
+    def gain(stamp, value):
+        return security_gain_components(journal, 'stock', obs, stamp, current_value=D(value), calculation=calc)
+    february = gain('2024-02-01', 33)
+    assert february.unrealized == 10 and february.remaining_cost is None
+    february_calls = len(calls)
+    # The quote and gain change while the supported cost and units stay fixed.
+    assert gain('2024-02-29', 48).unrealized == 20
+    assert len(calls) == february_calls
+    assert gain('2024-03-01', 48).unrealized == 12
+    march_calls = len(calls)
+    assert march_calls > february_calls
+    assert gain('2024-02-01', 33) == february
+    assert gain('2024-03-17', 60).unrealized == 18
+    assert len(calls) == march_calls
+    corrected = ObservationStore((O('supplied', 'fx', 'USD/EUR', '2024-03-01', D('.8'), 'USD', 'EUR'),))
+    updated = security_gain_components(journal, 'stock', corrected, '2024-03-17', current_value=D(60),
+                                       calculation=HistoryCalculation(journal, corrected))
+    assert updated.unrealized == 29 and updated.remaining_cost is None
+
+
+def test_chart_gain_reuses_the_close_and_preserves_individual_marks(monkeypatch):
+    from portfolio_app.performance import history_view as views, personal_performance
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    purchase = E('buy', 'buy', START, quantity=10, price=10, currency='EUR', charges_known=True)
+    security = reconstruction_candidate(book(purchase), ('buy',), starts_at_zero=True)
+    journal = Journal(version=2, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),))
+    position = HistoryScope(('stock',))
+    scope = HistoryScope(('stock',), ('cash',))
+    middle = '2024-06-01'
+    store = observations(journal, scope, [('stock', START, 10), ('stock', middle, 11), ('stock', END, 12)],
+                         extra=(O('whole', 'value', scope.key, middle, D(777), 'EUR'),
+                                O('member', 'value', position.key, middle, D(123), 'EUR')))
+    calculation = HistoryCalculation(journal, store)
+    # A long chart evicts early point-cache entries before reaching their gain calculation.
+    full_interval = views._all_history
+    def evict_middle(*args, **kwargs):
+        result = full_interval(*args, **kwargs)
+        calculation._facts.pop(('value', scope, middle, 'EUR'))
+        return result
+    monkeypatch.setattr(views, '_all_history', evict_middle)
+    calculated = []
+    original = personal_performance._resolve_close
+    def track(source, selection, observations, stamp, currency, **options):
+        if selection == scope:
+            calculated.append(stamp)
+        return original(source, selection, observations, stamp, currency, **options)
+    monkeypatch.setattr(personal_performance, '_resolve_close', track)
+    chart = history_view(journal, scope, store, 'All', today=date.fromisoformat(END), calculation=calculation)
+    point = next(p for p in chart.points if p['Date'] == middle)
+    assert (point['Value'], point['Invested capital'], point['Total gain']) == (777, 200, 23)
+    assert chart.points[0]['Value'] is None
+    assert chart.all_known.amount == 20
+    assert calculated.count(middle) == 1
+
+
+def test_overlapping_chart_ranges_reuse_partial_gain_for_the_same_scope_and_currency(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.performance import history_view as views
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    buy = E('buy', 'buy', START, quantity=10, price=10, currency='EUR', charges_known=True)
+    security = reconstruction_candidate(book(buy), ('buy',), starts_at_zero=True)
+    journal = Journal(version=2, securities=(security,), accounts=(
+        Account('cash', 'Invented cash'), Account('other', 'Invented reserve')),
+        events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),
+                Event('reserve', START, 'cash_open', 'other', 'EUR', 300)))
+    scope = HistoryScope(('stock',), ('cash',))
+    dates = [(date.fromisoformat(START) + timedelta(days=i)).isoformat() for i in range(120)]
+    prices = tuple(O('price-'+day, 'price', 'stock', day, D(10+i), 'EUR') for i, day in enumerate(dates))
+    rates = tuple(O('fx-'+day, 'fx', 'EUR/USD', day, D('1.5'), 'EUR', target='USD') for day in dates)
+    store = ObservationStore(prices + rates)
+    today = date.fromisoformat(dates[-1])
+    calculation = HistoryCalculation(journal, store)
+    first = history_view(journal, scope, store, '1Y', today=today, calculation=calculation)
+    assert first.all_result.opening_capital is None
+    calculation._facts.clear()  # Older per-member valuations were evicted by another range.
+    expected = history_view(journal, scope, store, '1M', today=today)
+    original = views.summarize_known_gain
+    requested = []
+    def count(source, selected, observations, stamp, *args, **kwargs):
+        requested.append((selected, stamp))
+        return original(source, selected, observations, stamp, *args, **kwargs)
+    monkeypatch.setattr(views, 'summarize_known_gain', count)
+    projected = []
+    amounts = views.chart_gain_amounts
+    def count_point(calculation, selected, stamp, target, **kwargs):
+        projected.append((selected, stamp, target))
+        return amounts(calculation, selected, stamp, target, **kwargs)
+    monkeypatch.setattr(views, 'chart_gain_amounts', count_point)
+    view = history_view(journal, scope, store, '1M', today=today, calculation=calculation)
+    assert view == expected
+    assert requested == [(scope, dates[-1])]  # The endpoint also supplies detailed metric explanations.
+    assert projected == []
+    foreign = history_view(journal, scope, store, '1M', today=today, target='USD', calculation=calculation)
+    assert projected and all(selected == scope and target == 'USD' for selected, _, target in projected)
+    assert foreign == history_view(journal, scope, store, '1M', today=today, target='USD')
+    assert foreign.points[-2]['Total gain'] == 1.5 * view.points[-2]['Total gain']
+    other_scope = HistoryScope(('stock',), ('other',))
+    other = history_view(journal, other_scope, store, '1M', today=today, calculation=calculation)
+    assert other == history_view(journal, other_scope, store, '1M', today=today)
+    assert other.points[-2]['Invested capital'] != view.points[-2]['Invested capital']
+    changed = replace(store, observations=tuple(replace(mark, amount=mark.amount + 2) if mark == prices[-2] else mark
+                                                for mark in store.observations))
+    corrected = history_view(journal, scope, changed, '1M', today=today)
+    assert corrected.points[-2]['Total gain'] == view.points[-2]['Total gain'] + 20
+
+
+def test_partial_gain_values_members_once_and_keeps_scope_marks_separate(monkeypatch):
+    from portfolio_app.performance import personal_performance as perf
+
+    security = reconstruction_candidate(book(E('buy', 'buy', START, quantity=10, price=10,
+        currency='EUR', charges_known=True)), ('buy',), starts_at_zero=True)
+    journal = Journal(version=2, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),))
+    stock, cash = HistoryScope(('stock',)), HistoryScope(accounts=('cash',))
+    scope = HistoryScope(stock.positions, cash.accounts)
+    day, late = '2024-06-01', '2024-07-01'
+    store = observations(journal, scope, [('stock', START, 10), ('stock', day, 11),
+                                         ('stock', late, 12), ('stock', END, 13)], extra=(
+        O('stock-mark', 'value', stock.key, day, 121, 'EUR'),
+        O('cash-mark', 'value', cash.key, day, 105, 'EUR'),
+        O('foreign-mark', 'value', stock.key, late, 900, 'USD')))
+    calculation = perf.HistoryCalculation(journal, store)
+    calculation.value(scope, day, 'EUR')  # A summary may already have validated this portfolio close.
+    calls = []
+    original = perf._resolve_close
+    def count(source, selected, observations, stamp, target, **options):
+        if stamp in (day, late):
+            calls.append((selected, stamp))
+        return original(source, selected, observations, stamp, target, **options)
+    monkeypatch.setattr(perf, '_resolve_close', count)
+    view = history_view(journal, scope, store, 'All', today=date.fromisoformat(END), calculation=calculation)
+    chart = {row['Date']: row for row in view.points}
+    assert (chart[day]['Value'], chart[day]['Invested capital'], chart[day]['Total gain']) == (210, 200, 26)
+    assert (chart[late]['Value'], chart[late]['Invested capital'], chart[late]['Total gain']) == (220, 200, 20)
+    assert calls == [(scope, day), (scope, late)]
+
+
+def test_member_closes_keep_flat_portfolio_and_individual_account_rounding():
+    from decimal import localcontext
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    journal = Journal(accounts=(Account('a', 'Invented A'), Account('b', 'Invented B')), events=(
+        Event('a', START, 'cash_open', 'a', 'EUR', D('1e23')),
+        Event('b-gbp', START, 'cash_open', 'b', 'GBP', 1),
+        Event('b-usd', START, 'cash_open', 'b', 'USD', 1)))
+    scope = HistoryScope(accounts=('a', 'b'))
+    store = observations(journal, scope, fx=[(native, 'EUR', START, '.00004') for native in ('USD', 'GBP')])
+    calculation = HistoryCalculation(journal, store)
+    close, members = calculation.value_with_members(scope, START, 'EUR')
+    standalone = [calculation.value(HistoryScope(accounts=(a,)), START, 'EUR').amount for a in scope.accounts]
+    assert members == standalone
+    assert close.amount == calculation.value(scope, START, 'EUR').amount
+    assert members == [D('1e23'), D('0.00008')]
+    assert close.amount == D('1e23') and close.amount != sum(members)
+    numeric_only = HistoryCalculation(journal, store)
+    assert numeric_only.close(scope, START, 'EUR').amount == close.amount
+    for cached in (calculation, numeric_only):
+        with localcontext() as context:
+            context.prec = 50
+            fresh, subtotals = cached.value_with_members(scope, START, 'EUR')
+            assert fresh.amount == sum(subtotals) == D('100000000000000000000000.00008')
+        assert cached.value(scope, START, 'EUR') == close
+
+
+@pytest.mark.parametrize('missing_last', [False, True])
+def test_daily_gain_amounts_only_qualify_the_displayed_endpoint(monkeypatch, missing_last):
+    from portfolio_app.performance import gain_accounting as gains, history_view as views
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    purchase = E('buy', 'buy', START, quantity=2, price=10, currency='EUR', charges_known=True, estimated=True)
+    security = reconstruction_candidate(book(purchase), ('buy',), starts_at_zero=True)
+    journal = Journal(version=5, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),))
+    scope = HistoryScope(('stock',), ('cash',))
+    dates = [f'2024-01-{d:02}' for d in range(1, 16)]
+    end = dates[-2] if missing_last else dates[-1]
+    store = observations(journal, scope, [('stock', day, 10+i) for i, day in enumerate(dates) if day <= end],
+                         extra=(O('scope-mark', 'value', scope.key, dates[3], 150, 'EUR'),))
+    calculation = HistoryCalculation(journal, store)
+    calculation.event_dates(scope)  # Isolate gain qualification from indexing ledger dates.
+    checks = []
+    original = gains.affected_positions
+
+    def counted(book, event):
+        checks.append(event.id)
+        return original(book, event)
+
+    projections = {}
+    def chart_amounts(calculation, scope, day, target, **kwargs):
+        projections[day] = bool(kwargs.get('member_closes'))
+        return gains.chart_gain_amounts(calculation, scope, day, target, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(gains, 'affected_positions', counted)
+        patch.setattr(views, 'chart_gain_amounts', chart_amounts)
+        view = history_view(journal, scope, store, 'All', today=date.fromisoformat(dates[-1]), calculation=calculation)
+    assert checks == [purchase.id]
+    assert end not in projections
+    assert projections[dates[2]] and not projections[dates[3]]
+    assert view.all_end == end
+    assert view.all_known == summarize_known_gain(journal, scope, store, end)
+    assert view.all_known.coverage_note == 'Estimated gain'
+    assert view.all_result.opening_capital is None
+    for point in view.points:
+        detail = summarize_known_gain(journal, scope, store, point['Date'])
+        assert (point['Invested capital'], point['Total gain']) == (detail.capital, detail.amount)
+
+
+def test_chart_reuses_member_capital_across_prices_but_rechecks_dated_member_marks_and_cash(monkeypatch):
+    from portfolio_app.performance.gain_accounting import chart_gain_amounts
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    purchase = E('buy', 'buy', START, quantity=2, price=10, currency='EUR', charges_known=True)
+    security = reconstruction_candidate(book(purchase), ('buy',), starts_at_zero=True)
+    days = [f'2024-01-{i:02}' for i in range(2, 8)]
+    journal = Journal(version=5, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),
+                              Event('deposit', days[3], 'cash_flow', 'cash', 'EUR', 50)))
+    scope = HistoryScope(('stock',), ('cash',))
+    member = HistoryScope(('stock',))
+    store = observations(journal, scope, [('stock', day, 11 + i) for i, day in enumerate(days)],
+                         extra=(O('stock-override', 'value', member.key, days[1], 80, 'EUR'),))
+    calculation = HistoryCalculation(journal, store)
+    reference = HistoryCalculation(journal, store)
+    expected = [summarize_known_gain(journal, scope, store, day, calculation=reference) for day in days]
+    member_lookups = []
+    period_capital = calculation.period_capital
+
+    def measured(owner, start, end, target):
+        if owner != scope:
+            member_lookups.append(end)
+        return period_capital(owner, start, end, target)
+
+    monkeypatch.setattr(calculation, 'period_capital', measured)
+    for i in (0, 1, 2, 3, 4, 5, 1, 0):
+        day = days[i]
+        close, values = calculation.close_with_members(scope, day, 'EUR')
+        assert close.amount is not None and len(values) == 2
+        assert chart_gain_amounts(calculation, scope, day, 'EUR', member_closes=values) == (
+            expected[i].capital, expected[i].amount)
+    assert expected[1].amount == 60
+    assert expected[3].capital - expected[2].capital == 50
+    assert member_lookups == [days[0]] * 2 + [days[3]] * 2 + [days[1]] * 2
+    # A price-only day can use a supplied, partial caller projection as well.
+    day = days[0]
+    _, values = calculation.close_with_members(scope, day, 'EUR')
+    incomplete = [None, values[1]]
+    assert chart_gain_amounts(calculation, scope, day, 'EUR', member_closes=incomplete) == chart_gain_amounts(
+        reference, scope, day, 'EUR', member_closes=incomplete)
+
+    from decimal import localcontext
+    with localcontext() as context:
+        context.prec = 5
+        values = [D('10000001'), D('-10000000')]
+        capital, gain = chart_gain_amounts(calculation, scope, day, 'EUR', member_closes=values)
+        assert capital == 120 and gain == 0
+        assert gain != sum(values, D(0)) - capital
+
+
+def test_member_capital_reuse_stops_at_a_cost_correction():
+    from portfolio_app.performance.gain_accounting import chart_gain_amounts
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    days = [f'2024-01-{i:02}' for i in range(2, 8)]
+    security = book(E('open', 'opening', START, quantity=2, amount=20, currency='EUR'),
+                    E('cost', 'cost', days[2], amount=23, currency='EUR'))
+    journal = Journal(version=2, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open-cash', days[0], 'cash_open', 'cash', 'EUR', 100),))
+    scope = HistoryScope(('stock',), ('cash',))
+    store = observations(journal, scope, [('stock', day, 13) for day in [START, *days]])
+    calculation = HistoryCalculation(journal, store)
+    actual = []
+    for day in (*days, *reversed(days)):
+        _, members = calculation.close_with_members(scope, day, 'EUR')
+        pair = chart_gain_amounts(calculation, scope, day, 'EUR', member_closes=members)
+        detailed = summarize_known_gain(journal, scope, store, day)
+        assert pair == (detailed.capital, detailed.amount)
+        actual.append(pair)
+    assert actual[:2] == [(120, 6)] * 2
+    assert actual[2:6] == [(None, 3)] * 4
+    assert actual[6:] == actual[:6][::-1]

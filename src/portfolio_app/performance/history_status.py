@@ -3,10 +3,9 @@ from dataclasses import dataclass
 from portfolio_app.performance.history_diagnostics import issue_kind, issue_tree
 from datetime import date
 
-from portfolio_app.performance.gain_accounting import scope_dates
 from portfolio_app.performance.history_observations import HistoryScope, active_observations
-from portfolio_app.performance.history_view import history_view
-from portfolio_app.performance.personal_performance import HistoryCalculation, coverage_reasons
+from portfolio_app.performance.history_view import full_history_summary
+from portfolio_app.performance.personal_performance import HistoryCalculation
 from portfolio_app.ledger.security_history import current_records
 
 
@@ -62,7 +61,7 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
             results.append(HistoryStatus(identity, 'Not applied' if recorded else 'No history', '—',
                 'Review transactions' if recorded else 'Add transactions', route, 'review' if recorded else 'list', scope))
             continue
-        dates = scope_dates(journal, scope)
+        dates = calculation.event_dates(scope)
         if not dates:
             results.append(HistoryStatus(identity, 'No account history', '—', 'Open account journal', 'accounts', 'list', scope))
             continue
@@ -80,11 +79,9 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
             # Cash/account balances can be valued today without a market quote.
             if scope.accounts and not subjects:
                 latest = end
-            view = history_view(journal, scope, observations, 'All', today=date.fromisoformat(latest), target=target,
-                                include_points=False, calculation=calculation)
+            view = full_history_summary(calculation, scope, date.fromisoformat(latest), target)
             # Check the recorded interval, not invented weekend/today prices.
-            coverage = coverage_reasons(journal, scope, calculation.observations, dates[0], latest,
-                events_by_position=calculation._events)
+            coverage = calculation.coverage(scope, dates[0], latest)
             reasons = [*coverage, *view.all_result.value_reasons, *view.all_result.flow_reasons,
                        *view.all_result.capital_reasons, *view.all_result.money_weighted_reasons,
                        *view.all_result.time_weighted_reasons]

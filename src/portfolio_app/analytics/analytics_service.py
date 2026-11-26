@@ -7,12 +7,16 @@ from portfolio_app.analytics.fundamentals import (PUBLIC_FEES, DemoFundamentalsP
     FundamentalsService, FundFee, Metric, YahooFundamentalsProvider, apply_fund_metadata, fee_key,
     load_fee_overrides, finite)
 from portfolio_app.analytics.risk import risk_analytics, native_future_weekly_returns
-from portfolio_app.analytics.risk_data import DemoRiskHistoryProvider, RiskHistoryService, MarketRiskHistoryProvider, benchmark_risk_history, equity_risk_history
+from portfolio_app.analytics.risk_data import RiskHistoryService, benchmark_risk_history, equity_risk_history
 
 
 def load_metrics(holdings, data_dir, *, demo=False, fetch=True, refresh=False):
     provider = DemoFundamentalsProvider() if demo else YahooFundamentalsProvider()
     service = FundamentalsService(provider, None if demo else data_dir / '.cache' / 'fundamentals')
+    return compose_metrics(holdings, data_dir, lambda ticker: service.get(ticker, refresh=refresh), demo=demo, fetch=fetch)
+
+
+def compose_metrics(holdings, data_dir, listing, *, demo=False, fetch=True):
     overrides = load_fee_overrides(data_dir / 'fund-fees.json')
     result, listings = {}, {}
     for row in holdings.drop_duplicates('id').to_dict('records'):
@@ -20,7 +24,7 @@ def load_metrics(holdings, data_dir, *, demo=False, fetch=True, refresh=False):
         ticker = row['ticker']
         if fetch and kind in {'equity', 'etf', 'unknown'} and ticker:
             if ticker not in listings:
-                listings[ticker] = service.get(ticker, refresh=refresh)
+                listings[ticker] = listing(ticker)
             snapshot = listings[ticker]
         else:
             snapshot = Fundamentals(ticker, kind)
@@ -126,8 +130,7 @@ def _actual_future_risk(valued, data_dir, service, target, years, refresh, memo,
 
 def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future=None, portfolio_result=None,
               service=None, today=None, qualified_histories=None, scoped=False, portfolio_net_equity=None):
-    service = service or RiskHistoryService(DemoRiskHistoryProvider() if demo else MarketRiskHistoryProvider(),
-                                           None if demo else data_dir / '.cache' / 'risk-history')
+    service = service or RiskHistoryService.for_workspace(data_dir, demo)
     target = valued.reporting_currency.iloc[0] if len(valued) and 'reporting_currency' in valued else 'EUR'
     actual = (future is None and bool(valued.attrs.get('actual_accounts'))
               and 'instrument_type' in valued and valued.instrument_type.eq('future').any())
@@ -137,6 +140,7 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
     memo, histories, failures, status = {}, {}, {}, []
     bench, benchmark_symbol = benchmark_risk_history(service, benchmark, target, years, refresh=refresh, memo=memo, today=today)
     status.append(dict(Instrument=benchmark_symbol, Status=bench.status, Retrieved=bench.fetched_at, Note=bench.note))
+    listings = []
     for identity, rows in valued.loc[valued.shares.gt(0)].groupby('id'):
         row = rows.iloc[0]
         if actual and row.get('instrument_type') == 'future':
@@ -152,6 +156,11 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
         if not row.ticker or pd.notna(row.get('manual_price', float('nan'))):
             failures[identity] = 'no supported history for a manual or unlisted asset'
             continue
+        listings.append((identity, row))
+    if isinstance(service, RiskHistoryService) and service.cached_read is not None:
+        tickers = (row.ticker for _, row in listings if row.ticker not in memo)
+        memo.update(service.get_many(tickers, years, refresh=refresh))
+    for identity, row in listings:
         if row.get('instrument_type') == 'equity':
             isin = row.get('isin', '')
             history = equity_risk_history(service, row.ticker, isin if pd.notna(isin) else '', target,

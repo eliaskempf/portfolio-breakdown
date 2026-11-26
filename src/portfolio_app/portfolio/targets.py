@@ -4,9 +4,9 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from portfolio_app.funds.etf import FundSnapshot, expand_etfs
-from portfolio_app.exposure.exposures import project_contributions
-from portfolio_app.portfolio.grouping import InstrumentGroup, group_exposures
+from portfolio_app.funds.etf import FundSnapshot
+from portfolio_app.exposure.exposure_analysis import align_measure, project_measures
+from portfolio_app.portfolio.grouping import InstrumentGroup
 
 
 @dataclass
@@ -17,7 +17,7 @@ class TargetExposures:
 
 def target_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
                      lookthrough: bool = False, group: InstrumentGroup | None = None,
-                     holdings: pd.DataFrame | None = None) -> TargetExposures:
+                     holdings: pd.DataFrame | None = None, resolved_components=None, output_columns=None) -> TargetExposures:
     """Targets survive missing quotes. Missing targets travel as a separate measure.
 
     Reusing ETF expansion and grouping preserves source identity, residuals and
@@ -25,14 +25,9 @@ def target_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     to sum to one; stored targets always refer to the whole portfolio.
     """
     targets = positions.get("target_allocation", pd.Series(float("nan"), index=positions.index))
-    frames = []
-    for measure in (targets.fillna(0), targets.isna().astype(float)):
-        frame = project_contributions(positions, measure)
-        if lookthrough:
-            frame = expand_etfs(frame, funds, positions if holdings is None else holdings)
-        if group is not None:
-            frame = group_exposures(frame, group)
-        frames.append(frame)
+    frames = project_measures(positions, (targets.fillna(0), targets.isna().astype(float)), funds,
+                              positions if holdings is None else holdings, lookthrough=lookthrough, group=group,
+                              resolved_components=resolved_components, output_columns=output_columns)
     return TargetExposures(*frames)
 
 
@@ -54,8 +49,9 @@ def add_target_columns(table: pd.DataFrame, keys: list, totals: TargetTotals, *,
     coverage produce an accurate whole-portfolio current percentage.
     """
     result = table.copy()
-    known = pd.Series([totals.known.get(key, 0.) for key in keys], index=result.index)
-    missing = pd.Series([totals.missing.get(key, 0.) > 0 for key in keys], index=result.index)
+    identities = pd.Index(keys, tupleize_cols=False)
+    known = align_measure(totals.known, identities, result.index)
+    missing = align_measure(totals.missing, identities, result.index).gt(0)
     result["Current portfolio %"] = (100 * result["Value"] / portfolio_value
                                       if valuation_complete and portfolio_value > 0 else float("nan"))
     result["Target portfolio %"] = (100 * known).mask(missing)

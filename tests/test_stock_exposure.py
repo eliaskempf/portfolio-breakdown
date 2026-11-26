@@ -177,3 +177,57 @@ def test_reviewed_links_do_not_match_names_or_reclassify_other_instruments():
     mapping = {'security:TEST-STOCK-1': 'reviewed-company'}
     linked = link_fund_companies(funds(), rows, mapping)
     assert linked[0].constituents.company_asset_id.eq('').all()
+
+
+def test_company_totals_reduce_sources_together_and_preserve_first_name_and_signed_offsets(monkeypatch):
+    from portfolio_app.exposure.stock_exposure import _company_totals
+
+    rows = pd.DataFrame([
+        ('a', None, 4., 'Direct'), ('a', 'Later alias', -4., 'ETF-derived'),
+        ('b', 'Second issuer', -2., 'ETF-derived'), ('c', 'Third issuer', 2., 'Direct'),
+    ], columns=['Company ID', 'Company', 'Value', 'Origin'])
+
+    def per_company_frames(self):
+        pytest.fail('Materialized a separate DataFrame for each company')
+
+    monkeypatch.setattr(type(rows.groupby('Company ID')), '__iter__', per_company_frames)
+    totals = _company_totals(rows, None, 10.).set_index('Company ID')
+    assert totals.index.tolist() == ['c', 'a', 'b']
+    assert pd.isna(totals.loc['a', 'Company'])
+    assert totals[['Direct', 'ETF-derived', 'Total']].values.tolist() == [[2., 0., 2.], [4., -4., 0.], [0., -2., -2.]]
+    assert totals['Selected stock-universe %'].isna().all()
+    assert totals['Whole-portfolio %'].tolist() == [20., 0., -20.]
+    empty = _company_totals(rows.iloc[:0], 0., None)
+    assert empty.empty and empty.columns.tolist() == ['Company ID', *totals.columns]
+
+
+def test_repeated_fund_positions_share_interpretation_by_snapshot_and_coverage(monkeypatch):
+    import portfolio_app.exposure.stock_exposure as exposure
+    original = exposure.fund_breakdown
+    calls = []
+
+    def count(fund):
+        calls.append(fund.isin)
+        return original(fund)
+
+    monkeypatch.setattr(exposure, 'fund_breakdown', count)
+    fund = replace(funds()[0], equity_fund=False)
+    row = sources().iloc[[1]]
+    holdings = pd.concat([row.assign(account=f'Account {i}', position_id=f'p{i}', exposure_kind=kind)
+                          for i, kind in enumerate(['equity', 'unknown', 'equity', 'unknown'])], ignore_index=True)
+    result = stock_exposure(holdings, [fund])
+    assert calls == [fund.isin] * 2
+    assert result.stock_value is None and result.whole_value == 800.
+    assert result.sources[['Source position', 'Account', 'Value']].values.tolist() == [
+        ['p0', 'Account 0', 50.], ['p2', 'Account 2', 50.]]
+    assert result.companies['Total'].tolist() == [100.]
+    assert result.companies['Whole-portfolio %'].tolist() == [12.5]
+    assert result.unresolved.groupby('Status').Value.sum().to_dict() == {
+        'Unknown composition': 400., 'Unresolved equity': 300.}
+    # Reusing an in-memory snapshot object does not exempt a later calculation
+    # from validating the provider frame and incorporating its latest weights.
+    fund.constituents.loc[0, 'weight'] = .5
+    assert stock_exposure(holdings, [fund]).companies['Total'].tolist() == [200.]
+    fund.constituents.loc[0, 'weight'] = 2.
+    with pytest.raises(DataError, match='weights'):
+        stock_exposure(holdings, [fund])

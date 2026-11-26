@@ -1,5 +1,6 @@
 """ETF snapshots and value-preserving expansion into normalized exposures."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
 import math
@@ -8,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from portfolio_app.exposure.taxonomy import copy_classifications
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.portfolio.valuation import portfolio_weights
 from portfolio_app.funds.constituents import fund_kind, interpret_constituent
@@ -64,17 +66,50 @@ def validate_constituents(frame: pd.DataFrame, *, allow_signed: bool = False) ->
     return result
 
 
+def _read_constituents(path: Path, *, allow_signed: bool = False) -> pd.DataFrame:
+    frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+    return validate_constituents(frame, allow_signed=allow_signed)
+
+
+class FundCatalog:
+    """Reuse validated constituent files across reads of a changing fund directory."""
+
+    def __init__(self):
+        self._files = {}
+
+    def load(self, directory: Path) -> list[FundSnapshot]:
+        current = {}
+
+        def read(path: Path, *, allow_signed: bool = False) -> pd.DataFrame:
+            stat = path.stat()
+            key = (path.resolve(), allow_signed)
+            version = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+            previous = current.get(key) or self._files.get(key)
+            if previous is None or previous[0] != version:
+                previous = (version, _read_constituents(path, allow_signed=allow_signed))
+            current[key] = previous
+            return previous[1].copy()
+
+        funds = _load_funds(directory, read)
+        self._files = current
+        return funds
+
+
 def load_funds(directory: Path) -> list[FundSnapshot]:
+    return _load_funds(directory, _read_constituents)
+
+
+def _load_funds(directory, read_constituents):
     funds = []
     for manifest in sorted(directory.glob("*.yaml")):
         try:
             raw = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-            frame = pd.read_csv(manifest.parent / raw["holdings_file"], dtype=str, keep_default_na=False)
+            frame = read_constituents(manifest.parent / raw["holdings_file"])
             fund = FundSnapshot(
                 fund_id=raw["fund_id"], name=raw["name"], isin=raw["isin"].upper(),
                 tickers=tuple(ticker.upper() for ticker in raw["tickers"]),
                 as_of=date.fromisoformat(str(raw["as_of"])), source=raw["source"],
-                constituents=validate_constituents(frame),
+                constituents=frame,
                 manifest_path=manifest,
                 equity_fund=raw.get('equity_fund', False),
                 proxy_source=raw.get('proxy_source', ''), notes=raw.get('notes', ''),
@@ -82,8 +117,7 @@ def load_funds(directory: Path) -> list[FundSnapshot]:
                     'provider': '', 'product_url': '', 'asset_class': '', 'replication': '',
                     'breakdown_basis': 'holdings', 'wkn': '', 'summaries': {},
                 }.items()},
-                basket=validate_constituents(pd.read_csv(manifest.parent / raw['basket_file'], dtype=str,
-                    keep_default_na=False), allow_signed=True) if raw.get('basket_file') else None,
+                basket=read_constituents(manifest.parent / raw['basket_file'], allow_signed=True) if raw.get('basket_file') else None,
             )
             if not fund.fund_id or not fund.name or len(fund.isin) != 12:
                 raise ValueError("Fund ID, name, and a 12-character ISIN are required")
@@ -106,14 +140,44 @@ def load_funds(directory: Path) -> list[FundSnapshot]:
     return funds
 
 
+def _position_listing(position: dict) -> tuple[str, str]:
+    # An explicit ISIN or WKN is authoritative even when the ticker conflicts.
+    for field in ('isin', 'wkn', 'ticker'):
+        value = str(position.get(field, '')).strip().upper()
+        if value:
+            return field, value
+    return '', ''
+
+
 def matching_fund(position: dict, funds: list[FundSnapshot]) -> FundSnapshot | None:
-    isin = str(position.get("isin", "")).strip().upper()
-    ticker = str(position.get("ticker", "")).strip().upper()
-    wkn = str(position.get('wkn', '')).strip().upper()
-    # An explicit ISIN is authoritative; a conflicting ticker must not select another fund.
-    matches = [fund for fund in funds if (isin == fund.isin if isin else
-               wkn == fund.wkn if wkn else bool(ticker) and ticker in fund.tickers)]
+    field, value = _position_listing(position)
+    if not value:
+        return None
+    if field == 'ticker':
+        matches = [fund for fund in funds if value in fund.tickers]
+    else:
+        matches = [fund for fund in funds if getattr(fund, field) == value]
     return matches[0] if len(matches) == 1 else None
+
+
+def group_fund_positions(funds: list[FundSnapshot], rows: Iterable[dict]) -> list[list[dict]]:
+    """Group positions in input order for each fund, as when checking its listings separately."""
+    by_listing = {}
+    groups = []
+    for fund in funds:
+        group = []
+        groups.append(group)
+        listings = {('isin', fund.isin), ('wkn', fund.wkn)}
+        listings.update(('ticker', ticker) for ticker in fund.tickers)
+        for key in listings:
+            if key[1]:
+                by_listing.setdefault(key, []).append(group)
+    if not by_listing:
+        return groups
+    for row in rows:
+        for group in by_listing.get(_position_listing(row), ()):
+            group.append(row)
+    return groups
 
 
 def smh_group_candidates(holdings: pd.DataFrame, funds: list[FundSnapshot]) -> tuple[set[str], set[str], set[str]]:
@@ -145,6 +209,18 @@ def validate_fund_listings(holdings: pd.DataFrame, funds: list[FundSnapshot]) ->
         fund = matching_fund(row, funds)
         if fund and fund.isin == "IE00BMC38736" and row["ticker"] == "SMH":
             raise DataError("SMH is the US-listed fund's price ticker. For the UCITS fund use a qualified ticker such as SMH.L (USD) or VVSM.DE.")
+
+
+def constituent_records(frame: pd.DataFrame):
+    """Read normalized text and weight columns in bulk, retaining provider metadata."""
+    canonical = all(dtype == 'float64' or (isinstance(dtype, pd.StringDtype) and dtype.na_value is not pd.NA)
+                    for dtype in frame.dtypes)
+    if not canonical or not len(frame.columns):
+        # Let pandas box arbitrary extension types, nullable values and date metadata.
+        return iter(frame.to_dict('records'))
+    names = tuple(frame.columns)
+    columns = [series.to_numpy(dtype=object) for _, series in frame.items()]
+    return (dict(zip(names, values)) for values in zip(*columns))
 
 
 def fund_breakdown(fund: FundSnapshot) -> pd.DataFrame:
@@ -196,48 +272,89 @@ def resolve_constituent_asset(constituent: dict, holdings: pd.DataFrame) -> tupl
     return constituent_resolver(holdings)(constituent)
 
 
-def fund_classifications(classifications, funds, holdings):
-    """Provider sector/country paths are fallbacks; local taxonomies always win."""
-    result = {asset: dict(taxonomies) for asset, taxonomies in classifications.items()}
+def resolved_constituents(funds, holdings):
     resolve = constituent_resolver(holdings)
     for fund in funds:
-        for row in fund.constituents.to_dict('records'):
-            asset_id, _ = resolve(row)
-            for column, taxonomy in [('sector', 'sector'), ('country', 'geography'),
-                                     ('issuer', 'issuer'), ('market_currency', 'currency'),
-                                     ('maturity_band', 'maturity'), ('credit_rating', 'credit_quality')]:
-                label = row.get(column)
-                if isinstance(label, str) and label.strip() and label not in {'Unknown', '-'}:
-                    result.setdefault(asset_id, {}).setdefault(taxonomy, ((label.strip(),),))
+        for row in constituent_records(fund.constituents):
+            yield resolve(row)[0], row
+
+
+def add_provider_classifications(result, asset_id, row):
+    for column, taxonomy in [('sector', 'sector'), ('country', 'geography'),
+                             ('issuer', 'issuer'), ('market_currency', 'currency'),
+                             ('maturity_band', 'maturity'), ('credit_rating', 'credit_quality')]:
+        label = row.get(column)
+        if isinstance(label, str) and label.strip() and label not in {'Unknown', '-'}:
+            result.setdefault(asset_id, {}).setdefault(taxonomy, ((label.strip(),),))
+
+
+def fund_classifications(classifications, funds, holdings):
+    """Provider sector/country paths are fallbacks; local taxonomies always win."""
+    result = copy_classifications(classifications)
+    for asset_id, row in resolved_constituents(funds, holdings):
+        add_provider_classifications(result, asset_id, row)
     return result
 
 
-def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame) -> pd.DataFrame:
-    records = []
+def _component_columns(fund, resolve):
+    components = {column: [] for column in ('asset_id', 'asset_name', 'ticker', 'isin',
+                                             'instrument_type', 'exposure_kind', 'source_type')}
+    weights = []
+    fallback = fund_kind(fund)
+    for constituent in constituent_records(fund_breakdown(fund)):
+        asset, name = resolve(constituent)
+        interpreted = interpret_constituent(constituent, fallback_kind=fallback)
+        components['asset_id'].append(asset)
+        components['asset_name'].append(name)
+        components['ticker'].append(interpreted.ticker)
+        components['isin'].append(interpreted.isin)
+        components['instrument_type'].append(interpreted.kind)
+        components['exposure_kind'].append(interpreted.exposure_kind)
+        components['source_type'].append('etf_other' if interpreted.residual else 'etf_constituent')
+        weights.append(interpreted.weight)
+    return components, weights
+
+
+def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame, *, additional_measures=(),
+                resolved_components=None, output_columns=None) -> pd.DataFrame:
+    measures = ("value", *additional_measures)
+    columns = list(dict.fromkeys([*exposures.columns, "instrument_type", "exposure_kind"]))
+    if output_columns is not None:
+        required = set(output_columns).union(measures)
+        columns = [column for column in columns if column in required]
     resolve = constituent_resolver(holdings)
-    for exposure in exposures.to_dict("records"):
-        fund = matching_fund(exposure, funds)
+    if exposures.empty:
+        return pd.DataFrame(columns=columns)
+    # A caller can reuse the validated components across amounts and account scopes
+    # within one revision of the fund catalog and the full holdings resolver.
+    by_fund = {} if resolved_components is None else resolved_components
+    result = {column: [] for column in columns}
+    missing = float("nan")
+    for source in exposures.to_dict("records"):
+        fund = matching_fund(source, funds)
         if fund is None:
-            records.append(exposure)
+            for column, values in result.items():
+                values.append(source.get(column, missing))
             continue
-        for constituent in fund_breakdown(fund).to_dict("records"):
-            row = exposure.copy()
-            row["asset_id"], row["asset_name"] = resolve(constituent)
-            row["value"] = exposure["value"] * constituent["weight"]
-            row["ticker"], row["isin"] = constituent["ticker"], constituent["isin"]
-            if 'wkn' in row:
-                row['wkn'] = ''
-            interpreted = interpret_constituent(constituent, fallback_kind=fund_kind(fund))
-            row['instrument_type'] = interpreted.kind
-            row['exposure_kind'] = interpreted.exposure_kind
-            row["source_type"] = "etf_other" if interpreted.residual else "etf_constituent"
-            row["direct_or_indirect"] = "indirect"
-            # Instrument quantities, quotes, and targets do not describe its constituents.
-            for field in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):
-                if field in row:
-                    row[field] = float("nan")
-            records.append(row)
-    return pd.DataFrame(records, columns=list(dict.fromkeys([*exposures.columns, 'instrument_type', 'exposure_kind'])))
+        key = id(fund) if resolved_components is None else (fund.isin, fund.fund_id)
+        if key not in by_fund:
+            by_fund[key] = _component_columns(fund, resolve)
+        components, weights = by_fund[key]
+        source["direct_or_indirect"] = "indirect"
+        source["wkn"] = ""
+        # Fund quantities, quotes and targets do not describe its constituents.
+        for column in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):
+            source[column] = missing
+        amounts = {key: source[key] for key in measures}
+        for column, values in result.items():
+            if column in amounts:
+                amount = amounts[column]
+                values.extend(amount * weight for weight in weights)
+            elif column in components:
+                values.extend(components[column])
+            else:
+                values.extend([source.get(column, missing)] * len(weights))
+    return pd.DataFrame(result)
 
 
 def effective_exposure_table(exposures: pd.DataFrame) -> pd.DataFrame:

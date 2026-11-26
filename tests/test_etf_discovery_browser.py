@@ -153,6 +153,7 @@ def test_saved_breakdown_accessible_from_settings_without_live_listing(fund_page
     page = fund_page
     settle_layout(page)
     page.get_by_role('button', name='Data & settings', exact=True).click()
+    playwright.expect(page.get_by_text('ETF breakdown: Invented fund', exact=True)).to_have_count(0)
     page.get_by_text('ETF refresh & snapshots', exact=True).click()
     # Nested controls move while the outer expander animates and scrolls.
     settle_layout(page)

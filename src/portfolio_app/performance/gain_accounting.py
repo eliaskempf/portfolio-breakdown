@@ -6,14 +6,15 @@ signs. Adding their gains therefore cancels internal movements, including income
 already held in cash. Futures are valued inside their accounts, never added again
 from the funded-investment display projection.
 """
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 import math
 
 from portfolio_app.ledger.account_journal import effective_events
-from portfolio_app.performance.history_observations import HistoryScope
-from portfolio_app.performance.personal_performance import HistoryCalculation, calculate_history
-from portfolio_app.ledger.security_history import replay_securities, selected_events, affected_positions
+from portfolio_app.performance.history_observations import HistoryScope, lookup
+from portfolio_app.performance.personal_performance import HistoryCalculation
+from portfolio_app.ledger.security_history import SecurityBook, replay_securities, selected_events, affected_positions
 
 ZERO = Decimal(0)
 
@@ -64,33 +65,51 @@ def amount(value):
     return Decimal(str(value)) if value is not None and math.isfinite(value) else None
 
 
+class ScopeEventDates:
+    """Dates indexed by the position or cash account affected by each effective event."""
+    def __init__(self, journal, account_events, book_events):
+        self.positions = defaultdict(set)
+        self.accounts = defaultdict(set)
+        owners = {p.id: p.account_id for p in journal.positions}
+        openings = {(e.account_id, e.currency): e.date for e in account_events if e.kind == 'cash_open'}
+
+        def affects_cash(account, currency, stamp, value_date=''):
+            opening = openings.get((account, currency))
+            # Match derived postings: the opening includes earlier settled payments.
+            return not opening or stamp > opening or bool(value_date and value_date != stamp)
+
+        for book, events in book_events:
+            for event in events:
+                if event.date:
+                    for identity in affected_positions(book, event):
+                        self.positions[identity].add(event.date)
+                    if (book.account_id and event.kind in {'buy', 'sell', 'distribution', 'fee', 'tax'}
+                            and affects_cash(book.account_id, event.currency, event.date, event.value_date)):
+                        self.accounts[book.account_id].add(event.date)
+                if event.kind != 'opening':
+                    for charge in event.charges:
+                        stamp = charge.date or event.date
+                        self.positions[book.position_id].add(stamp)
+                        if book.account_id and not charge.external and affects_cash(book.account_id, charge.currency, stamp):
+                            self.accounts[book.account_id].add(stamp)
+        for event in account_events:
+            for account in (event.account_id, event.other_account_id, owners.get(event.position_id)):
+                if account:
+                    self.accounts[account].add(event.date)
+
+    def dates(self, scope):
+        dates = set()
+        for identity in scope.positions:
+            dates.update(self.positions.get(identity, ()))
+        for account in scope.accounts:
+            dates.update(self.accounts.get(account, ()))
+        return sorted(dates)
+
+
 def scope_dates(journal, scope):
     """Every effective balance/cash date, including linked securities and fees."""
-    owners = {p.id: p.account_id for p in journal.positions}
-    account_events = effective_events(journal)
-    openings = {(e.account_id, e.currency): e.date for e in account_events if e.kind == 'cash_open'}
-    def affects_cash(account, currency, stamp, value_date=''):
-        opening = openings.get((account, currency))
-        # Match derived postings: the opening includes earlier settled payments.
-        return not opening or stamp > opening or bool(value_date and value_date != stamp)
-    dates = []
-    for book in journal.securities:
-        asset_inside = book.position_id in scope.positions
-        cash_inside = book.account_id in scope.accounts
-        for event in selected_events(book):
-            affected = bool(affected_positions(book, event).intersection(scope.positions))
-            cash_event = (cash_inside and event.kind in {'buy', 'sell', 'distribution', 'fee', 'tax'}
-                and affects_cash(book.account_id, event.currency, event.date, event.value_date))
-            if event.date and (affected or cash_event):
-                dates.append(event.date)
-            if event.kind != 'opening':
-                dates.extend(charge.date or event.date for charge in event.charges
-                    if asset_inside or (cash_inside and not charge.external
-                        and affects_cash(book.account_id, charge.currency, charge.date or event.date)))
-    dates += [e.date for e in account_events
-              if e.account_id in scope.accounts or e.other_account_id in scope.accounts
-              or owners.get(e.position_id) in scope.accounts]
-    return sorted(set(dates))
+    books = ((book, selected_events(book)) for book in journal.securities)
+    return ScopeEventDates(journal, effective_events(journal), books).dates(scope)
 
 
 def current_component_values(valued, journal, *, calculation=None):
@@ -114,7 +133,34 @@ def current_component_values(valued, journal, *, calculation=None):
     return result
 
 
-def summarize_known_gain(journal, scope, observations, end, target='EUR', *, current_values=None, summary_rows=None, calculation=None):
+@dataclass(frozen=True)
+class _GainMember:
+    identity: str
+    scope: HistoryScope
+    book: SecurityBook | None
+    first_date: str | None
+    has_opening_quantity: bool
+    first_disposal: str | None
+    first_income: str | None
+
+
+def _gain_members(calculation, scope):
+    # Scope membership and the selected ledger are fixed for this calculation.
+    def member(identity, boundary):
+        events = calculation._events.get(identity, ())
+        opening = next((e for e in events if e.kind == 'opening'), None)
+        dates = calculation.event_dates(boundary)
+        return _GainMember(identity, boundary, calculation._books.get(identity), dates[0] if dates else None,
+            bool(opening and opening.quantity),
+            next((e.date for e in events if e.kind in ('sell', 'swap')), None),
+            next((e.date for e in events if e.kind in ('distribution', 'reward')), None))
+
+    members = [member(identity, HistoryScope((identity,))) for identity in scope.positions]
+    members.extend(member('account:'+identity, HistoryScope(accounts=(identity,))) for identity in scope.accounts)
+    return tuple(members)
+
+
+def summarize_known_gain(journal, scope, observations, end, target='EUR', *, current_values=None, summary_rows=None, calculation=None, _member_closes=None):
     """Sum supported components; missing evidence never becomes a zero gain.
 
     Current summary rows supply only unrealized gain, with an explicit limitation.
@@ -122,10 +168,20 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     Historical callers never project current quantities or costs backwards.
     """
     calculation = calculation or HistoryCalculation(journal, observations)
+    if current_values is not None or summary_rows is not None:
+        _member_closes = None  # Chart subtotals correspond to the complete historical membership.
+    return _calculate_gain(calculation, scope, end, target, estimate_notes=_estimate_notes(calculation, scope, end),
+                           member_closes=_member_closes, current_values=current_values, summary_rows=summary_rows)
+
+
+def chart_gain_amounts(calculation, scope, end, target, *, member_closes=None):
+    """Capital and monetary gain for a plotted date. Estimate explanations belong to its summary."""
+    return _calculate_gain(calculation, scope, end, target, estimate_notes=None, member_closes=member_closes)
+
+
+def _estimate_notes(calculation, scope, end):
     estimate_notes = []
-    def dates_for(member):
-        return calculation._get(('scope_dates', member), lambda: scope_dates(journal, member))
-    estimated = calculation._get(('gain_estimates',), lambda: tuple((b, e) for b in journal.securities
+    estimated = calculation._get(('gain_estimates',), lambda: tuple((b, e) for b in calculation.journal.securities
         for e in calculation._events[b.position_id] if e.estimated or e.valuation_quality == 'estimated'
         or any(p.get('quality') == 'estimated' for p in e.costs)))
     for book, event in estimated:
@@ -137,64 +193,102 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
             estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
         if event.valuation_quality == 'estimated' or event.estimated:
             estimate_notes.append('Estimated monetary valuation retained from supplied evidence')
-    if any(e.valuation_quality == 'estimated' or any(p.get('quality') == 'estimated' for p in e.costs)
-           for _, e in estimated):
+    if scope.positions and any(e.valuation_quality == 'estimated' or any(p.get('quality') == 'estimated' for p in e.costs)
+                               for _, e in estimated):
         states = calculation.securities(end).positions
         if any(p.get('quality') == 'estimated' for identity in scope.positions
                if identity in states for p in states[identity].costs):
             estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
+    return estimate_notes
+
+
+def _member_values(calculation, scope, parts, end, target, closes):
+    """Apply a supplied member close to that member alone, in the original scope order."""
+    overrides = calculation._get(('gain_member_overrides', scope), lambda: tuple(
+        (i, part.scope.key) for i, part in enumerate(parts)
+        if ('value', part.scope.key) in calculation.observations.scope_rows))
+    if overrides:
+        closes = list(closes)
+        for i, subject in overrides:
+            mark = lookup(calculation.observations, 'value', subject, end, currency=target)
+            if mark is not None:
+                closes[i] = mark.amount
+    return closes
+
+
+def _calculate_gain(calculation, scope, end, target, *, estimate_notes, member_closes, current_values=None, summary_rows=None):
+    # None requests just the plotted (capital, gain) pair. An empty list is a
+    # detailed summary whose ledger has no supplied estimates.
+    detailed = estimate_notes is not None
+    scope_basis = None
     # When a movement connects positions, value the selected boundary
     # as a whole before component fallbacks. Missing internal transfer marks must
     # not prevent cancellation or make a known portfolio gain partial.
     if len(scope.positions) + len(scope.accounts) > 1 and not scope.unresolved:
-        dates = dates_for(scope)
+        dates = calculation.event_dates(scope)
         if dates and dates[0] <= end:
-            result = calculate_history(journal, scope, observations, dates[0], end, target, returns=False, calculation=calculation)
-            flows, missing = calculation.flows(scope, dates[0], end, target)
-            if result.opening_capital is not None and not missing and not result.flow_reasons:
-                value = result.ending_value
+            scope_basis = calculation.period_capital(scope, dates[0], end, target)
+            value = calculation.close(scope, end, target).amount
+            if scope_basis.invested_capital is not None:
                 if current_values is not None:
                     values = [current_values.get(i) for i in scope.positions]
                     values += [current_values.get('account:'+a) for a in scope.accounts]
                     value = sum(values, ZERO) if all(v is not None for v in values) else None
                 if value is not None:
-                    capital = result.opening_capital + sum((f.amount for f in flows), ZERO)
+                    capital = scope_basis.invested_capital
+                    if not detailed:
+                        return capital, value-capital
                     count = len(scope.positions)+len(scope.accounts)
-                    reasons = [*result.flow_reasons, *estimate_notes]
-                    if any(e.kind == 'opening' and e.quantity for b in journal.securities
-                           if b.position_id in scope.positions for e in selected_events(b)):
+                    reasons = list(estimate_notes)
+                    if calculation._get(('gain_opening', scope.positions), lambda: any(
+                            e.kind == 'opening' and e.quantity for identity in scope.positions
+                            for e in calculation._events.get(identity, ()))):
                         reasons.append('Earlier realized gains and income before opening snapshots are unknown')
                     return GainSummary(value-capital, value, capital, count, count, tuple(reasons), end, target)
-    books = {b.position_id: b for b in journal.securities}
     rows = {} if summary_rows is None else summary_rows.set_index('position_id').to_dict('index')
-    parts = [(identity, HistoryScope((identity,))) for identity in scope.positions
-             if not (rows.get(identity, {}).get('shares') == 0 and identity not in books)]
-    parts += [('account:'+identity, HistoryScope(accounts=(identity,))) for identity in scope.accounts]
-    gains, values, capitals, reasons = [], [], [], [*scope.unresolved, *estimate_notes]
-    for identity, member in parts:
-        dates = dates_for(member)
-        value = (current_values.get(identity) if current_values is not None else
-                 calculation.value(member, end, target).amount)
+    parts = calculation._get(('gain_members', scope), lambda: _gain_members(calculation, scope))
+    if member_closes is not None:
+        member_closes = _member_values(calculation, scope, parts, end, target, member_closes)
+        previous = calculation._last_chart_member_capitals
+        if not detailed and previous is not None:
+            prior_basis, capitals = previous
+            if scope_basis is prior_basis and len(member_closes) == len(capitals) and None not in member_closes:
+                # Subtract in member order. Subtracting the two totals can round differently.
+                gains = (value - cost for value, cost in zip(member_closes, capitals, strict=True))
+                return sum(capitals, ZERO), sum(gains, ZERO)
+    if rows:
+        parts = [part for part in parts if part.book or part.scope.accounts or rows.get(part.identity, {}).get('shares') != 0]
+    gains, values, capitals = [], [], []
+    reasons = [*scope.unresolved, *estimate_notes] if detailed else []
+    for index, part in enumerate(parts):
+        identity, member, book = part.identity, part.scope, part.book
+        has_history = part.first_date is not None and part.first_date <= end
+        # Historical valuations also validate dated FX when a current quote overrides them.
+        if member_closes is None:
+            historical_value = calculation.close(member, end, target).amount if has_history or current_values is None else None
+        else:
+            historical_value = member_closes[index]
+        value = historical_value if current_values is None else current_values.get(identity)
         values.append(value)
         gain = capital = None
-        book = books.get(identity)
-        if dates and dates[0] <= end:
-            result = calculate_history(journal, member, observations, dates[0], end, target, returns=False, calculation=calculation)
-            capital = result.invested_capital
+        if has_history:
+            basis = calculation.period_capital(member, part.first_date, end, target)
+            capital = basis.invested_capital
             if value is not None and capital is not None:
                 gain = value-capital
             else:
-                reasons.extend(f'{identity}: {r}' for r in (*result.flow_reasons, *result.capital_reasons))
-                if (value is not None and result.opening_value is not None and result.net_contributions is not None
-                        and not any(getattr(r, 'kind', '') == 'cost_basis' for r in result.capital_reasons)):
-                    gain = value-result.opening_value-result.net_contributions
-                    reasons.append(f'{identity}: only post-snapshot gain is known; opening acquisition cost is unavailable')
-            if book:
-                openings = [e for e in selected_events(book) if e.kind == 'opening']
-                if openings and openings[0].quantity:
+                if detailed:
+                    reasons.extend(f'{identity}: {r}' for r in (*basis.flow_reasons, *basis.opening_capital.reasons))
+                if (value is not None and basis.opening_value.amount is not None and basis.net_contributions is not None
+                        and not any(getattr(r, 'kind', '') == 'cost_basis' for r in basis.opening_capital.reasons)):
+                    gain = value-basis.opening_value.amount-basis.net_contributions
+                    if detailed:
+                        reasons.append(f'{identity}: only post-snapshot gain is known; opening acquisition cost is unavailable')
+            if detailed:
+                if book and part.has_opening_quantity:
                     reasons.append(f'{identity}: earlier realized gains and income before the snapshot are unknown')
-            else:
-                reasons.append(f'{identity}: account performance begins at its recorded opening equity')
+                elif not book:
+                    reasons.append(f'{identity}: account performance begins at its recorded opening equity')
         if gain is None:
             # Summary fallback supports current unrealized gain only. Do not add
             # it to a reconstructed total or invent historical summary holdings.
@@ -204,27 +298,34 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                 reasons.append(f'{identity}: unrealized gain uses an estimated cost conversion')
             if book and book.active:
                 from portfolio_app.performance.gain_components import security_gain_components
-                components = security_gain_components(journal, identity, observations, end, target,
-                                                     current_value=value, calculation=calculation)
-                events = [e for e in selected_events(book) if e.date <= end]
-                kinds = {e.kind for e in events}
+                components = security_gain_components(calculation.journal, identity, calculation.observations, end,
+                                                     target, current_value=value, calculation=calculation)
                 known_parts = [gain if gain is not None else components.unrealized]
-                if kinds.intersection({'sell', 'swap'}):
+                if part.first_disposal is not None and part.first_disposal <= end:
                     known_parts.append(components.known_realized)
-                if kinds.intersection({'distribution', 'reward'}):
+                if part.first_income is not None and part.first_income <= end:
                     known_parts.append(components.known_income)
                 if components.known_expenses:
                     known_parts.append(-components.known_expenses)
                 supported = [part for part in known_parts if part is not None]
                 gain = sum(supported, ZERO) if supported else None
-                reasons.extend(components.reasons)
+                if detailed:
+                    reasons.extend(components.reasons)
             capital = None
-            reasons.append(f'{identity}: only individually supported gain components are included' if gain is not None
-                           else f'{identity}: gain is unavailable')
+            if detailed:
+                reasons.append(f'{identity}: only individually supported gain components are included' if gain is not None
+                               else f'{identity}: gain is unavailable')
         if gain is not None:
             gains.append(gain)
         capitals.append(capital)
-    known_value = sum(values, ZERO) if values and all(v is not None for v in values) else None
     known_capital = sum(capitals, ZERO) if capitals and all(v is not None for v in capitals) and not scope.unresolved else None
-    return GainSummary(sum(gains, ZERO) if gains else None, known_value, known_capital,
+    known_gain = sum(gains, ZERO) if gains else None
+    if not detailed:
+        if member_closes is not None and scope_basis is not None and known_capital is not None:
+            # The scope basis is shared only within one interval of its ledger,
+            # linked books and receipts. All member bases are stable inside it.
+            calculation._last_chart_member_capitals = scope_basis, tuple(capitals)
+        return known_capital, known_gain
+    known_value = sum(values, ZERO) if values and all(v is not None for v in values) else None
+    return GainSummary(known_gain, known_value, known_capital,
                        len(gains), len(parts), tuple(dict.fromkeys(reasons)), end, target)

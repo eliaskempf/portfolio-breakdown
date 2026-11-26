@@ -1,13 +1,17 @@
 """Analytics within Overview's existing category navigation and visual style."""
-from portfolio_app.interface.shared.chart_hover import chart_hover
+from functools import cache
 
-from portfolio_app.interface.shared.currency_display import money, reporting_currency
 import pandas as pd
 import streamlit as st
+
+from portfolio_app.interface.shared.chart_hover import chart_hover
 from portfolio_app.interface.shared.charts import chart_config
+from portfolio_app.interface.shared.currency_display import money, reporting_currency
+from portfolio_app.interface.shared.detail_panels import render_detail_panel, render_view_fragment
 
 from portfolio_app.analytics.analytics import snapshot_analytics
-from portfolio_app.analytics.analytics_service import load_metrics, load_risk
+from portfolio_app.interface.views.analytics.risk_updates import mounted_risk_current, view_risk
+from portfolio_app.interface.views.analytics.metric_updates import view_metrics
 from portfolio_app.interface.views.analytics.analytics_ui import benchmark_name, context_key, data_quality_caption, display_value, fundamentals_refresh_reason, render_sources, risk_settings
 from portfolio_app.interface.shared.charts import correlation_chart
 from portfolio_app.exposure.company_analysis import load_company_analysis
@@ -21,7 +25,7 @@ def coverage(metric, universe):
             if metric.eligible_value > 0 else f'No valued {universe}')
 
 
-def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Portfolio', future=None, portfolio_result=None, scoped=False, portfolio_net_equity=None):
+def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Portfolio', future=None, portfolio_result=None, scoped=False, portfolio_net_equity=None, current_view=None):
     key = context_key(data_dir, demo) + '_overview'
     with st.container(key='tour_risk'):
         with st.container(key='tour_risk_controls'):
@@ -50,19 +54,23 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
             benchmark_slot = heading.container()
             from portfolio_app.interface.views.onboarding.tour import active
             loaded = st.session_state.get(key + '_risk_loaded', False) or (demo and active())
-            calculate = action.button('Refresh risk' if loaded else 'Calculate risk', help='Calculate historical risk from public price data for this selection; no holdings are changed.', icon=':material/refresh:' if loaded else ':material/analytics:',
-                                      type='secondary', disabled=not benchmark, key=key + '_risk_calculate', width='stretch')
-        if calculate:
-            st.session_state[key + '_risk_loaded'] = True
-            loaded = True
+            refresh_risk = False
+            if loaded:
+                refresh_risk = action.button('Refresh risk', help='Request updated historical prices for this selection.',
+                    icon=':material/refresh:', disabled=not benchmark, key=key + '_risk_refresh', width='stretch')
+            else:
+                action.button('Calculate risk', help='Calculate historical risk using available price histories.',
+                    icon=':material/analytics:', disabled=not benchmark, key=key + '_risk_calculate', width='stretch',
+                    on_click=st.session_state.update, args=({key + '_risk_loaded': True},))
         benchmark_symbol = benchmark
         if loaded and benchmark:
             with st.spinner('Calculating historical risk…'):
-                risk, status = load_risk(selected, data_dir, demo, benchmark, years, calculate and not demo,
+                risk, status = view_risk(selected, data_dir, demo, benchmark, years, refresh_risk and not demo,
                     future=risk_future, portfolio_result=portfolio_result, scoped=scope_active,
                     portfolio_net_equity=portfolio_net_equity)
             benchmark_symbol = status.attrs.get('benchmark_symbol', benchmark)
-            render_risk_dashboard(risk, status, selected, future=risk_future, scoped=scope_active)
+            render_risk_dashboard(risk, status, selected, future=risk_future, scoped=scope_active,
+                current_view=(lambda: current_view() and mounted_risk_current(risk)) if current_view else None)
         else:
             st.caption('Calculate to view risk and holdings correlations.')
         with benchmark_slot:
@@ -76,8 +84,7 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         refresh = st.button('Refresh fundamentals', icon=':material/refresh:', disabled=bool(refresh_reason),
                             help=refresh_reason or 'Refresh public fundamentals for the selected holdings.', key=key + '_refresh')
     try:
-        with st.spinner('Loading analytics…'):
-            snapshots = load_metrics(selected, data_dir, demo=demo, refresh=refresh)
+        snapshots = view_metrics(selected, data_dir, demo=demo, refresh=refresh)
     except DataError as exc:
         st.error(str(exc))
         return
@@ -99,40 +106,50 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         st.metric('Trailing cash yield', display_value(Metric(income.value, 'fraction'), 'distribution_yield'),
                   help='Trailing stock dividends and fund cash distributions for covered holdings. Not a forecast or income received; accumulating share classes pay no cash distributions.')
         st.caption(coverage(income, 'equity and fund'))
-    with st.expander('Valuation, income & fee details'):
-        names = {'trailing_pe': 'Trailing P/E · direct stocks', 'forward_pe': 'Forward P/E · direct stocks',
-                 'fee': 'Weighted annual fee · covered funds', 'fee_reporting': 'Known annual fund costs',
-                 'distribution_yield': 'Trailing cash yield', 'distribution_yield_reporting': 'Annualized trailing distributions'}
-        rows = []
-        for name, metric in summary.metrics.items():
-            unit = reporting_currency() if name.endswith('_reporting') else 'ratio' if name.endswith('_pe') else 'fraction'
-            rows.append({'Metric': names[name], 'Value': display_value(Metric(metric.value, unit), name),
-                         'Covered value': metric.covered_value, 'Eligible value': metric.eligible_value,
-                         'Missing / nonmeaningful positions': metric.excluded_count})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
-        st.caption('Missing metrics stay unavailable. Loss-making equities are excluded from P/E. Fees are already reflected in prices; '
-                   'trailing distributions are not a forecast. Buy-in performance is available in the Performance view.')
-    with st.expander('Fundamental sources & data quality'):
-        render_sources(snapshots)
+    render_detail_panel('Valuation, income & fee details', key + '_valuation_details',
+                        lambda: render_valuation_details(summary), current=current_view)
+    render_detail_panel('Fundamental sources & data quality', key + '_fundamental_sources',
+                        lambda: render_sources(snapshots), current=current_view)
     st.markdown('**Concentration**')
     columns = st.columns(3)
     columns[0].metric('Largest holding', '—' if summary.largest_weight is None else f'{summary.largest_weight:.1%}', help='Largest instrument weight in the selected portfolio; repeated instrument IDs are combined.')
     columns[1].metric('Top five', '—' if summary.top_five_weight is None else f'{summary.top_five_weight:.1%}', help='Combined weight of the five largest instruments in this selection.')
     columns[2].metric('Effective holdings', '—' if summary.effective_holdings is None else f'{summary.effective_holdings:.1f}',
                       help='1 / sum of squared value weights. Repeated instrument IDs are combined; fund wrappers count as holdings here.')
-    with st.expander('Underlying company exposure'):
-        render_company_exposure(selected, snapshots, funds, data_dir)
+
+    @cache
+    def company_details():
+        prepared = load_company_analysis(selected, snapshots, funds, data_dir)
+        # Only these tables and notes are displayed on this mounted view.
+        return prepared.exposure.companies.head(10).copy(), prepared.exposure.unresolved, prepared.proxy_notes
+
+    render_detail_panel('Underlying company exposure', key + '_company_exposure',
+                        lambda: render_company_exposure(company_details), current=current_view)
 
 
-def render_company_exposure(valued, snapshots, funds, data_dir):
+def render_valuation_details(summary):
+    names = {'trailing_pe': 'Trailing P/E · direct stocks', 'forward_pe': 'Forward P/E · direct stocks',
+             'fee': 'Weighted annual fee · covered funds', 'fee_reporting': 'Known annual fund costs',
+             'distribution_yield': 'Trailing cash yield', 'distribution_yield_reporting': 'Annualized trailing distributions'}
+    rows = []
+    for name, metric in summary.metrics.items():
+        unit = reporting_currency() if name.endswith('_reporting') else 'ratio' if name.endswith('_pe') else 'fraction'
+        rows.append({'Metric': names[name], 'Value': display_value(Metric(metric.value, unit), name),
+                     'Covered value': metric.covered_value, 'Eligible value': metric.eligible_value,
+                     'Missing / nonmeaningful positions': metric.excluded_count})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
+    st.caption('Missing metrics stay unavailable. Loss-making equities are excluded from P/E. Fees are already reflected in prices; '
+               'trailing distributions are not a forecast. Buy-in performance is available in the Performance view.')
+
+
+def render_company_exposure(load_details):
     try:
-        prepared = load_company_analysis(valued, snapshots, funds, data_dir)
-        company = prepared.exposure
-        st.dataframe(company.companies.head(10), hide_index=True, width='stretch')
-        if not company.unresolved.empty:
+        companies, unresolved, proxy_notes = load_details()
+        st.dataframe(companies, hide_index=True, width='stretch')
+        if not unresolved.empty:
             st.caption('Unresolved look-through exposure is excluded from the named-company ranking.')
-            st.dataframe(company.unresolved, hide_index=True, width='stretch')
-        for note in prepared.proxy_notes:
+            st.dataframe(unresolved, hide_index=True, width='stretch')
+        for note in proxy_notes:
             st.caption(note)
     except DataError as exc:
         st.error(str(exc))
@@ -182,7 +199,7 @@ def render_risk_details(result, status, names, *, scoped=False):
     st.dataframe(status, hide_index=True, width='stretch')
 
 
-def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False):
+def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False, current_view=None):
     names = {row.id: instrument_name(row) for row in holdings.itertuples()}
     if future is not None:
         names['future:overlay'] = f'{future.instrument} future · index proxy'
@@ -217,30 +234,38 @@ def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False
             # A blocked estimate needs its reason without requiring exploration.
             st.caption(result.note)
     if not result.holdings.empty:
-        correlations = result.correlations.dropna(how='all').dropna(axis=1, how='all')
-        with st.container(key='risk_correlations'):
-            heading, expand = st.columns([4, 1], vertical_alignment='center')
-            heading.markdown('**Holdings correlations**', help='Pairwise correlations on the same weekly sample. Positions with no defined correlations are omitted here but remain in the risk calculations. Foreign-currency cash retains its FX correlations; blank cells are not zero.')
-            if correlations.empty:
-                st.caption('No varying returns to compare.')
-            else:
-                expanded = expand.toggle('Expand', key='analytics_correlations_expanded', help='Enlarge the correlation matrix and show full investment names.')
-                figure = correlation_chart(correlations, names, compact=not expanded)
-                st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
-        frame = result.holdings.copy()
-        frame.insert(0, 'Investment', [names.get(key, key) for key in frame.index])
-        labels = {'Weight': 'Weight / subset capital (%)' if scoped else 'Weight / net equity (%)' if result.integrated else 'Allocation (%)',
-                  'Annual volatility': 'Volatility (%)', 'Volatility contribution': 'Volatility contribution (pp)',
-                  'Risk share': 'Share of risk (%)', 'Beta contribution': 'Contribution to subset beta' if scoped else 'Beta contribution'}
-        for field in ('Weight', 'Annual volatility', 'Volatility contribution', 'Risk share'):
-            frame[field] *= 100
-        heading, options = st.columns([5, 1], vertical_alignment='center')
-        heading.markdown('**Holdings risk**', help='Volatility contributions sum to the displayed estimate. Negative contributions indicate diversification.')
-        with options.popover('Columns', width='stretch'):
-            visible = st.multiselect('Risk columns', [field for field in frame.columns if field != 'Investment'],
-                default=['Weight', 'Beta', 'Annual volatility', 'Risk share'], format_func=lambda field: labels.get(field, field),
-                key='analytics_risk_columns')
-        frame = frame.rename(columns=labels)
-        st.dataframe(frame, hide_index=True, width='stretch',
-            column_order=['Investment', *[labels.get(field, field) for field in visible]],
-            column_config={field: st.column_config.NumberColumn(format='%.2f') for field in frame.columns if field != 'Investment'})
+        render_view_fragment('analytics_risk_matrix', lambda: render_risk_matrix(result, names), current=current_view)
+        render_view_fragment('analytics_risk_table', lambda: render_risk_holdings(result, names, scoped), current=current_view)
+
+
+def render_risk_matrix(result, names):
+    correlations = result.correlations.dropna(how='all').dropna(axis=1, how='all')
+    with st.container(key='risk_correlations'):
+        heading, expand = st.columns([4, 1], vertical_alignment='center')
+        heading.markdown('**Holdings correlations**', help='Pairwise correlations on the same weekly sample. Positions with no defined correlations are omitted here but remain in the risk calculations. Foreign-currency cash retains its FX correlations; blank cells are not zero.')
+        if correlations.empty:
+            st.caption('No varying returns to compare.')
+        else:
+            expanded = expand.toggle('Expand', key='analytics_correlations_expanded', help='Enlarge the correlation matrix and show full investment names.')
+            figure = correlation_chart(correlations, names, compact=not expanded)
+            st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
+
+
+def render_risk_holdings(result, names, scoped):
+    frame = result.holdings.copy()
+    frame.insert(0, 'Investment', [names.get(key, key) for key in frame.index])
+    labels = {'Weight': 'Weight / subset capital (%)' if scoped else 'Weight / net equity (%)' if result.integrated else 'Allocation (%)',
+              'Annual volatility': 'Volatility (%)', 'Volatility contribution': 'Volatility contribution (pp)',
+              'Risk share': 'Share of risk (%)', 'Beta contribution': 'Contribution to subset beta' if scoped else 'Beta contribution'}
+    for field in ('Weight', 'Annual volatility', 'Volatility contribution', 'Risk share'):
+        frame[field] *= 100
+    heading, options = st.columns([5, 1], vertical_alignment='center')
+    heading.markdown('**Holdings risk**', help='Volatility contributions sum to the displayed estimate. Negative contributions indicate diversification.')
+    with options.popover('Columns', width='stretch'):
+        visible = st.multiselect('Risk columns', [field for field in frame.columns if field != 'Investment'],
+            default=['Weight', 'Beta', 'Annual volatility', 'Risk share'], format_func=lambda field: labels.get(field, field),
+            key='analytics_risk_columns')
+    frame = frame.rename(columns=labels)
+    st.dataframe(frame, hide_index=True, width='stretch',
+        column_order=['Investment', *[labels.get(field, field) for field in visible]],
+        column_config={field: st.column_config.NumberColumn(format='%.2f') for field in frame.columns if field != 'Investment'})

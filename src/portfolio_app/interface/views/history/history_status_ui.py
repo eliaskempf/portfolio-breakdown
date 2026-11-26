@@ -4,15 +4,17 @@ from hashlib import sha256
 
 import streamlit as st
 
+from portfolio_app.interface.shared.background_ui import refresh_allowed, status_fragment
+from portfolio_app.interface.shared.dialog_runtime import local_fragment_updates
 from portfolio_app.interface.shared.render_sections import render_sections
 
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from portfolio_app.interface.shared.display_names import instrument_name
-from portfolio_app.interface.views.history.history_data_ui import readable_reasons
-from portfolio_app.performance.history_observations import HistoryScope, load_observations
+from portfolio_app.interface.views.history.history_data_ui import HistoryReasonFormatter
+from portfolio_app.performance.history_observations import HistoryScope
 from portfolio_app.performance.history_status import position_history_statuses
-from portfolio_app.interface.shared.input_cache import cached_input
+from portfolio_app.interface.shared.input_cache import cached_input, observation_snapshot
 from portfolio_app.interface.shared.list_ui import ListColumn, render_list
 from portfolio_app.interface.views.positions.position_list import list_context
 
@@ -30,29 +32,50 @@ def render_history_status_list(path, snapshot, holdings, *, demo=False):
     target = reporting_currency()
     refresh = RefreshStatus() if demo else refresher.request(path.parent, journal, scope, target)
 
-    @st.fragment(run_every=2 if refresh.pending else None)
-    def region():
-        nonlocal refresh
-        if refresh.pending and not refresher.pending(path.parent):
-            current, _ = load_journal(path.parent)
-            refresh = refresher.request(path.parent, current, scope, target)
+    @st.fragment
+    def checklist():
+        current, revision = load_journal(path.parent)
+        observations, evidence_revision = observation_snapshot(path.parent)
+        displayed = revision, evidence_revision
+        published = displayed
         sections = render_sections('history_status_', 'refresh', 'list')
-        with sections['refresh']:
+
+        @local_fragment_updates()
+        def update_checklist():
+            st.rerun()
+
+        @status_fragment()
+        def status(poll):
+            nonlocal refresh, published
+            if refresh.pending and not refresher.pending(path.parent):
+                latest, journal_revision = load_journal(path.parent)
+                refresh = refresher.request(path.parent, latest, scope, target)
+                published = journal_revision, observation_snapshot(path.parent)[1]
             if refresh.pending:
                 st.caption('Loading historical prices and FX…')
+                poll(2)
+            elif published != displayed:
+                if refresh_allowed():
+                    if published[0] != revision:
+                        st.rerun()  # A journal edit can also change the holdings on the parent page.
+                    update_checklist()
+                poll(2)
             elif refresh.errors:
                 if st.button('Retry prices', key='history_status_retry'):
-                    current, _ = load_journal(path.parent)
-                    refresher.request(path.parent, current, scope, target, force=True)
-                    st.rerun()
+                    latest, _ = load_journal(path.parent)
+                    refresh = refresher.request(path.parent, latest, scope, target, force=True)
+                    update_checklist()
+
         with sections['list']:
-            _render_history_status_list(path, snapshot, holdings)
-    region()
+            _render_history_status_list(path, snapshot, holdings, current, observations, displayed)
+        with sections['refresh']:
+            status()
+
+    checklist()
 
 
-def _render_history_status_list(path, snapshot, holdings):
-    journal, journal_revision = load_journal(path.parent)
-    observations, observations_revision = load_observations(path.parent)
+def _render_history_status_list(path, snapshot, holdings, journal, observations, revisions):
+    journal_revision, observations_revision = revisions
     target = reporting_currency()
     signature = (str(path.parent.resolve()), snapshot.revision, journal_revision, observations_revision,
                  target, date.today(), tuple((row.position_id, getattr(row, 'instrument_type', ''), getattr(row, 'account_id', '')) for row in holdings.itertuples()))
@@ -62,14 +85,15 @@ def _render_history_status_list(path, snapshot, holdings):
         help='Checks use saved evidence and the recorded interval. Matching balances cannot prove that no transactions are missing.')
     st.caption('Select a position to review its history.')
     names = {row.position_id: instrument_name(row) for row in holdings.itertuples()}
+    formatter = HistoryReasonFormatter(journal, lambda: names)
     details = {item.position_id: item for item in statuses}
     rows = []
     for item in statuses:
         if only_issues and not item.needs_attention:
             continue
-        explanations = readable_reasons(path.parent, journal, item.scope, item.reasons, names=names)
+        explanations = formatter.format(item.reasons, limit=4)
         rows.append(dict(id=item.position_id, name=names[item.position_id], transactions=item.transactions,
-                         market=item.market, money_weighted=item.money_weighted, time_weighted=item.time_weighted, freshness=item.freshness, action=item.action, explanation=((f'Checked {item.start} – {item.end}. ' if item.start else '')+' '.join(explanations[:4]))))
+                         market=item.market, money_weighted=item.money_weighted, time_weighted=item.time_weighted, freshness=item.freshness, action=item.action, explanation=((f'Checked {item.start} – {item.end}. ' if item.start else '')+' '.join(explanations))))
     if not rows:
         st.info('No missing history inputs detected for these positions.' if statuses else 'No positions to check.')
         return

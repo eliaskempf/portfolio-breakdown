@@ -89,3 +89,30 @@ def test_child_paths_split_both_cost_and_current_and_merge_accounts():
     tables = [item.allocations.loc[item.allocations.path == child] for item in compared]
     result = add_performance_column(pd.DataFrame({"id": ["a", "b"]}), ["a", "b"], tables, key="asset_id")
     assert result.Performance.tolist() == pytest.approx([100/3, -20])
+
+
+def test_amounts_align_in_bulk_with_repeated_display_keys_and_indices(monkeypatch):
+    from portfolio_app.portfolio.targets import add_target_columns, target_totals
+
+    keys = ["absent", "held", "held"]
+    table = pd.DataFrame({"Value": [4., 20., 40.]}, index=[7, 2, 2])
+    known = pd.DataFrame({"asset": ["held", "held"], "value": [10., 6.]})
+    current = known.assign(value=[14., 6.])
+    flags = known.iloc[:0]
+    targets = target_totals(known.assign(value=[.10, .06]), flags, key="asset")
+
+    original = pd.Series.get
+    def checked(series, key, *args):
+        if series.index.name == "asset":
+            pytest.fail("A grouped amount was looked up one display row at a time")
+        return original(series, key, *args)
+    monkeypatch.setattr(pd.Series, "get", checked)
+
+    performance = add_performance_column(table, keys, [known, current, flags, flags], key="asset")
+    assert performance.index.tolist() == [7, 2, 2]
+    assert pd.isna(performance.Performance.iloc[0])
+    assert performance.Performance.iloc[1:].tolist() == [25., 25.]
+    assert performance["Performance coverage"].tolist() == ["Unavailable", "Complete", "Complete"]
+    target = add_target_columns(table, keys, targets, portfolio_value=100., valuation_complete=True)
+    assert target.index.tolist() == [7, 2, 2]
+    assert target["Target portfolio %"].tolist() == [0., 16., 16.]

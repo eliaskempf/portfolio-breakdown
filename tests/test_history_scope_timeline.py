@@ -7,7 +7,7 @@ import pytest
 from portfolio_app.ledger.account_journal import Account, Event, Journal
 from portfolio_app.performance.gain_accounting import scope_dates
 from portfolio_app.performance.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore
-from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.history_view import full_history_time_weighted, history_view
 from portfolio_app.ledger.security_history import Charge, SecurityBook, SecurityEvent, history_fingerprint
 
 
@@ -70,7 +70,7 @@ def test_receiving_position_includes_transfer_date_from_source_book():
 
 
 def test_separate_fee_negative_equity_withholds_direct_and_chart_returns():
-    from portfolio_app.performance.personal_performance import calculate_history, known_negative_equity_dates, value_at
+    from portfolio_app.performance.personal_performance import HistoryCalculation, calculate_history, known_negative_equity_dates, value_at
     events = (SecurityEvent('zero', 'opening', '2024-01-01'),
         SecurityEvent('buy', 'buy', '2024-01-02', quantity=1, price=10, currency='EUR', charges_known=True),
         SecurityEvent('sell', 'sell', '2024-01-03', quantity=1, price=10, currency='EUR', charges_known=True,
@@ -88,6 +88,7 @@ def test_separate_fee_negative_equity_withholds_direct_and_chart_returns():
     assert known_negative_equity_dates(journal, scope, store, '2024-01-01', '2024-01-05') == ('2024-01-04',)
     direct = calculate_history(journal, scope, store, '2024-01-01', '2024-01-05')
     chart = history_view(journal, scope, store, 'All', today=date(2024, 1, 5)).all_result
+    assert full_history_time_weighted(HistoryCalculation(journal, store), scope, date(2024, 1, 5), 'EUR') is None
     for result in (direct, chart):
         assert result.gain == 0
         assert result.time_weighted is None and result.money_weighted is None
@@ -130,3 +131,67 @@ def test_csv_companion_position_dates_include_later_atomic_movements(movement):
     store = ObservationStore((Observation('price', 'price', 'destination', '2024-01-01', 10, 'EUR'),))
     view = history_view(journal, scope, store, 'All', today=date(2024, 1, 3))
     assert any('latest recorded event' in r for r in view.all_result.time_weighted_reasons)
+
+
+def test_chart_and_negative_equity_check_share_scoped_dates(monkeypatch):
+    from portfolio_app.performance import history_valuation
+    from portfolio_app.performance.personal_performance import HistoryCalculation, known_negative_equity_dates
+    journal = Journal()
+    scope = HistoryScope(('invented',))
+    store = ObservationStore((
+        Observation('close', 'value', scope.key, '2024-01-01', 10, 'EUR'),
+        Observation('before', 'value', scope.key, '2024-01-03', -1, 'EUR', side='before', boundary='test-flow'),
+        Observation('different-unit', 'value', scope.key, '2024-01-04', -2, 'USD', side='before', boundary='other-flow'),
+        Observation('other-scope', 'value', HistoryScope(('other',)).key, '2024-01-02', -5, 'EUR'),
+    ))
+    scans = []
+    original = history_valuation.scope_observations
+    def counted(*args):
+        scans.append(args[-1])
+        return original(*args)
+    monkeypatch.setattr(history_valuation, 'scope_observations', counted)
+    calculation = HistoryCalculation(journal, store)
+    history_view(journal, scope, store, 'All', today=date(2024, 1, 5), calculation=calculation)
+    facts = calculation.observation_dates(scope, 'EUR')
+    assert facts.chart_dates == {'2024-01-01'}
+    assert facts.boundary_dates == {'2024-01-03', '2024-01-04'}
+    assert known_negative_equity_dates(journal, scope, store, '2024-01-01', '2024-01-05',
+        calculation=calculation) == ('2024-01-03',)
+    assert scans == ['EUR']
+    assert calculation.observation_dates(scope, 'USD').negative_equity_dates == {'2024-01-04'}
+    assert scans == ['EUR', 'USD']
+
+
+def test_many_scope_date_requests_visit_each_selected_event_once(monkeypatch):
+    from portfolio_app.performance import gain_accounting
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    books = tuple(SecurityBook(f'asset-{i}', 'INVENTED', ('0', '', ''),
+        records=(SecurityEvent(f'start-{i}', 'opening', f'2024-01-{i+1:02}'),), active_ids=(f'start-{i}',))
+        for i in range(12))
+    journal = Journal(version=2, securities=books)
+    calculation = HistoryCalculation(journal, ObservationStore())
+    visits = []
+    affected = gain_accounting.affected_positions
+    def counted(book, event):
+        visits.append((book.position_id, event.id))
+        return affected(book, event)
+    monkeypatch.setattr(gain_accounting, 'affected_positions', counted)
+    for book in books:
+        assert calculation.event_dates(HistoryScope((book.position_id,))) == [book.records[0].date]
+    assert calculation.event_dates(HistoryScope(tuple(b.position_id for b in books))) == [b.records[0].date for b in books]
+    assert visits == [(book.position_id, book.records[0].id) for book in books]
+
+
+def test_corrected_and_voided_dates_across_cash_accounts():
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    opening = Event('cash', '2024-01-01', 'cash_open', 'a', 'EUR', 100)
+    transfer = Event('move', '2024-01-03', 'transfer', 'a', 'EUR', 20, other_account_id='b')
+    corrected = replace(transfer, id='corrected', replaces='move', date='2024-01-04')
+    voided = Event('void', '2024-01-05', 'void', replaces=corrected.id)
+    journal = Journal(version=2, accounts=(Account('a', 'First'), Account('b', 'Second')),
+                      events=(opening, transfer, corrected))
+    for snapshot, received in ((journal, ['2024-01-04']), (replace(journal, events=(*journal.events, voided)), [])):
+        calculation = HistoryCalculation(snapshot, ObservationStore())
+        for accounts, expected in (((), []), (('b',), received), (('a', 'b'), ['2024-01-01', *received])):
+            scope = HistoryScope(accounts=accounts)
+            assert scope_dates(snapshot, scope) == calculation.event_dates(scope) == expected

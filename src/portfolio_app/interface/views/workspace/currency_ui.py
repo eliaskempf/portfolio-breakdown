@@ -7,6 +7,7 @@ from hashlib import sha256
 import pandas as pd
 import streamlit as st
 
+from portfolio_app.market.market_data import BackgroundPrices
 from portfolio_app.performance.cost_basis import (FIELD, active_components, component, encode_components, estimate_missing,
     freeze_historical, resolve_cost, supplied_conversion)
 from portfolio_app.portfolio.holdings import DataError
@@ -15,7 +16,7 @@ from portfolio_app.workspace.storage import revision
 
 
 # Compatibility import for position/cost editors; service construction is UI-free.
-from portfolio_app.application import historical_for
+from portfolio_app.application import historical_for, valuation_requests
 
 
 def render_currency_setting(directory, settings):
@@ -57,7 +58,8 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
                 dismiss()
                 st.rerun()
             return
-        candidate = prepare_portfolio(snapshot.holdings, prices, reporting_currency=target, historical=historical)
+        with valuation_requests(prices, historical) as valuation_history:
+            candidate = prepare_portfolio(snapshot.holdings, prices, reporting_currency=target, historical=valuation_history)
         held = candidate.loc[candidate.shares.gt(0)]
         from portfolio_app.performance.performance import cash_balance_only
         eligible = held.loc[~cash_balance_only(held)]
@@ -70,7 +72,7 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
         if not missing.empty:
             st.warning(f'{len(missing)} positions have incomplete costs in {target} and will be excluded from gains. Their available current values still count.')
             st.dataframe(missing[['name', 'performance_note']].rename(columns={'name': 'Position', 'performance_note': 'Missing information'}), hide_index=True)
-        render_fx_progress(directory)
+        render_fx_progress(directory, prices)
         labels = dict(zip(missing.position_id, missing.name))
         selection = st.multiselect('Estimate missing conversions for selected positions', list(labels),
             format_func=lambda key: labels[key], key='currency_estimate_selection') if labels else []
@@ -166,7 +168,7 @@ def cost_conversion_controls(parts, target, directory, prices, *, key, demo=Fals
         st.warning(resolved.note + ' The position remains included in available current-value totals.')
     else:
         st.caption(f'Converted cost: {resolved.amount:,.2f} {target} · {resolved.note or "Recorded cost"}')
-    render_fx_progress(directory)
+    render_fx_progress(directory, prices)
     return freeze_historical(parts, target, historical)
 
 
@@ -181,16 +183,23 @@ def ui_prices(directory, demo=False):
     return prices_for(directory)
 
 
-def render_fx_progress(directory):
+def render_fx_progress(directory, prices=None):
     from portfolio_app.market.market_data import coordinator
     workspace = str(directory.resolve())
-    stamp = coordinator.revision(workspace)
-    pending = coordinator.pending(workspace)
+    revision, pending = coordinator.channel_state(workspace, 'valuation')
+    reader = prices if isinstance(prices, BackgroundPrices) else None
+    if reader:
+        revision = reader.display_revision
+        pending = reader.submit_waiting() or pending
+    from portfolio_app.interface.shared.background_ui import status_fragment
 
-    @st.fragment(run_every=.5 if pending else None)
-    def progress():
-        if pending and coordinator.revision(workspace) != stamp:
-            st.rerun()
-        if pending:
+    @status_fragment()
+    def progress(poll):
+        waiting = reader is not None and reader.submit_waiting()
+        current, still_pending = coordinator.channel_state(workspace, 'valuation')
+        if waiting or still_pending:
             st.caption('Loading exchange rates…')
+            poll(.5)
+        elif pending or current != revision:
+            st.rerun()
     progress()

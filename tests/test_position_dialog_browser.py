@@ -42,9 +42,9 @@ def history():return InventedHistory()
 detail.history_for=lambda _:history()
 if not st.session_state.get('scheduled'):
     release = history().release
-    coordinator.request(root,'invented-refresh',lambda:release.wait(60))
+    coordinator.request(root,'invented-refresh',lambda:release.wait(60),channel='valuation')
     st.session_state.scheduled=True
-render_market_status(root,coordinator.revision(root))
+render_market_status(root,coordinator.channel_state(root,'valuation')[0])
 render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{},demo=False)
 # The opener exercises fragment navigation once its target is registered.
 st.button('Open position',on_click=request_position,args=('position-0',))

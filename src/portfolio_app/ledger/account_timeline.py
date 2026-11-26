@@ -38,6 +38,8 @@ class AccountTimeline:
     separate from dated historical queries, including the last event date.
     """
 
+    _CHECKPOINT_LIMIT = 128
+
     def __init__(self, journal, postings):
         from portfolio_app.ledger.account_journal import effective_events
         self.journal, self.postings = journal, postings
@@ -52,6 +54,11 @@ class AccountTimeline:
         self._date, self._state = next(self._iterator)
         self._complete = False
         self._failure = None
+
+    def retained_prefix(self, end):
+        """Dates that can all be revisited without evicting an earlier checkpoint."""
+        count = bisect_right(self.dates, end)
+        return self.dates[:count] if count <= self._CHECKPOINT_LIMIT else None
 
     def at(self, stamp=None):
         if stamp is not None:
@@ -78,6 +85,6 @@ class AccountTimeline:
                 raise
             self._states[self._date] = self._state
             self._states.move_to_end(self._date)
-            while len(self._states) > 128:
+            while len(self._states) > self._CHECKPOINT_LIMIT:
                 self._states.popitem(last=False)
         return self._state

@@ -1,16 +1,35 @@
 """Background evaluation; workers never read or write Streamlit session state."""
-from dataclasses import replace
-from datetime import timedelta
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
+from functools import cache, partial
 import json
 from threading import RLock
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from portfolio_app.market.market_data import coordinator
-from portfolio_app.monitoring.monitoring import (SeriesSpec, completed_evaluation, evaluate_series,
-    evaluate_account, indicator_frame, unavailable, utc_now)
+from portfolio_app.monitoring import monitoring
+from portfolio_app.monitoring.monitoring import (SeriesSpec, completed_evaluation, evaluate_with_history,
+    evaluate_account, unavailable, utc_now)
 from portfolio_app.monitoring.monitoring_market import MonitoringMarket, SyntheticMonitoringProvider
-from portfolio_app.monitoring.monitoring_store import load_monitoring, record_evaluations, rule_from_dict
+from portfolio_app.monitoring.monitoring_store import EvaluationWriter
+
+
+if TYPE_CHECKING:
+    from portfolio_app.ledger.account_journal import Journal, JournalState
+    from portfolio_app.market.prices import PriceResult
+
+
+@dataclass(frozen=True)
+class _AccountSources:
+    journal: 'Journal'
+    state: 'JournalState'
+    holdings: pd.DataFrame
+    currency: str
+    value_positions: Callable[[frozenset[str]], pd.DataFrame]
+    rate: Callable[[str], 'PriceResult']
 
 
 class MonitoringService:
@@ -35,7 +54,7 @@ class MonitoringService:
                 value = self.market.get(spec, refresh=refresh)
                 with self.lock:
                     self.series[key] = value
-            if coordinator.request(self.directory, ('monitoring-browse', key), fetch):
+            if coordinator.request(self.directory, ('monitoring-browse', key), fetch, channel='monitoring'):
                 with self.lock:
                     self.browse_attempts[key] = self.now()
         return series
@@ -45,32 +64,42 @@ class MonitoringService:
         with self.lock:
             if not refresh and self.last_attempt and now-self.last_attempt < timedelta(minutes=5):
                 return
-            if coordinator.request(self.directory, 'monitoring-evaluate', lambda: self.evaluate(refresh=refresh)):
+            if coordinator.request(self.directory, 'monitoring-evaluate', lambda: self.evaluate(refresh=refresh), channel='monitoring'):
                 self.last_attempt = now
 
     def evaluate(self, *, refresh=False):
         try:
-            doc, _ = load_monitoring(self.directory)
-            rules = [rule_from_dict(r) for r in doc['rules'] if r['enabled']]
-            snapshots = {}
+            writer = EvaluationWriter(self.directory)
+            rules = writer.enabled_rules()
+            @cache
+            def fetch_series(spec):
+                series = self.market.get(spec, refresh=refresh)
+                key = json.dumps(vars(spec), sort_keys=True)
+                with self.lock:
+                    self.series[key] = series
+                    self.browse_attempts[key] = self.now()
+                return series
+
+            account_sources = None
+            if any(rule.kind != 'sma' for rule, _ in rules):
+                try:
+                    account_sources = self._account_sources(refresh=refresh, fetch_series=fetch_series)
+                except Exception:
+                    pass  # Record unavailable for each affected rule; instrument checks can proceed.
             frames = {}
-            for rule in rules:
+            def frame_for(rule, series, *, now):
+                # fetch_series fixes one source snapshot per spec for this evaluation pass.
+                day = pd.Timestamp(now).tz_convert(series.timezone).date()
+                key = (rule.series, rule.period, rule.window, rule.comparison_window, rule.cadence, day)
+                if key not in frames:
+                    frames[key] = monitoring.indicator_frame(rule, series, now=now)
+                return frames[key]
+
+            for rule, previous in rules:
                 try:
                     if rule.kind == 'sma':
-                        if rule.series not in snapshots:
-                            series = self.market.get(rule.series, refresh=refresh)
-                            snapshots[rule.series] = (series, self.now())
-                            with self.lock:
-                                series_key = json.dumps(vars(rule.series), sort_keys=True)
-                                self.series[series_key] = series
-                                self.browse_attempts[series_key] = snapshots[rule.series][1]
-                        series, now = snapshots[rule.series]
-                        key = (rule.series, rule.window, rule.comparison_window, rule.period, rule.cadence)
-                        if key not in frames and series.quality == 'valid':
-                            frames[key] = indicator_frame(rule, series, now=now)
-                        frame = frames.get(key)
-                        latest = evaluate_series(rule, series, now=now, frame=frame)
-                        previous = doc['states'].get(rule.id, {}).get('last_valid', {}).get('observed_at')
+                        series = fetch_series(rule.series)
+                        latest, frame = evaluate_with_history(rule, series, now=self.now(), frame_for=frame_for)
                         if rule.cadence != 'intraday' and latest.quality == 'valid' and previous and previous < latest.observed_at:
                             after = max(str(previous)[:10], rule.created_at[:10])
                             history = frame.loc[(frame.index > pd.Timestamp(after)) & (frame.index < pd.Timestamp(latest.observed_at))]
@@ -80,45 +109,54 @@ class MonitoringService:
                                 for row in history.dropna(subset=['distance']).itertuples()
                             ]
                             if recovered:
-                                record_evaluations(self.directory, rule, recovered, recovered=True, now=self.now())
-                        record_evaluations(self.directory, rule, [latest], now=self.now())
+                                writer.record(rule, recovered, recovered=True, now=self.now())
+                        writer.record(rule, [latest], now=self.now())
+                    elif account_sources is None:
+                        writer.record(rule, [unavailable('Could not load the account inputs for this check.')], now=self.now())
                     else:
-                        journal, holdings, valued, currency, rates, input_stamp, fx_quality = self.account_inputs([rule], refresh=refresh)
-                        evaluation = evaluate_account(rule, journal, holdings, valued, reporting_currency=currency, fx_rates=rates, now=self.now())
+                        journal, holdings, valued, currency, rates, input_stamp, fx_quality = self.account_inputs(
+                            [rule], sources=account_sources)
+                        evaluation = evaluate_account(rule, journal, holdings, valued, reporting_currency=currency,
+                                                      fx_rates=rates, now=self.now(), state=account_sources.state)
                         selected = set(rule.backing)
                         if rule.kind == 'coverage':
-                            from portfolio_app.ledger.account_journal import replay
-                            selected = {r.holding_id for r in replay(journal).reservations.values() if r.account_id == rule.account_id and r.holding_id}
+                            selected = {r.holding_id for r in account_sources.state.reservations.values()
+                                        if r.account_id == rule.account_id and r.holding_id}
                         inputs = valued.loc[valued.position_id.isin(selected)]
+                        cutoff = self.now() - timedelta(minutes=rule.max_age_minutes)
                         stale = any(row.price_status in {'stale', 'cached fallback', 'missing'} or row.fx_status in {'stale', 'missing'} or
-                                    pd.isna(row.price_age_hours) or row.price_age_hours*60 > rule.max_age_minutes or
-                                    (pd.notna(row.fx_age_hours) and row.fx_age_hours*60 > rule.max_age_minutes)
+                                    not row.price_observed_at or datetime.fromisoformat(row.price_observed_at) < cutoff or
+                                    (row.fx_status != 'identity' and row.fx_observed_at and
+                                     datetime.fromisoformat(row.fx_observed_at) < cutoff)
                                     for row in inputs.itertuples() if row.price_status != 'not_held')
                         if stale or fx_quality:
                             evaluation = unavailable('Backing-asset prices or required FX are stale/unavailable. Last valid condition is retained.', quality='stale')
                         evaluation = replace(evaluation, observed_at=input_stamp)
-                        record_evaluations(self.directory, rule, [evaluation], now=self.now())
+                        writer.record(rule, [evaluation], now=self.now())
                 except Exception:
-                    record_evaluations(self.directory, rule, [unavailable('Evaluation failed. Review the rule inputs or refresh its data.')], now=self.now())
+                    writer.record(rule, [unavailable('Evaluation failed. Review the rule inputs or refresh its data.')], now=self.now())
             self.last_success, self.error = self.now().isoformat(), ''
         except Exception:
             self.error = 'Monitoring could not update. Review the saved monitoring document or retry.'
 
-    def account_inputs(self, rules, *, refresh=False):
+    def _account_sources(self, *, refresh, fetch_series=None):
         from portfolio_app.ledger.account_journal import load_journal, replay
         from portfolio_app.portfolio.positions import read_snapshot
         from portfolio_app.portfolio.portfolio_settings import load_settings
         from portfolio_app.portfolio.valuation import value_holdings
-        from portfolio_app.market.prices import PriceService, StaticProvider, YahooProvider, Quote
+        from portfolio_app.market.prices import PriceService, StaticProvider, YahooProvider, Quote, QuoteSnapshot
         from portfolio_app.market.fx import current_rate
-        journal, journal_revision = load_journal(self.directory)
-        holdings = read_snapshot(self.directory/'holdings.csv').holdings
-        currency = load_settings(self.directory).reporting_currency
-        market = self.market
+        from portfolio_app.workspace.workspace_lock import workspace_lock
+        with workspace_lock(self.directory):
+            journal, journal_revision = load_journal(self.directory)
+            holdings = read_snapshot(self.directory/'holdings.csv').holdings
+            currency = load_settings(self.directory).reporting_currency
+        if fetch_series is None:
+            fetch_series = partial(self.market.get, refresh=refresh)
         self_now = self.now
         class AccountQuotes(YahooProvider):
             def price(self, ticker):
-                series = market.get(SeriesSpec(ticker), refresh=refresh)
+                series = fetch_series(SeriesSpec(ticker))
                 if series.quality != 'valid':
                     raise ValueError('Account market source unavailable')
                 if series.quote is not None and series.quote_at:
@@ -133,8 +171,26 @@ class MonitoringService:
                 observed = pd.Timestamp(day).tz_localize(series.timezone).to_pydatetime()
                 return Quote(price, series.currency, observed)
         provider = StaticProvider(self.directory/'demo_prices.json') if self.demo else AccountQuotes()
-        prices = PriceService(provider, self.directory/'.cache'/'monitoring-account-prices.json', now=self.now, ttl=timedelta(minutes=5))
-        state = replay(journal)
+        prices = QuoteSnapshot(PriceService(provider, self.directory/'.cache'/'monitoring-account-prices.json',
+                                         now=self.now, ttl=timedelta(minutes=5)))
+        @cache
+        def value_positions(identities):
+            selected = holdings.loc[holdings.position_id.isin(identities)]
+            valued = value_holdings(selected, prices, refresh=refresh, reporting_currency=currency)
+            valued.attrs['journal_revision'] = journal_revision
+            return valued
+
+        @cache
+        def rate(unit):
+            return current_rate(prices, unit, currency, refresh=refresh)
+
+        return _AccountSources(journal, replay(journal), holdings, currency, value_positions, rate)
+
+    def account_inputs(self, rules, *, refresh=False, sources=None):
+        """Scope evidence to the requested backing assets, currencies and freshness limits."""
+        if sources is None:
+            sources = self._account_sources(refresh=refresh)
+        journal, state, currency = sources.journal, sources.state, sources.currency
         needed = set().union(*(set(r.backing) for r in rules))
         units = {currency, *(r.currency for r in rules)}
         for rule in rules:
@@ -147,10 +203,10 @@ class MonitoringService:
                 units.update(unit for owner,unit,_ in state.loans if owner == rule.account_id)
                 units.update(unit for (owner,unit),amount in state.cash.items() if owner == rule.account_id and amount < 0)
                 units.update(rule.cash)
-        valued = value_holdings(holdings.loc[holdings.position_id.isin(needed)], prices, refresh=refresh, reporting_currency=currency)
+        valued = sources.value_positions(frozenset(needed))
         rates, observations, invalid = {}, [], False
         for unit in units:
-            result = current_rate(prices, unit, currency, refresh=refresh)
+            result = sources.rate(unit)
             if result.quote:
                 rates[unit] = result.quote.price
                 if unit != currency:
@@ -162,8 +218,7 @@ class MonitoringService:
         # Use the latest fact timestamp, with the complete snapshot in evaluation
         # inputs. Journal revision and quantities also change the fingerprint.
         stamp = max(observations, default='') or self.now().date().isoformat()
-        valued.attrs['journal_revision'] = journal_revision
-        return journal, holdings, valued, currency, rates, stamp, invalid
+        return journal, sources.holdings, valued, currency, rates, stamp, invalid
 
 
 _services = {}

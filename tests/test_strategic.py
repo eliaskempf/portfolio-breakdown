@@ -110,3 +110,62 @@ def test_icon_palette_follows_actual_allocation_not_category_ids(positions, conf
     colors = dict(zip(changed.label, strategic_colors(changed, config)))
     assert colors['Active'] == '#5470c6'
     assert colors['Long term'] == '#4aa9b3'
+
+
+def test_flat_summary_maps_partial_exposure_once_and_preserves_source_rows(positions, config, monkeypatch):
+    positions['account'] = ['A', 'B', 'A', 'C']
+    positions.loc[1, 'current_value_reporting'] = float('nan')
+    exposure = {'p1': -2., 'p3': 0.}
+    batches = []
+    original_map = pd.Series.map
+    def counted_map(series, arg, *args, **kwargs):
+        if arg is exposure:
+            batches.append(len(series))
+        return original_map(series, arg, *args, **kwargs)
+    monkeypatch.setattr(pd.Series, 'map', counted_map)
+    table = strategic_summary(positions, config, flat=True, identities=True, known_exposure=exposure).set_index('position_id')
+    assert batches == [len(positions)]
+    assert table.loc['p1', 'Known exposure'] == -2.
+    assert table.loc['p3', 'Known exposure'] == 0.
+    assert pd.isna(table.loc['p2', 'Known exposure']) and table.loc['p2', 'Status'] == 'Missing price'
+    assert table.loc['p2', 'Account'] == 'B' and table.loc['p4', 'Status'] == 'Empty'
+    assert table['Current (%)'].isna().all()
+
+
+def test_tree_propagates_missing_counts_without_rescanning_categories(positions, config, monkeypatch):
+    from portfolio_app.portfolio import strategic
+    scans = []
+    def select(frame, allocation, bucket):
+        scans.append(bucket)
+        return bucket_positions(frame, allocation, bucket)
+    monkeypatch.setattr(strategic, 'bucket_positions', select)
+    positions.loc[[0, 2, 3], 'current_value_reporting'] = float('nan')
+    tree = strategic_tree(positions, config)
+    categories = tree[tree.kind.eq('category')].set_index('label')
+    assert categories.missing_prices.to_dict() == {
+        'Portfolio': 3, 'Long term': 1, 'Funds': 1, 'Reserve': 0,
+        'Active': 1, 'Planned': 0, 'Unassigned': 1}
+    assert categories.loc['Planned', 'current_value'] == 0.
+    holdings = tree[tree.kind.eq('holding')]
+    assert holdings.loc[holdings.value.eq(30.), 'missing_prices'].item() == 0
+    assert scans == []
+    flat = strategic_tree(positions, config, 'long', flat=True)
+    assert flat.missing_prices.tolist() == [1, 1]
+    assert scans == ['long']
+
+
+def test_root_allocation_uses_one_tree_for_chart_and_colors(positions, config):
+    from streamlit.testing.v1 import AppTest
+    def draw():
+        import streamlit as st
+        from unittest.mock import patch
+        from portfolio_app.interface.views.portfolio import strategic_ui
+        with patch.object(strategic_ui, 'strategic_tree', wraps=strategic_ui.strategic_tree) as tree:
+            strategic_ui.render_strategic_overview(st.session_state.positions, st.session_state.config)
+        st.session_state.tree_calls = tree.call_count
+    app = AppTest.from_function(draw)
+    app.session_state.positions = positions
+    app.session_state.config = config
+    app.run()
+    assert not app.exception
+    assert app.session_state.tree_calls == 1

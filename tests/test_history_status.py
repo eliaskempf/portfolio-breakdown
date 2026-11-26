@@ -65,13 +65,12 @@ def test_latest_price_without_fx_is_not_hidden_behind_an_older_supported_endpoin
 def test_no_chart_points_and_one_shared_calculation_for_all_positions(monkeypatch):
     import portfolio_app.performance.history_status as module
     holdings, journal, observations = fixture()
-    original = module.history_view
+    original = module.full_history_summary
     contexts = []
-    def counted(*args, **kwargs):
-        assert kwargs['include_points'] is False
-        contexts.append(kwargs['calculation'])
-        return original(*args, **kwargs)
-    monkeypatch.setattr(module, 'history_view', counted)
+    def counted(calculation, *args):
+        contexts.append(calculation)
+        return original(calculation, *args)
+    monkeypatch.setattr(module, 'full_history_summary', counted)
     result = position_history_statuses(holdings, journal, observations, today=TODAY)
     assert len(result) == len(holdings)
     assert len(contexts) == 6 and len({id(context) for context in contexts}) == 1

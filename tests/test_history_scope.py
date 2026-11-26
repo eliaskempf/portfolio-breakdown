@@ -38,3 +38,26 @@ def test_account_spanning_categories_is_not_silently_added_whole_or_dropped():
     assert not scope.accounts and scope.unresolved
     assert 'span categories' in scope.unresolved[0]
     assert not category_history_scope(journal,holdings,config).unresolved
+
+
+def test_sibling_history_scopes_resolve_account_and_display_membership_once(monkeypatch):
+    import portfolio_app.performance.history_scope as module
+    journal, holdings, config = fixture()
+    displayed = pd.concat([holdings, pd.DataFrame([dict(position_id='funded', bucket_id='other')])])
+    displayed.attrs['investment_members'] = {'funded': ('invented-contract',)}
+    holdings = holdings.drop(columns='bucket_id')
+    calls = []
+    effective = module.effective_events
+    def count(journal):
+        calls.append(journal)
+        return effective(journal)
+    monkeypatch.setattr(module, 'effective_events', count)
+    scopes = module.CategoryHistoryScopes(journal, holdings, config, displayed)
+    assert scopes.scope().accounts == ('account',)
+    assert not calls
+    assert scopes.scope('cash').accounts == ('account',)
+    assert scopes.scope('equity').positions == ('stock',)
+    assert scopes.scope('unassigned').positions == ('removed',)
+    assert scopes.scope('other').unresolved
+    assert not scopes.scope('core').unresolved
+    assert len(calls) == 1

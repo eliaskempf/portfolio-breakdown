@@ -1,4 +1,5 @@
 """Source-by-source review and persistent undo for analytical company merges."""
+from collections.abc import Callable
 from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
@@ -10,11 +11,12 @@ from portfolio_app.exposure.company_merges import MergePlan, MergeSettings, save
 from portfolio_app.portfolio.holdings import DataError
 
 
-def render_company_merges(plan: MergePlan, settings: MergeSettings, path: Path) -> None:
+def render_company_merges(load_plan: Callable[[], MergePlan], settings: MergeSettings, path: Path) -> None:
     panel = st.expander('Company merges', key='exposure_merges_open', on_change='rerun')
     if not panel.open:
         return
     with panel:
+        plan = load_plan()
         st.caption('* marks an estimated company match. Review the original holdings below; undo keeps their exposures separate.')
         if not plan.groups:
             st.caption('No overlapping company holdings found.')

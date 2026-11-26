@@ -28,6 +28,7 @@ from pathlib import Path
 from threading import Event, Thread
 import streamlit as st
 from streamlit.runtime.scriptrunner.script_runner import ScriptRunner
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.performance.history_observations import HistoryScope, Observation
 import portfolio_app.interface.views.history.history_ui as history
@@ -36,35 +37,39 @@ root = Path(ROOT)
 
 @st.cache_resource
 def controls():
-    state = dict(armed=Event(), entered=Event(), release=Event(), click=Event(), poll=Event(), callbacks=0)
+    state = dict(armed=Event(), entered=Event(), release=Event(), download=Event(), click=Event(),
+                 poll=Event(), callbacks=0, status_fragment=None)
     original_request = ScriptRunner.request_rerun
     def request(runner, data):
         accepted = original_request(runner, data)
         # Observe acceptance after real queue/coalescing; never change its data.
         if accepted and state['entered'].is_set() and not state['release'].is_set():
-            if data.fragment_id and not data.is_auto_rerun:
+            if data.fragment_id and data.fragment_id != state['status_fragment']:
                 state['click'].set()
-            elif data.is_auto_rerun and state['click'].is_set():
+            elif data.fragment_id == state['status_fragment'] and state['click'].is_set():
                 state['poll'].set()
         return accepted
     ScriptRunner.request_rerun = request
-    original_render = history._render_history_results
+    original_render = history._automatic_history_status
     def render(*args, **kwargs):
         if state['armed'].is_set() and not state['entered'].is_set():
+            state['status_fragment'], = get_script_run_ctx().fragment_ids_this_run
             state['entered'].set()
             if not state['release'].wait(15):
                 raise RuntimeError('Synthetic history gate was not released')
         return original_render(*args, **kwargs)
-    history._render_history_results = render
+    history._automatic_history_status = render
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass
         def do_GET(self):
             command = self.path.lstrip('/')
             if command == 'arm': state['armed'].set()
             if command == 'release': state['release'].set()
+            if command == 'download': state['download'].set()
             completed = state[command].wait(6) if command in ('entered', 'poll') else True
             payload = json.dumps(dict(completed=completed, callbacks=state['callbacks'],
-                click=state['click'].is_set(), poll=state['poll'].is_set())).encode()
+                click=state['click'].is_set(), poll=state['poll'].is_set(),
+                status_fragment=state['status_fragment'])).encode()
             self.send_response(200); self.end_headers(); self.wfile.write(payload)
     server = ThreadingHTTPServer(('127.0.0.1', CONTROL_PORT), Handler)
     Thread(target=server.serve_forever, daemon=True).start()
@@ -72,9 +77,8 @@ def controls():
 state = controls()
 
 def prices(ticker, identity, start, end):
-    # Ensure the initial history render registers its real two-second timer.
-    # The driver releases this event once the first metric is mounted.
-    if not state['armed'].wait(10):
+    # Leave the status timer mounted across a click and a subsequent idle tick.
+    if not state['download'].wait(35):
         raise RuntimeError('Synthetic history download was not released')
     stamps = [start, (date.today()-timedelta(days=5)).isoformat(), end]
     return tuple(Observation(str(i), 'price', identity, stamp, Decimal(10+i), 'EUR',
@@ -149,6 +153,8 @@ def metric_page(tmp_path, request):
                 finally:
                     with suppress(OSError):
                         control('release')
+                        if script == PREVIEW:
+                            control('download')
                     browser.close()
         finally:
             process.terminate()
@@ -162,7 +168,9 @@ def test_gain_toggle_survives_queued_history_poll_and_remount(metric_page):
     playwright.expect(percentage).to_be_visible()
     reruns.wait(); settle(page)
     assert control('arm')['callbacks'] == 0
-    assert control('entered')['completed'], 'The real history timer did not reach its gate'
+    entered = control('entered')
+    assert entered['completed'], 'The real history status timer did not reach its gate'
+    status_fragment = entered['status_fragment']
     # Keep the original metric action and five-second UI expectation. The gate
     # ensures click then timer have both reached the server before it can rerun.
     try:
@@ -174,17 +182,19 @@ def test_gain_toggle_survives_queued_history_poll_and_remount(metric_page):
             control('release')
     playwright.expect(amount).to_be_visible(timeout=5000)
     assert control('state')['callbacks'] == 1
-    interactions = [r for r in requests if r.fragment_id and not r.is_auto_rerun]
+    interactions = [r for r in requests if r.fragment_id and r.fragment_id != status_fragment]
     assert len(interactions) == 1
-    assert any(r.is_auto_rerun and r.fragment_id == interactions[0].fragment_id for r in requests)
+    assert any(r.fragment_id == status_fragment for r in requests)
 
     # A later unchanged polling request must not replay the component action.
     def automatic(payload):
         message = BackMsg.FromString(payload)
-        return message.WhichOneof('type') == 'rerun_script' and message.rerun_script.is_auto_rerun
+        return message.WhichOneof('type') == 'rerun_script' and message.rerun_script.fragment_id == status_fragment
     reruns.socket.wait_for_event('framesent', predicate=automatic, timeout=5000)
     reruns.wait(); settle(page)
     assert control('state')['callbacks'] == 1
+    control('download')
+    playwright.expect(page.get_by_text('Loading historical prices and FX…', exact=True)).to_have_count(0)
     amount.press('Enter')
     playwright.expect(percentage).to_be_visible(timeout=5000)
     assert control('state')['callbacks'] == 2

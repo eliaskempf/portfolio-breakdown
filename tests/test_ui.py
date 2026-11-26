@@ -1,4 +1,4 @@
-from list_helpers import list_frame
+from list_helpers import exposure_breakdown, list_frame
 from pathlib import Path
 import shutil
 import sys
@@ -161,6 +161,148 @@ def test_smh_group_uses_fund_labels_and_shows_original_members(grouped_data):
     by_label(app.multiselect, "Stocks in the SMH group").set_value([]).run()
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value["Value"].sum() == 560  # Fund and stocks separate within Group A.
+
+
+def test_warm_navigation_reads_the_journal_once_per_render(sample_data_dir, monkeypatch):
+    from portfolio_app.ledger import account_journal
+
+    app = launch(sample_data_dir)
+    reads = []
+    load = account_journal.load_journal
+
+    def count_reads(directory):
+        reads.append(directory)
+        return load(directory)
+
+    monkeypatch.setattr(account_journal, 'load_journal', count_reads)
+    for tab in ('Positions', 'Rebalance', 'Overview'):
+        reads.clear()
+        activate(app, tab)
+        assert not app.exception
+        assert reads == [sample_data_dir]
+
+
+def test_open_dialog_observes_journal_published_during_parent_render(sample_data_dir, monkeypatch):
+    from portfolio_app.interface import ui
+    from portfolio_app.interface.views.positions import position_ui
+    from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
+
+    app = launch(sample_data_dir, tab='Positions')
+    app.session_state['position_edit_selected'] = 'position-0'
+    app.session_state['position_edit_action'] = 'Edit position'
+    app.session_state['position_edit_dialog'] = True
+    render = ui.render_position_dialog
+    reload_values = position_ui._reload_dialog_values
+    published, displayed = [], []
+
+    def publish_once(*args, **kwargs):
+        if not published:
+            save_journal(sample_data_dir, Journal(version=2), None)
+            published.append(load_journal(sample_data_dir)[1])
+        return render(*args, **kwargs)
+
+    def observe_inputs(directory, **kwargs):
+        displayed.append(kwargs['inputs'].snapshot.holdings.attrs['history_journal_revision'])
+        return reload_values(directory, **kwargs)
+
+    monkeypatch.setattr(ui, 'render_position_dialog', publish_once)
+    monkeypatch.setattr(position_ui, '_reload_dialog_values', observe_inputs)
+    app.run()
+    assert not app.exception
+    assert published and displayed == published
+
+
+def test_standalone_dialog_rechecks_snapshots_captured_before_mount(tmp_path, monkeypatch):
+    from portfolio_app.performance import position_summary
+    from portfolio_app.portfolio.positions import read_snapshot
+    from synthetic_sample import create_sample_data
+
+    create_sample_data(tmp_path)
+    # The caller can capture effective rows and a valuation before the dialog
+    # exists. A later default baseline cannot certify those earlier reads.
+    script = f"""
+from pathlib import Path
+import streamlit as st
+from portfolio_app.interface.shared.input_cache import load_inputs
+from portfolio_app.interface.views.positions.position_ui import render_position_dialog
+root = Path({str(tmp_path)!r})
+before = load_inputs(root).snapshot
+if not st.session_state.get('published'):
+    path = root/'holdings.csv'
+    path.write_text(path.read_text().replace('Nvidia', 'Renamed instrument'))
+    st.session_state['published'] = True
+st.session_state.update(position_edit_selected='position-0', position_edit_action='Details', position_edit_dialog=True)
+render_position_dialog(root/'holdings.csv', before, {{}}, demo=True)
+"""
+    rendered = []
+    def record(row, directory, journal, **kwargs):
+        rendered.append((row['name'], kwargs['input_revisions'][0]))
+    monkeypatch.setattr(position_summary, 'render_position_summary', record)
+    app = AppTest.from_string(script, default_timeout=15).run()
+    assert not app.exception
+    assert rendered == [('Renamed instrument', read_snapshot(tmp_path/'holdings.csv').revision)]
+
+
+def test_open_position_keeps_the_last_complete_journal_when_another_source_is_invalid(tmp_path, monkeypatch):
+    from portfolio_app.interface import ui
+    from portfolio_app.ledger.account_journal import Journal, save_journal
+    from portfolio_app.performance import position_summary
+    from synthetic_sample import create_sample_data
+
+    create_sample_data(tmp_path)
+    app = launch(tmp_path, tab='Positions')
+    app.session_state['position_edit_selected'] = 'position-0'
+    app.session_state['position_edit_action'] = 'Details'
+    app.session_state['position_edit_dialog'] = True
+    render = ui.render_position_dialog
+    displayed = []
+
+    def publish_after_valuation(*args, **kwargs):
+        save_journal(tmp_path, Journal(version=2), None)
+        (tmp_path/'allocation.yaml').write_text('buckets: [')
+        return render(*args, **kwargs)
+
+    def record(row, directory, journal, **kwargs):
+        displayed.append((journal.version, kwargs['input_revisions'][1]))
+
+    monkeypatch.setattr(ui, 'render_position_dialog', publish_after_valuation)
+    monkeypatch.setattr(position_summary, 'render_position_summary', record)
+    app.run()
+    assert not app.exception
+    assert displayed == [(Journal().version, None)]
+    assert any('last valid position' in warning.value for warning in app.warning)
+
+
+def test_position_detail_rechecks_a_journal_published_after_row_selection(tmp_path, monkeypatch):
+    from portfolio_app.interface.views.positions import position_detail
+    from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
+    from portfolio_app.performance import position_summary
+
+    from synthetic_sample import create_sample_data
+    create_sample_data(tmp_path)
+    app = launch(tmp_path, tab='Positions')
+    app.session_state['position_edit_selected'] = 'position-0'
+    app.session_state['position_edit_action'] = 'Details'
+    app.session_state['position_edit_dialog'] = True
+    render = position_detail.render_position_detail
+    revisions, rendered = [], []
+
+    def publish_once(*args, **kwargs):
+        revisions.append(kwargs['input_revisions'][1])
+        if len(revisions) == 1:
+            save_journal(tmp_path, Journal(version=2), None)
+        return render(*args, **kwargs)
+
+    def summary(*args, **kwargs):
+        rendered.append(kwargs['input_revisions'][1])
+
+    monkeypatch.setattr(position_detail, 'render_position_detail', publish_once)
+    monkeypatch.setattr(position_summary, 'render_position_summary', summary)
+    app.run()
+    assert not app.exception
+    revision = load_journal(tmp_path)[1]
+    assert revisions[0] is None and revisions[-1] == revision
+    assert rendered == [revision]
 
 
 def test_demo_launch_and_subset_selection(sample_data_dir):
@@ -355,12 +497,17 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     activate(app, 'Overview')
     assert by_label(app.metric, 'Current value').value == "€1,800.00"
     activate(app, 'Exposure')
-    assert any("ETF breakdown" in item.label for item in app.expander)  # Saved snapshots are accessible in settings.
+    assert any(item.label == 'ETF refresh & snapshots' for item in app.expander)
+    assert not any("ETF breakdown" in item.label for item in app.expander)
+    app.session_state['exposure_refresh_open'] = True
+    app.run()
+    assert any("ETF breakdown" in item.label for item in app.expander)
     assert not any(item.label == 'Breakdown view' for item in app.segmented_control)  # Contents stay on demand.
     by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
     effective = list_frame(app, 'Exposure assets')
-    nvidia = effective.loc[effective["Ticker"] == "NVDA"].iloc[0]
+    breakdown = exposure_breakdown(app)
+    nvidia = breakdown.loc[breakdown.Ticker.eq('NVDA')].iloc[0]
     assert nvidia["Direct"] == 800
     assert nvidia["ETF-derived"] == pytest.approx(nvidia_indirect)
     assert effective["Total"].sum() == pytest.approx(1800)
@@ -385,6 +532,22 @@ def test_plain_smh_with_ucits_isin_is_actionable(tmp_path, sample_data_dir):
     app = launch(tmp_path)
     assert not app.exception
     assert "SMH.L" in app.error[0].value
+
+
+def test_incomplete_investment_chart_displays_ticker_once(tmp_path, sample_data_dir):
+    import json
+
+    shutil.copy(sample_data_dir / "demo_prices.json", tmp_path)
+    (tmp_path / "holdings.csv").write_text(
+        "id,name,shares,ticker\npriced,Synthetic Supplier,1,NVDA\nunpriced,Pending Quote,1,\n"
+    )
+    app = launch(tmp_path)
+    theme_view(app, "holding")
+    by_label(app.checkbox, "Show tickers").check().run()
+    assert not app.exception
+    assert missing_prices(app) == "1"
+    trace = json.loads(app.tabs[1].get("plotly_chart")[0].proto.spec)["data"][0]
+    assert [name for name in trace["labels"] if "NVDA" in name] == ["Synthetic Supplier (NVDA)"]
 
 
 def test_show_tickers_preserves_merged_hierarchy_leaf_across_exchanges(tmp_path, sample_data_dir):
@@ -580,3 +743,47 @@ def test_new_buy_in_requires_currency_but_legacy_amount_is_not_guessed(tmp_path,
     assert not app.exception
     assert load_holdings(path)["shares"].iloc[0] == 11
     assert load_holdings(path)["acquisition_currency"].iloc[0] == ""
+
+
+def test_inactive_leverage_skips_portfolio_exposure_cache_key(sample_data_dir, monkeypatch):
+    from portfolio_app.interface import ui
+    def unexpected_signature(*args):
+        pytest.fail('An inactive leverage calculation must not serialize the ledger and fund universe')
+    monkeypatch.setattr(ui, 'analytical_signature', unexpected_signature)
+    app = launch(sample_data_dir, tab='Overview')
+    assert not app.exception
+    activate(app, 'Positions')
+    assert not app.exception
+
+
+def test_exposure_reuses_loaded_fund_revision_and_displays_same_day_corrections(tmp_path, monkeypatch):
+    import pandas as pd
+    etfs = tmp_path / 'etfs'
+    etfs.mkdir()
+    (etfs / 'invented.yaml').write_text(
+        'fund_id: sample\nname: Invented fund\nisin: ZZ1234567890\ntickers: []\n'
+        'as_of: 2026-01-01\nsource: synthetic\nholdings_file: rows.csv\n')
+    header = 'constituent_id,name,ticker,isin,weight\n'
+    csv = etfs / 'rows.csv'
+    csv.write_text(header + 'company,Invented company,ZZZ,,0.4\n')
+    (tmp_path / 'holdings.csv').write_text(
+        'id,name,isin,shares,instrument_type,manual_price,manual_price_currency,manual_price_date,quantity_unit\n'
+        'sample,Invented fund,ZZ1234567890,2,etf,100,EUR,2026-01-01,units\n')
+    serialize = pd.DataFrame.to_json
+    def check(frame, *args, **kwargs):
+        assert 'constituent_id' not in frame.columns, 'The loaded fund already has a source revision'
+        return serialize(frame, *args, **kwargs)
+    monkeypatch.setattr(pd.DataFrame, 'to_json', check)
+    app = launch(tmp_path)
+    assert not app.exception and not list(app.error), [item.value for item in app.error]
+    by_label(app.toggle, 'Break down ETFs').set_value(True).run()
+    def indirect():
+        assert not app.exception
+        rows = exposure_breakdown(app)
+        return rows.loc[rows.Ticker.eq('ZZZ'), 'ETF-derived'].item()
+    assert indirect() == 80
+    app.run()
+    assert indirect() == 80
+    csv.write_text(header + 'company,Invented company,ZZZ,,0.6\n')
+    app.run()
+    assert indirect() == 120

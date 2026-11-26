@@ -66,3 +66,23 @@ def test_company_preparation_merges_reviewed_identities_without_mutating_sources
     pd.testing.assert_frame_equal(valued, before)
     for fund, original in zip(funds, original_funds):
         pd.testing.assert_frame_equal(fund.constituents, original.constituents)
+
+
+def test_chart_tickers_use_direct_precedence_across_sources_and_skip_unavailable_symbols(monkeypatch):
+    from portfolio_app.exposure.exposure_presentation import with_asset_tickers
+
+    rows = pd.DataFrame({'asset_id': ['a', 'b', 'a', 'b', 'c', 'd'],
+                         'asset_name': ['One', 'Two', 'One alias', 'Two', 'Blank', 'Unknown'],
+                         'ticker': ['FUND-A', '', 'SECOND', 'LAST', 'OLD', None],
+                         'source_note': ['Invented'] * 6}, index=[1, 0, 1, 0, 0, 3])
+    holdings = pd.DataFrame({'id': ['a', 'c', 'a'], 'ticker': ['EARLIER', '', 'DIRECT']})
+    def no_full_rows(*args, **kwargs):
+        pytest.fail('Ticker display must not extract full contribution records')
+    monkeypatch.setattr(pd.DataFrame, 'itertuples', no_full_rows)
+    displayed = with_asset_tickers(rows, holdings)
+    assert displayed.asset_name.tolist() == ['One (DIRECT)', 'Two (LAST)', 'One alias (DIRECT)',
+                                             'Two (LAST)', 'Blank', 'Unknown']
+    assert rows.asset_name.tolist() == ['One', 'Two', 'One alias', 'Two', 'Blank', 'Unknown']
+    pd.testing.assert_frame_equal(displayed.drop(columns='asset_name'), rows.drop(columns='asset_name'))
+    for empty in (rows.iloc[:0], rows.iloc[[-1]]):
+        pd.testing.assert_frame_equal(with_asset_tickers(empty, holdings), empty)

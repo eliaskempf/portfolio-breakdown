@@ -1,22 +1,60 @@
 """Reporting-currency unrealized gains, with native costs kept separately."""
 from dataclasses import dataclass
+from datetime import date
+from decimal import getcontext
 import math
 import pandas as pd
 
-from portfolio_app.performance.cost_basis import active_components, resolve_cost
+from portfolio_app.performance.cost_basis import FIELD, active_components, fingerprint, resolve_cost
+
+
+class ValuationCostCache:
+    """Original acquisition evidence for read-only calculations on one holdings snapshot."""
+
+    def __init__(self):
+        self._positions = {}
+        self._validation = None
+
+    def _reader(self):
+        # Stored quantities are reconciled with Decimal arithmetic and purchase
+        # dates are checked against today. Keep those validation rules live.
+        context = getcontext()
+        validation = (date.today(), context.prec, context.rounding, context.Emin, context.Emax,
+                      context.clamp, tuple(context.traps.items()))
+        if validation != self._validation:
+            self._positions.clear()
+            self._validation = validation
+        return self._components
+
+    def _components(self, row):
+        document, identity = row.get(FIELD), row.get('position_id')
+        if not isinstance(identity, str) or not identity or not isinstance(document, str) or not document:
+            return active_components(row)
+        # An external summary edit can supersede the saved document. Neither
+        # the converted amount nor a market/FX response belongs in this cache.
+        previous = self._positions.get(identity)
+        if previous is not None and previous[0] == document and previous[1] == fingerprint(row):
+            return previous[2]
+        parts = active_components(row)
+        self._positions[identity] = document, fingerprint(row), parts
+        return parts
+
+
+def _no_recorded_cost(parts):
+    return not any(part.get('amount') not in ('', None) for part in parts)
 
 
 def is_cash_balance(row):
-    return row.get('instrument_type') == 'cash' and not any(
-        part.get('amount') not in ('', None) for part in active_components(row))
+    return row.get('instrument_type') == 'cash' and _no_recorded_cost(active_components(row))
 
 
-def cash_balance_only(positions):
+def cash_balance_only(positions, *, cost_cache=None):
     """Cash without a recorded cost is a balance, not an incomplete purchase."""
     cash = positions.get('instrument_type', pd.Series('', index=positions.index)).eq('cash')
     result = pd.Series(False, index=positions.index)
-    for index, row in positions.loc[cash].iterrows():
-        result.at[index] = is_cash_balance(row)
+    if cash.any():
+        components = cost_cache._reader() if cost_cache is not None else active_components
+        result.loc[cash] = [_no_recorded_cost(components(row)) for row in positions.loc[cash].to_dict('records')]
     return result
 
 
@@ -26,53 +64,61 @@ def cash_performance_note(currency, reporting_currency):
     return 'Cash balance: purchase-based return is not applicable. Interest is separate.'
 
 
-def position_performance(valued, fx_to_reporting=None, *, reporting_currency='EUR', historical=None):
-    result = valued.copy()
-    for column in ('cost_basis', 'unrealized_gain', 'native_return_pct', 'return_pct',
-                   'cost_basis_reporting', 'unrealized_gain_reporting'):
-        result[column] = float('nan')
-    result['performance_note'] = ''
-    result['cost_estimated'] = False
-    result['reporting_currency'] = reporting_currency
+def position_performance(valued, fx_to_reporting=None, *, reporting_currency='EUR', historical=None, cost_cache=None):
     rates = fx_to_reporting or {}
-    balances = cash_balance_only(result)
-    for index, row in result.iterrows():
-        if row.shares == 0:
-            result.at[index, 'performance_note'] = 'No shares held'
+    marks = []
+    rows = valued.to_dict('records')
+    # Validate cash evidence before any historical FX requests, including closed balances.
+    components = cost_cache._reader() if cost_cache is not None else active_components
+    cash_parts = {i: components(row) for i, row in enumerate(rows) if row.get('instrument_type') == 'cash'}
+    for i, row in enumerate(rows):
+        mark = {}
+        marks.append(mark)
+        if row['shares'] == 0:
+            mark['performance_note'] = 'No shares held'
             continue
-        if balances.at[index]:
-            result.at[index, 'performance_note'] = cash_performance_note(row.get('quote_currency', ''), reporting_currency)
+        parts = cash_parts.get(i)
+        if parts is not None and _no_recorded_cost(parts):
+            mark['performance_note'] = cash_performance_note(row.get('quote_currency', ''), reporting_currency)
             continue
         cost, currency = row.get('acquisition_price', float('nan')), row.get('acquisition_currency', '')
         if pd.notna(cost) and currency:
-            basis = row.shares * cost
+            basis = row['shares'] * cost
             if math.isfinite(basis):
-                result.at[index, 'cost_basis'] = basis
+                mark['cost_basis'] = basis
                 rate = 1. if currency == reporting_currency else rates.get(currency, float('nan'))
-                current = (row.shares * row.current_price if currency == row.quote_currency else
-                           row.current_value_reporting / rate if math.isfinite(rate) and rate > 0 else float('nan'))
+                current = (row['shares'] * row['current_price'] if currency == row['quote_currency'] else
+                           row['current_value_reporting'] / rate if math.isfinite(rate) and rate > 0 else float('nan'))
                 if math.isfinite(current) and math.isfinite(current - basis):
-                    result.at[index, 'unrealized_gain'] = current - basis
+                    mark['unrealized_gain'] = current - basis
                     if basis > 0 and math.isfinite(100 * (current - basis) / basis):
-                        result.at[index, 'native_return_pct'] = 100 * (current - basis) / basis
-        resolved = resolve_cost(active_components(row), reporting_currency, historical)
+                        mark['native_return_pct'] = 100 * (current - basis) / basis
+        resolved = resolve_cost(parts if parts is not None else components(row), reporting_currency, historical)
         note = resolved.note
         if resolved.amount is not None:
-            result.at[index, 'cost_basis_reporting'] = resolved.amount
-            result.at[index, 'cost_estimated'] = resolved.estimated
-            current = row.current_value_reporting
+            mark['cost_basis_reporting'] = resolved.amount
+            mark['cost_estimated'] = resolved.estimated
+            current = row['current_value_reporting']
             if not math.isfinite(current):
                 note = 'Missing current price or exchange rate; excluded from gains'
             elif not math.isfinite(current - resolved.amount):
                 note = 'Gain exceeds supported numeric range'
             else:
                 gain = current - resolved.amount
-                result.at[index, 'unrealized_gain_reporting'] = gain
+                mark['unrealized_gain_reporting'] = gain
                 if resolved.amount > 0 and math.isfinite(100 * gain / resolved.amount):
-                    result.at[index, 'return_pct'] = 100 * gain / resolved.amount
+                    mark['return_pct'] = 100 * gain / resolved.amount
                 elif resolved.amount == 0:
                     note = (note + '; ' if note else '') + 'Return undefined for zero cost'
-        result.at[index, 'performance_note'] = note
+        mark['performance_note'] = note
+
+    result = valued.copy()
+    for column in ('cost_basis', 'unrealized_gain', 'native_return_pct', 'return_pct',
+                   'cost_basis_reporting', 'unrealized_gain_reporting'):
+        result[column] = pd.Series([mark.get(column, math.nan) for mark in marks], index=valued.index, dtype=float)
+    result['performance_note'] = pd.Series([mark['performance_note'] for mark in marks], index=valued.index, dtype=str)
+    result['cost_estimated'] = pd.Series([mark.get('cost_estimated', False) for mark in marks], index=valued.index, dtype=bool)
+    result['reporting_currency'] = reporting_currency
     return result
 
 

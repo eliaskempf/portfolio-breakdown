@@ -52,10 +52,11 @@ def request_position(position_id, *, editing=False, local=True):
         route_position_callback()
 
 
-def _consume_position_event(path, snapshot):
+def _consume_position_event(path, snapshot, journal=None):
     if event := st.session_state.pop('position_edit_open_request', None):
         from portfolio_app.ledger.account_journal import load_journal
-        journal, _ = load_journal(path.parent)
+        if journal is None:
+            journal, _ = load_journal(path.parent)
         identity = event.get('id', '')
         actual = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or (journal.accounts and str(identity).startswith('account-'))
         current = event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
@@ -92,9 +93,10 @@ def _has_position_draft():
 
 
 def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False, allocation=None,
-                           valued=None, account_valued=None, percent=False, defer_dialog=False, has_accounts=False):
+                           valued=None, account_valued=None, percent=False, defer_dialog=False, has_accounts=False, journal=None, account_state=None):
+    dialog_baseline = position_dialog_sources(path.parent) if not defer_dialog else None
     account_valued = account_valued if account_valued is not None else valued
-    _consume_position_event(path, snapshot)
+    _consume_position_event(path, snapshot, journal)
     if warning := st.session_state.pop('position_stale_notice', None):
         st.warning(warning)
     if message := st.session_state.pop('position_saved_notice', None):
@@ -167,9 +169,12 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     if workflow == 'Positions':
         from portfolio_app.ledger.account_journal import load_journal
         from portfolio_app.interface.views.derivatives.accounts_ui import render_actual_positions
-        render_actual_positions(path.parent, load_journal(path.parent)[0], valued=account_valued)
+        if journal is None:
+            journal, _ = load_journal(path.parent)
+        render_actual_positions(path.parent, journal, valued=account_valued, state=account_state)
     if not defer_dialog:
-        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=account_valued)
+        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=account_valued,
+                               journal=journal, baseline=dialog_baseline)
 
 
 def _remember_draft():
@@ -205,13 +210,13 @@ def _dismiss_dialog():
     route_position_callback()
 
 
-def _dialog_sources(directory):
+def position_dialog_sources(directory):
     from portfolio_app.interface.shared.input_cache import file_stamp
     return tuple(file_stamp(directory/name) for name in
         ('holdings.csv', 'account-journal.json', 'history-observations.json', 'allocation.yaml', 'portfolio.yaml'))
 
 
-def _reload_dialog_values(directory, *, demo, prices=None, inputs=None):
+def _reload_dialog_values(directory, *, demo, prices=None, inputs=None, journal_snapshot=None):
     """Use the normal valuation pipeline after a child workflow changes facts."""
     from portfolio_app.interface.shared.input_cache import load_inputs
     from portfolio_app.application import prepare_application, select_price_service, historical_for
@@ -221,21 +226,26 @@ def _reload_dialog_values(directory, *, demo, prices=None, inputs=None):
     prices = select_price_service(directory, offline_demo=demo, supplied=prices)
     historical = ObservationFX(load_observations(directory)[0], historical_for(directory, demo=demo))
     valued = prepare_application(inputs, prices, reporting_currency=reporting_currency(), historical=historical).valued
-    journal, _ = load_journal(directory)
+    journal, revision = journal_snapshot if journal_snapshot is not None else load_journal(directory)
     if journal.accounts:
         from portfolio_app.portfolio.actual_portfolio import journal_positions
         from portfolio_app.derivatives.futures_valuation import load_valuations
-        valuations, rates = load_valuations(directory, journal)
+        from portfolio_app.interface.shared.input_cache import current_account_state
+        state = current_account_state(directory, journal, revision)
+        valuations, rates = load_valuations(directory, journal, state=state)
         valued = journal_positions(valued, journal, prices, reporting_currency=reporting_currency(),
-                                  valuations=valuations, fx_rates=rates)
+                                  valuations=valuations, fx_rates=rates, state=state)
     return inputs.snapshot, inputs.allocation, valued
 
 
-def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None, valued=None, prices=None):
+def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None, valued=None, prices=None,
+                           journal=None, baseline=None):
     from portfolio_app.interface.shared.dialog_runtime import HOST
-    baseline = _dialog_sources(path.parent)
+    verify_supplied = baseline is None or journal is None or 'history_journal_revision' not in snapshot.holdings.attrs
+    if baseline is None:
+        baseline = position_dialog_sources(path.parent)
     draft_visible = _has_position_draft()
-    current_values = [baseline, snapshot, allocation, valued]
+    last_sources = baseline
     from portfolio_app.ledger.account_journal import load_journal
     from portfolio_app.ledger.security_history import selected_events
     from dataclasses import replace
@@ -246,54 +256,121 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
                        for b in journal.securities if b.active)
         return replace(journal, securities=()), active
 
-    last_facts = valuation_facts(load_journal(path.parent)[0])
+    journal_snapshot = (load_journal(path.parent) if journal is None else
+                        (journal, snapshot.holdings.attrs.get('history_journal_revision')))
 
-    def values():
-        nonlocal last_facts
-        signature = _dialog_sources(path.parent)
-        if signature != current_values[0]:
-            from portfolio_app.interface.shared.input_cache import load_inputs
-            inputs = load_inputs(path.parent)
-            facts = valuation_facts(load_journal(path.parent)[0])
-            before = current_values[1].holdings.drop(columns=['position_key'], errors='ignore')
-            after = inputs.snapshot.holdings.drop(columns=['position_key'], errors='ignore')
-            same_valuation = (before.equals(after) and facts == last_facts
-                              and signature[2:] == current_values[0][2:])
-            refreshed = ((inputs.snapshot, inputs.allocation, current_values[3]) if same_valuation else
-                         _reload_dialog_values(path.parent, demo=demo, prices=prices, inputs=inputs))
-            current_values[:] = [signature, *refreshed]
-            last_facts = facts
-        return current_values[1:]
+    def refresh_values(signature):
+        nonlocal last_sources, snapshot, allocation, valued, journal_snapshot
+        from portfolio_app.interface.shared.input_cache import load_effective_snapshot, load_inputs
+        # A standalone unvalued reader only needs effective holdings on its first visit.
+        unvalued = signature == last_sources and valued is None
+        inputs = None if unvalued else load_inputs(path.parent)
+        refreshed_snapshot = load_effective_snapshot(path) if unvalued else inputs.snapshot
+        revision = refreshed_snapshot.holdings.attrs['history_journal_revision']
+        current = journal_snapshot if journal_snapshot[1] == revision else load_journal(path.parent)
+        if current[1] != revision:
+            st.rerun()
+        if inputs is not None:
+            before = snapshot.holdings.drop(columns=['position_key'], errors='ignore')
+            after = refreshed_snapshot.holdings.drop(columns=['position_key'], errors='ignore')
+            previous_revision = snapshot.holdings.attrs.get('history_journal_revision')
+            same_valuation = (signature[2:] == last_sources[2:] and before.equals(after)
+                              and previous_revision == journal_snapshot[1]
+                              and (current is journal_snapshot or valuation_facts(current[0]) == valuation_facts(journal_snapshot[0])))
+            if same_valuation:
+                allocation = inputs.allocation
+            else:
+                refreshed_snapshot, allocation, valued = _reload_dialog_values(
+                    path.parent, demo=demo, prices=prices, inputs=inputs, journal_snapshot=current)
+        last_sources, snapshot, journal_snapshot = signature, refreshed_snapshot, current
+
+    def values(*, read_only):
+        nonlocal verify_supplied
+        signature = position_dialog_sources(path.parent)
+        if signature != last_sources or (read_only and verify_supplied):
+            try:
+                refresh_values(signature)
+            except (DataError, OSError):
+                if (not read_only or 'history_journal_revision' not in snapshot.holdings.attrs
+                        or journal_snapshot[1] != snapshot.holdings.attrs['history_journal_revision']):
+                    raise
+                # Keep the last complete valuation and its journal together until
+                # the next publication, including when an external file is partial.
+                return signature, snapshot, allocation, valued, journal_snapshot, True
+            verify_supplied = False
+        return signature, snapshot, allocation, valued, journal_snapshot, False
+
+    mounted = False
 
     @st.fragment(key=HOST)
     def host():
+        nonlocal mounted
+        revisiting = mounted
+        mounted = True
         st.session_state['position_dialog_host_ready'] = True
         if not st.session_state.get('position_edit_dialog') and not st.session_state.get('position_edit_open_request'):
             # Read-only open/close never rebuilds the portfolio. Persisted changes
             # get one parent refresh once the dialog has actually closed.
             # Refresh the parent toolbar when a draft is created or discarded,
             # while keeping ordinary read-only dismissal local.
-            if _dialog_sources(path.parent) != baseline or _has_position_draft() != draft_visible:
+            # On initial mount the parent may already be showing a save conflict.
+            # A later fragment dismissal owns the refresh after a dialog edit.
+            if revisiting and (position_dialog_sources(path.parent) != baseline or _has_position_draft() != draft_visible):
                 st.rerun()
             return
-        _render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued, values=values)
+        values(read_only=True)
+        _render_position_dialog(path, snapshot, funds, demo=demo, journal=journal_snapshot[0], values=values)
     host()
 
 
-def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, values):
-    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates, close_position_button
-    _consume_position_event(path, snapshot)
+def _checked_position_journal(path, stamps, revisions, journal_snapshot, *, retry_on_change=False):
+    """Keep a read-only dialog on the files that produced its selected row."""
+    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates
+    from portfolio_app.interface.shared.input_cache import file_stamp
+    from portfolio_app.ledger.account_journal import FILE
+    from portfolio_app.workspace.storage import revision
+    files = path, path.parent / FILE
+    if not retry_on_change:
+        stamps = stamps[:2]
+
+    @local_dialog_updates()
+    def current():
+        nonlocal stamps
+        if retry_on_change:
+            if position_dialog_sources(path.parent) != stamps:
+                st.rerun()
+            return journal_snapshot
+        latest = tuple(file_stamp(source) for source in files)
+        if latest != stamps:
+            for source, old, new, expected in zip(files, stamps, latest, revisions):
+                if old == new:
+                    continue
+                try:
+                    actual = revision(source)
+                except FileNotFoundError:
+                    actual = None
+                if actual != expected:
+                    # Rebuild the dialog that owns valuation and selection, even
+                    # when a nested chart or headline poll discovered the change.
+                    st.rerun()
+            stamps = latest
+        return journal_snapshot
+    return current
+
+
+def _render_position_dialog(path, snapshot, funds, *, demo, journal, values):
+    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates, close_dialog_button
+    _consume_position_event(path, snapshot, journal)
     if not st.session_state.get('position_edit_dialog'):
         if st.session_state.get('positions_workflow_request'):
             st.rerun()
         return
 
     from portfolio_app.ledger.account_journal import load_journal
-    dialog_journal, _ = load_journal(path.parent)
-    future_ids = {p.id for p in dialog_journal.positions} | {item.id for item in dialog_journal.investments}
+    future_ids = {p.id for p in journal.positions} | {item.id for item in journal.investments}
     selected_id = st.session_state.get('position_edit_selected')
     actual_future = selected_id in future_ids
-    bank = bank_position_ids(dialog_journal).get(selected_id)
+    bank = bank_position_ids(journal).get(selected_id)
     title = st.session_state.get('position_edit_action', 'Details')
     if title == 'Details' or (actual_future and title == 'Edit position'):
         title = 'Position details'
@@ -310,12 +387,16 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
         if not st.session_state.get('position_edit_dialog'):
             st.rerun()
         with local_dialog_updates(), st.container(key='position_dialog_'+str(st.session_state.get('position_edit_selected', 'new'))+'_'+st.session_state.get('position_edit_action', 'Details')):
-            snapshot, allocation, valued = values()
-            current = read_snapshot(path)
+            # A queued child from the previous render can still match the same
+            # position and view after an external edit removes its history or row.
+            st.session_state['position_detail_generation'] = st.session_state.get('position_detail_generation', 0) + 1
+            action = st.session_state.get('position_edit_action', 'Details')
+            sources, snapshot, allocation, valued, journal_snapshot, input_error = values(read_only=action == 'Details' and not actual_future)
+            if input_error:
+                st.warning('The updated portfolio could not be read. Showing the last valid position.')
             for key, value in st.session_state.get('position_draft', {}).items():
                 if key not in st.session_state:
                     st.session_state[key] = value
-            action = st.session_state.get('position_edit_action', 'Details')
             if action == 'Unsaved position draft':
                 st.write('Editing another position would discard your unsaved draft.')
                 identity = st.session_state['position_edit_selected']
@@ -329,43 +410,41 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                 return
             if bank:
                 from portfolio_app.interface.views.positions.bank_account_ui import render_bank_detail
-                latest = bank_position_ids(load_journal(path.parent)[0]).get(selected_id)
+                latest = bank_position_ids(journal_snapshot[0]).get(selected_id)
                 if latest:
-                    render_bank_detail(path.parent, current, allocation, valued, latest, editing=action == 'Edit position')
+                    render_bank_detail(path.parent, read_snapshot(path) if action == 'Edit position' else snapshot, allocation, valued, latest, editing=action == 'Edit position')
                 else:
                     st.warning('This cash account no longer exists.')
                 if action != 'Edit position':
-                    close_position_button()
+                    close_dialog_button('Close', key='position_dialog_close')
             elif actual_future:
                 journal, revision = load_journal(path.parent)
                 from portfolio_app.interface.views.derivatives.investment_detail_ui import render_investment_detail
                 render_investment_detail(path.parent, journal, revision, valued,
                     st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
-                close_position_button()
+                close_dialog_button('Close', key='position_dialog_close')
             elif action == 'Details':
-                from portfolio_app.ledger.security_history import effective_holdings
-                current_holdings = effective_holdings(current.holdings, load_journal(path.parent)[0].securities)
+                current_holdings = snapshot.holdings
                 selected = current_holdings.loc[current_holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
                 if selected.empty:
                     st.warning('This position no longer exists.')
                 else:
                     row = selected.iloc[0]
-                    previous = snapshot.holdings.loc[snapshot.holdings.position_id.eq(row.position_id)]
-                    # The first evidence save may add stable position keys. Keep
-                    # the valuation when the effective holding itself is unchanged.
-                    unchanged = (not previous.empty and row.drop(labels=['position_key'], errors='ignore').equals(
-                        previous.iloc[0].drop(labels=['position_key'], errors='ignore')))
-                    if valued is not None and unchanged:
+                    if valued is not None:
                         matches = valued.loc[valued.position_id.eq(row.position_id)]
                         if not matches.empty:
                             row = matches.iloc[0]
                     def edit_position():
                         request_position(row.position_id, editing=True, local=False)
                     from portfolio_app.interface.views.positions.position_detail import render_position_detail
-                    render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position, funds=funds)
-                close_position_button()
+                    revisions = snapshot.revision, current_holdings.attrs['history_journal_revision']
+                    checked_journal = _checked_position_journal(
+                        path, sources, revisions, journal_snapshot, retry_on_change=input_error)
+                    render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position, funds=funds,
+                                           input_revisions=revisions, checked_journal=checked_journal)
+                close_dialog_button('Close', key='position_dialog_close')
             else:
-                rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
+                rendered = render_position_form(path, read_snapshot(path), funds, demo=demo, allocation=allocation, action=action, valued=valued)
                 _remember_draft()
                 if not rendered and st.button('Cancel', help='Discard this position draft without saving.'):
                     _clear_editor()

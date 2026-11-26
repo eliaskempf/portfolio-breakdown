@@ -2,6 +2,8 @@
 from datetime import datetime, timezone, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from portfolio_app.interface.shared import background_ui; from portfolio_app.interface.views.derivatives import settlement_archive_ui
 
 
@@ -47,3 +49,120 @@ def test_pending_open_and_other_editors_also_defer_refresh(monkeypatch):
         assert not background_ui.refresh_allowed()
     monkeypatch.setattr(st,'session_state',{})
     assert background_ui.refresh_allowed()
+
+
+@pytest.mark.parametrize('outcome,rerenders', [
+    ('checked', False), ('already locked', False), ('new breakdown', True),
+    ('unavailable', False), ('worker error', False), ('settings open', False), ('external check', True),
+])
+def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outcome, rerenders):
+    import streamlit as st
+    from portfolio_app.interface.views.funds import etf_refresh_ui as ui
+    from portfolio_app.funds.etf_refresh import write_json
+    from portfolio_app.interface.shared.input_cache import fund_sources
+    state = {}
+    pending, error = [True], ['']
+    callbacks, timers, renders, indicators = [], [], [], []
+    def fragment(fn):
+        callbacks.append(fn)
+        return fn
+    monkeypatch.setattr(st, 'session_state', state)
+    monkeypatch.setattr(st, 'fragment', lambda **kwargs: fragment)
+    monkeypatch.setattr(st, 'rerun', lambda: renders.append(True))
+    monkeypatch.setattr(background_ui, '_set_poll_interval', timers.append)
+    monkeypatch.setattr(ui.coordinator, 'running', lambda _: pending[0])
+    monkeypatch.setattr(ui.coordinator, 'error', lambda _: error[0])
+    (tmp_path / 'etfs').mkdir()
+    state['parsed_inputs'] = {'funds': (fund_sources(tmp_path), [])}
+    if outcome in {'settings open', 'external check'}:
+        state.update(main_tabs='Exposure', exposure_refresh_open=True,
+                     etf_settings_observation=(str(tmp_path), ui.refresh_revision(tmp_path), outcome == 'settings open'))
+    ui.render_refresh_status(tmp_path, [], ui.refresh_revision(tmp_path), show_messages=False,
+                             render_indicator=indicators.append)
+    assert timers == [2] and not renders
+    if outcome != 'already locked':
+        write_json(tmp_path / '.cache/etf-refresh/status.json',
+                   {'invented': {'status': 'unavailable' if outcome == 'unavailable' else 'checked'}})
+    if outcome == 'new breakdown':
+        (tmp_path / 'etfs/new.yaml').write_text('holdings_file: invented.csv')
+    if outcome == 'worker error':
+        error[0] = 'Invented failure'
+    pending[0] = False
+    state['position_edit_dialog'] = True
+    timers.clear()
+    callbacks[0]()
+    assert not renders and timers == ([] if rerenders else [None])
+    state['position_edit_dialog'] = False
+    callbacks[0]()
+    assert bool(renders) == rerenders
+    if outcome == 'unavailable':
+        assert indicators[-1].failures == (('invented', 'unavailable', ''),)
+    elif outcome == 'worker error':
+        assert indicators[-1].error == 'Invented failure'
+
+
+def test_status_timer_updates_only_when_cadence_changes_and_resets_on_remount(monkeypatch):
+    import streamlit as st
+    monkeypatch.setattr(st, 'fragment', lambda: lambda fn: fn)
+    intervals = []
+    monkeypatch.setattr(background_ui, '_set_poll_interval', intervals.append)
+    pending = [False]
+
+    def status(poll):
+        if pending[0]:
+            poll(.5)
+
+    active = background_ui.status_fragment(run_every=60)(status)
+    active()
+    pending[0] = True
+    active()
+    active()
+    pending[0] = False
+    active()
+    assert intervals == [60, .5, 60]
+
+    idle = background_ui.status_fragment()(status)
+    idle()
+    idle()
+    assert intervals == [60, .5, 60, None]
+
+
+def test_status_timer_disarms_when_the_polling_view_exits(monkeypatch):
+    import streamlit as st
+    monkeypatch.setattr(st, 'fragment', lambda: lambda fn: fn)
+    intervals = []
+    monkeypatch.setattr(background_ui, '_set_poll_interval', intervals.append)
+    @background_ui.status_fragment()
+    def status(poll):
+        if intervals:
+            raise RuntimeError('Invented interrupted view')
+        poll(.15)
+    status()
+    with pytest.raises(RuntimeError, match='Invented interrupted view'):
+        status()
+    assert intervals == [.15, None]
+
+
+def test_refresh_settings_follow_pending_check_and_restore_retry(tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from portfolio_app.interface.views.funds import etf_refresh_ui as ui
+    from portfolio_app.funds.etf_refresh import write_json
+
+    running, intervals = [True], []
+    monkeypatch.setattr(ui.coordinator, 'running', lambda _: running[0])
+    monkeypatch.setattr(background_ui, '_set_poll_interval', intervals.append)
+    app = AppTest.from_string(f"""
+from pathlib import Path
+import pandas as pd
+from portfolio_app.interface.views.funds.etf_refresh_ui import render_refresh_controls
+holdings = pd.DataFrame([dict(id='fund', name='Invented ETF', isin='ZZ-FUND', shares=1, instrument_type='etf')])
+render_refresh_controls(Path({str(tmp_path)!r}), holdings, [])
+""").run()
+    def retry():
+        return next(b for b in app.button if b.label == 'Refresh ETF holdings now')
+    assert not app.exception and retry().disabled and intervals == [2]
+    write_json(tmp_path/'.cache/etf-refresh/status.json', {'ZZ-FUND': {'status': 'failed', 'error': 'Invented outage'}})
+    running[0] = False
+    app.run()
+    assert not app.exception and not retry().disabled and intervals[-1] is None
+    assert any(i.value == 'Invented outage' for i in app.info)

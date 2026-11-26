@@ -37,6 +37,46 @@ def test_exposure_view_remains_selected_and_search_matches_its_scope(exposure_pa
     playwright.expect(search).to_be_enabled()
 
 
+@pytest.mark.parametrize('ux_page', ['count_app_runs'], indirect=True)
+def test_read_only_asset_dialog_reuses_parent_until_fund_evidence_changes(exposure_page):
+    from browser_support import settle
+    page, directory = exposure_page
+    table = page.get_by_role('table', name='Exposure assets', exact=True)
+    row = table.locator('tr[data-position-id="c"]')
+    panel = page.get_by_role('dialog')
+    def open_details():
+        toggle = row.locator('[data-preview-toggle]')
+        if toggle.get_attribute('aria-expanded') != 'true':
+            toggle.click()
+        row.get_by_role('button', name='Details for Invented Satellite').click()
+        panel.get_by_role('table', name='Exposure sources').wait_for()
+        settle(page)
+    def passes():
+        return len((directory / 'full-runs.log').read_text().splitlines())
+    settle(page)
+    before = passes()
+    open_details()
+    playwright.expect(panel.get_by_test_id('stMetricValue').first).to_contain_text('180.00')
+    panel.get_by_role('button', name='Close exposure details').click()
+    panel.wait_for(state='hidden')
+    settle(page)
+    assert passes() == before
+    path = directory / 'etfs' / 'invented.csv'
+    path.write_text(path.read_text().replace('0.5', '0.6'))
+    open_details()
+    playwright.expect(panel.get_by_test_id('stMetricValue').first).to_contain_text('200.00')
+    assert passes() == before + 1
+    path.write_text(path.read_text().replace('0.6', '0.7'))
+    panel.get_by_text('ETF breakdown: Invented Global', exact=True).click()
+    playwright.expect(panel.get_by_test_id('stMetricValue').first).to_contain_text('220.00')
+    settle(page)
+    assert passes() == before + 2
+    panel.get_by_role('button', name='Close', exact=True).click()
+    panel.wait_for(state='hidden')
+    settle(page)
+    assert passes() == before + 2
+
+
 def test_assets_first_filters_breakdown_and_source_dialog(exposure_page):
     page, directory = exposure_page
     results = page.locator('.st-key-exposure_results')

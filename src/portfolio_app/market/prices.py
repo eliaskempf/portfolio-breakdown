@@ -1,5 +1,6 @@
 """Injectable market data with a small persistent cache and stale fallback."""
 
+from functools import cache, cached_property
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 import json
@@ -46,6 +47,23 @@ class PriceResult:
     quote: Quote | None
     status: str
     error: str = ""
+
+
+class QuoteSnapshot:
+    """Read each requested quote or FX leg once during a valuation or monitoring pass."""
+    def __init__(self, service):
+        self._service = service
+
+    def now(self):
+        return self._service.now()
+
+    @cached_property
+    def price(self):
+        return cache(self._service.price)
+
+    @cached_property
+    def fx(self):
+        return cache(self._service.fx)
 
 
 class MarketDataProvider(Protocol):
@@ -131,6 +149,10 @@ class PriceService:
         self.ttl = ttl
         self.cache_warning = ""
         self._lock = RLock()
+        self._snapshot_reader = None
+        self._pending_writes = {}
+        self._sequence = 0
+        self._saved_versions = {}
         self._entries: dict = {}
         if cache_path and cache_path.exists():
             try:
@@ -141,33 +163,71 @@ class PriceService:
             except (OSError, ValueError) as exc:
                 self.cache_warning = f"Price cache could not be read; fetching fresh data: {exc}"
 
-    def _save(self, key: str) -> None:
-        if self.cache_path is None:
-            return
+    def take_cache_write(self):
+        """Detach complete background evidence without file I/O under the coordinator lock."""
+        with self._lock:
+            if not self._pending_writes:
+                return None
+            pending, self._pending_writes = self._pending_writes, {}
+
+        def publish():
+            from portfolio_app.workspace.workspace_lock import write_context
+            for context, entries in pending.items():
+                token = write_context.set(context)
+                try:
+                    self._save(entries)
+                finally:
+                    write_context.reset(token)
+        return publish
+
+    def _save(self, entries) -> None:
+        from portfolio_app.portfolio.holdings import DataError
         try:
             from portfolio_app.workspace.locking import write_lock as _write_lock
             from portfolio_app.workspace.workspace_lock import workspace_lock, document_workspace
             with workspace_lock(document_workspace(self.cache_path)):
                 self.cache_path.parent.mkdir(parents=True, exist_ok=True)
                 with _write_lock(self.cache_path.with_suffix('.lock')):
+                    # A newer synchronous fetch can finish before a detached batch takes the lock.
+                    changes = {key: (version, entry) for key, (version, entry) in entries.items()
+                               if version > self._saved_versions.get(key, 0)}
+                    if not changes:
+                        return
                     try:
                         saved = json.loads(self.cache_path.read_text())
                         if not isinstance(saved, dict):
                             saved = {}
                     except (OSError, ValueError):
                         saved = {}
-                    saved[key] = self._entries[key]
+                    saved.update((key, entry) for key, (_, entry) in changes.items())
                     with staged_text(self.cache_path, lambda handle: json.dump(saved, handle)) as temporary:
                         temporary.replace(self.cache_path)
-        except OSError as exc:
+                    self._saved_versions.update((key, version) for key, (version, _) in changes.items())
+        except (OSError, DataError) as exc:
             self.cache_warning = f"Price cache could not be saved: {exc}"
 
     def cached(self, key: str) -> tuple[PriceResult, bool]:
         """Read without network access; the boolean indicates a refresh is due."""
+        with self._lock:
+            entry = self._entries.get(key)
+        return self._cached_entry(key, entry)
+
+    def cached_reader(self):
+        """Pin the complete in-memory evidence; quote age is still evaluated at read time."""
+        with self._lock:
+            if self._snapshot_reader is None:
+                # Writers replace entire entries. Readers can safely share their contents.
+                entries = self._entries.copy()
+                def read(key):
+                    return self._cached_entry(key, entries.get(key))
+                self._snapshot_reader = read
+            return self._snapshot_reader
+
+    def _cached_entry(self, key, entry):
         if key.startswith('price:') and (issue := quote_issue(key.removeprefix('price:'))):
             return PriceResult(None, 'missing', issue), False
-        with self._lock:
-            entry = self._entries.get(key, {})
+        if entry is None:
+            return PriceResult(None, 'missing'), True
         cached = None
         attempted_at = None
         error = ""
@@ -183,7 +243,7 @@ class PriceService:
         status = 'cached fallback' if cached and error else 'stale' if cached and due else 'cached' if cached else 'missing'
         return PriceResult(cached, status, error), bool(due)
 
-    def _get(self, key: str, fetch: Callable[[], Quote], refresh: bool) -> PriceResult:
+    def _get(self, key: str, fetch: Callable[[], Quote], refresh: bool, defer_save: bool) -> PriceResult:
         previous, due = self.cached(key)
         if not refresh and not due:
             return previous
@@ -204,17 +264,26 @@ class PriceService:
             result = PriceResult(cached, "cached fallback" if cached else "missing", error)
         with self._lock:
             self._entries[key] = entry
+            self._snapshot_reader = None
+            if self.cache_path is None:
+                return result
+            self._sequence += 1
+            update = self._sequence, entry
+            if defer_save:
+                from portfolio_app.workspace.workspace_lock import write_context
+                self._pending_writes.setdefault(write_context.get(), {})[key] = update
+                return result
         # Persistence may wait on another process's writer; cached UI reads
         # must stay available while that happens.
-        self._save(key)
+        self._save({key: update})
         return result
 
-    def price(self, ticker: str, *, refresh: bool = False) -> PriceResult:
+    def price(self, ticker: str, *, refresh: bool = False, defer_save: bool = False) -> PriceResult:
         if issue := quote_issue(ticker):
             return PriceResult(None, 'missing', issue)
-        return self._get(f"price:{ticker}", lambda: self.provider.price(ticker), refresh)
+        return self._get(f"price:{ticker}", lambda: self.provider.price(ticker), refresh, defer_save)
 
-    def fx(self, currency: str, *, refresh: bool = False) -> PriceResult:
+    def fx(self, currency: str, *, refresh: bool = False, defer_save: bool = False) -> PriceResult:
         if currency == "EUR":
             return PriceResult(Quote(1.0, "EUR", self.now()), "identity")
-        return self._get(f"fx:{currency}", lambda: self.provider.fx(currency), refresh)
+        return self._get(f"fx:{currency}", lambda: self.provider.fx(currency), refresh, defer_save)

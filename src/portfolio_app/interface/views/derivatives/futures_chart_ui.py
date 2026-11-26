@@ -6,6 +6,13 @@ from portfolio_app.interface.views.history.market_history_ui import render_marke
 
 
 def render_futures_chart(directory, contracts, *, key):
+    @st.fragment(key=key+'reference_chart')
+    def chart():
+        _render_futures_chart(directory, contracts, key)
+    chart()
+
+
+def _render_futures_chart(directory, contracts, key):
     unique = {(c.exchange, c.product, c.currency, c.return_convention): c for c in contracts}
     choices = list(unique)
     selected = st.session_state.get(key+'selected_market', choices[0])
@@ -23,35 +30,40 @@ def render_futures_chart(directory, contracts, *, key):
     chosen = st.session_state.get(choice_key, st.session_state.get(saved_key))
     if not verified:
         reference = REFERENCES.get(chosen)
-    result = None
+    def change_reference():
+        st.rerun(key+'reference_chart')
+
+    def chart_details(result):
+        with st.expander('Chart details', expanded=reference is None):
+            if len(choices) > 1:
+                market = st.selectbox('Contract market', choices, index=choices.index(selected),
+                    format_func=lambda item: f'{item[1]} · {item[2]} · {item[3]} return', key=key+'market', on_change=change_reference if reference else None)
+                st.session_state[key+'selected_market'] = market
+            if not verified:
+                options = [None, *REFERENCES]
+                symbol = st.selectbox('Chart reference', options,
+                    index=options.index(chosen) if chosen in options else 0,
+                    format_func=lambda symbol: ('Choose a reference' if symbol is None else
+                        f'{REFERENCES[symbol].name} · {REFERENCES[symbol].currency} · {REFERENCES[symbol].convention}'),
+                    key=choice_key, on_change=change_reference if reference else None)
+                st.session_state[saved_key] = symbol
+                st.caption('User-selected comparison; its match to this contract’s underlying is unverified.')
+            if reference:
+                st.caption(f'Source: {reference.source} · {reference.ticker} · {reference.currency}')
+                st.caption('Native index points, not futures prices or personal returns. '
+                    'Contract quantities, futures basis, rolls, fees and recorded taxes are excluded. '
+                    'Changing portfolio currency does not convert index levels into cash prices.')
+            if result:
+                if result.fetched_at:
+                    st.caption(f'History last retrieved: {result.fetched_at}')
+                if result.note and result.status in {'fresh', 'cached'}:
+                    st.caption(result.note)
+
     if reference:
         subtitle = f'{reference.name} · {reference.convention} · {reference.currency}'
         st.caption(subtitle + ('' if verified else ' · Comparison'))
-        result = render_market_history(reference.ticker, directory, key=key+reference.ticker+'_',
-            index_points=True, expected_currency=reference.currency, compact=True)
+        render_market_history(reference.ticker, directory, key=key+reference.ticker+'_',
+            index_points=True, expected_currency=reference.currency, compact=True, render_details=chart_details)
     else:
         st.caption('Choose a market reference to display a chart.')
-    with st.expander('Chart details', expanded=reference is None):
-        if len(choices) > 1:
-            market = st.selectbox('Contract market', choices, index=choices.index(selected),
-                format_func=lambda item: f'{item[1]} · {item[2]} · {item[3]} return', key=key+'market')
-            st.session_state[key+'selected_market'] = market
-        if not verified:
-            options = [None, *REFERENCES]
-            symbol = st.selectbox('Chart reference', options,
-                index=options.index(chosen) if chosen in options else 0,
-                format_func=lambda symbol: ('Choose a reference' if symbol is None else
-                    f'{REFERENCES[symbol].name} · {REFERENCES[symbol].currency} · {REFERENCES[symbol].convention}'),
-                key=choice_key)
-            st.session_state[saved_key] = symbol
-            st.caption('User-selected comparison; its match to this contract’s underlying is unverified.')
-        if reference:
-            st.caption(f'Source: {reference.source} · {reference.ticker} · {reference.currency}')
-            st.caption('Native index points, not futures prices or personal returns. '
-                'Contract quantities, futures basis, rolls, fees and recorded taxes are excluded. '
-                'Changing portfolio currency does not convert index levels into cash prices.')
-        if result:
-            if result.fetched_at:
-                st.caption(f'History last retrieved: {result.fetched_at}')
-            if result.note and result.status in {'fresh', 'cached'}:
-                st.caption(result.note)
+        chart_details(None)

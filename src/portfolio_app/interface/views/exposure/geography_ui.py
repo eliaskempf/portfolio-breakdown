@@ -1,5 +1,6 @@
 """Region/country exploration over the same normalized portfolio exposures."""
 from portfolio_app.interface.shared.chart_hover import chart_hover
+from portfolio_app.interface.shared.input_cache import cached_input
 
 from portfolio_app.interface.shared.currency_display import money, money_format, currency_symbol
 import pandas as pd
@@ -8,21 +9,26 @@ import streamlit as st
 from portfolio_app.interface.shared.charts import chart_config
 
 from portfolio_app.interface.shared.charts import style_figure
+from portfolio_app.exposure.exposure_tables import asset_search_mask
 from portfolio_app.exposure.geography import (
     COUNTRY_UNSPECIFIED, SPECIAL, UNKNOWN, Geography, geography_allocations, geography_table,
 )
 
 
-def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete: bool, query: str = '', equity=None, measure=None):
-    allocations = geography_allocations(exposures, geography)
-    total = exposures.value.sum()
-    unknown = allocations.loc[allocations.path.map(lambda p: p[0] == UNKNOWN), 'value'].sum()
-    regional_only = allocations.loc[allocations.path.map(lambda p: p[-1] == COUNTRY_UNSPECIFIED), 'value'].sum()
-    special = allocations.loc[allocations.path.map(lambda p: p[0] in SPECIAL), 'value'].sum()
+def render_geography(exposures: pd.DataFrame, geography: Geography, *, contribution_key, complete: bool, query: str = '', equity=None, measure=None):
+    def prepare():
+        allocations = geography_allocations(exposures, geography)
+        total = exposures.value.sum()
+        unknown = allocations.loc[allocations.path.map(lambda p: p[0] == UNKNOWN), 'value'].sum()
+        regional_only = allocations.loc[allocations.path.map(lambda p: p[-1] == COUNTRY_UNSPECIFIED), 'value'].sum()
+        special = allocations.loc[allocations.path.map(lambda p: p[0] in SPECIAL), 'value'].sum()
+        return allocations, total, unknown, regional_only, special
+
+    allocations, total, unknown, regional_only, special = cached_input(
+        'geography_allocations', (contribution_key, complete), prepare, immutable=True)
     country_value = total - unknown - regional_only - special
     if query.strip():
-        terms = exposures[['asset_name', 'ticker']].fillna('').agg(' '.join, axis=1).str.casefold()
-        matching = set(exposures.loc[terms.str.contains(query.strip().casefold(), regex=False), 'asset_id'])
+        matching = set(exposures.loc[asset_search_mask(exposures.asset_name, exposures.ticker, query), 'asset_id'])
         allocations = allocations.loc[allocations.asset_id.isin(matching)]
     if allocations.empty:
         st.info('No assets match this search.')

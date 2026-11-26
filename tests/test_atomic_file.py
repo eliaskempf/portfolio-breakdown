@@ -100,3 +100,45 @@ def test_json_strictness_stays_with_adapter(tmp_path):
     write_json(status, {'invented': float('nan')})
     assert status.read_text() == '{"invented": NaN}'
     assert not list(tmp_path.glob('*.tmp'))
+
+
+def test_analytics_encodes_provider_observations_once_outside_the_write_lock(tmp_path):
+    from portfolio_app.analytics.analytics_cache import AnalyticsCache
+    from portfolio_app.workspace.workspace_lock import in_workspace_transaction
+
+    traversals = []
+
+    class Observations(dict):
+        def items(self):
+            traversals.append(in_workspace_transaction())
+            return super().items()
+
+    cache = AnalyticsCache(tmp_path)
+    observations = Observations(prices=list(range(1000)), currency='€')
+    result = cache.get('synthetic', lambda: observations, preserve_updates=True)
+    assert result.status == 'fresh'
+    assert traversals == [False]
+    restored, due = AnalyticsCache(tmp_path).cached('synthetic')
+    assert not due and restored.data == observations
+    expected = tmp_path / 'streamed.json'
+    atomic_json(expected, dict(data=dict(observations), fetched_at=result.fetched_at,
+                               attempted_at=result.fetched_at, error=''))
+    assert cache._path('synthetic').read_bytes() == expected.read_bytes()
+
+
+def test_external_repair_wins_when_provider_and_stale_history_are_invalid(tmp_path):
+    import json
+    from portfolio_app.analytics.analytics_cache import AnalyticsCache
+
+    cache = AnalyticsCache(tmp_path)
+    path = cache._path('synthetic')
+    path.write_text(json.dumps(dict(data={'price': float('nan')}, fetched_at='2020-01-01T00:00:00+00:00',
+                                    attempted_at='2020-01-01T00:00:00+00:00', error='')))
+
+    def failed_provider():
+        stamp = cache.now().isoformat()
+        atomic_json(path, dict(data={'price': 12.5}, fetched_at=stamp, attempted_at=stamp, error=''))
+        raise ValueError('Invented provider failure')
+
+    result = cache.get('synthetic', failed_provider, preserve_updates=True)
+    assert result.status == 'cached' and result.data == {'price': 12.5}

@@ -1,8 +1,10 @@
 """Nonblocking market-data requests. Workers never access Streamlit state."""
+from collections import OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from contextvars import copy_context
 from pathlib import Path
-from threading import RLock
+from threading import Condition, RLock
 
 from portfolio_app.market.history import HistoryService
 from portfolio_app.market.msci_history import MarketHistoryProvider
@@ -11,48 +13,168 @@ from portfolio_app.market.prices import PriceService, YahooProvider
 
 
 class RequestCoordinator:
-    """Bounded workers and queue, with one in-flight request per workspace/key."""
-    def __init__(self, workers=4, capacity=256):
+    """Bound outstanding requests, count a portfolio batch once, and share workers fairly."""
+    def __init__(self, workers=4, capacity=256, *, channel_limits=None):
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='market-data')
         self._lock = RLock()
-        self._pending = {}
+        self._idle = Condition(self._lock)
+        self._pending = set()
+        self._queue = OrderedDict()
+        self._batch_sizes = {}
+        self._available_by_channel = dict(channel_limits or {})
+        if any(slots < 1 for slots in self._available_by_channel.values()):
+            raise ValueError('Channel concurrency must be positive')
+        self._workers = workers
+        self._running = 0
+        self._closed = False
         self._revisions = {}
+        self._channel_revisions = {}
+        self._channel_sizes = {}
+        self._snapshots = {}
+        self._publishers = {}
         self._errors = {}
         self.capacity = capacity
 
-    def request(self, workspace, key, work):
-        identity = (str(workspace), key)
+    def request(self, workspace, key, work, *, channel=None, capture=None, prepare_write=None):
+        identity = str(workspace), key
         with self._lock:
-            if identity in self._pending or len(self._pending) >= self.capacity:
+            if identity in self._pending:
                 return False
-            # Hold the lock until registration is complete, even for instant jobs.
-            self._pending[identity] = self._pool.submit(copy_context().run, self._run, identity, work)
+            return self._enqueue(workspace, [(key, work)], identity, channel, capture, prepare_write)
+
+    def request_group(self, workspace, requests, *, channel, capture, prepare_write=None):
+        """Admit all newly discovered legs together, even if they outnumber free workers."""
+        batch = str(workspace), channel, capture
+        with self._lock:
+            return self._enqueue(workspace, requests, batch, channel, capture, prepare_write)
+
+    def _enqueue(self, workspace, requests, batch, channel, capture, prepare_write):
+        workspace = str(workspace)
+        missing = {key: work for key, work in requests if (workspace, key) not in self._pending}
+        if not missing:
+            return True
+        if self._closed or (batch not in self._batch_sizes and len(self._batch_sizes) >= self.capacity):
+            return False
+        group = (workspace, channel) if channel is not None else None
+        if group is not None:
+            self._channel_sizes[group] = self._channel_sizes.get(group, 0) + len(missing)
+            if prepare_write is not None:
+                self._publishers.setdefault(group, set()).add(prepare_write)
+            if capture is not None:
+                snapshots = self._snapshots.setdefault(group, {})
+                if capture not in snapshots:
+                    snapshots[capture] = self._channel_revisions.get(group, 0), capture()
+        queue = self._queue.setdefault(batch, deque())
+        self._batch_sizes[batch] = self._batch_sizes.get(batch, 0) + len(missing)
+        for key, work in missing.items():
+            identity = workspace, key
+            self._pending.add(identity)
+            queue.append((copy_context(), identity, group, work))
+        self._dispatch()
         return True
 
-    def _run(self, identity, work):
-        # Synchronize with submission before work can finish.
-        with self._lock:
-            pass
+    def _dispatch(self):
+        while self._queue and self._running < self._workers:
+            for batch, queue in self._queue.items():
+                group = queue[0][2]
+                channel = group[1] if group else None
+                if self._available_by_channel.get(channel, 1) > 0:
+                    break
+            else:
+                return
+            del self._queue[batch]
+            if channel in self._available_by_channel:
+                self._available_by_channel[channel] -= 1
+            context, identity, group, work = queue.popleft()
+            if queue:
+                self._queue[batch] = queue
+            self._running += 1
+            self._pool.submit(context.run, self._run, identity, group, batch, work)
+
+    def _run(self, identity, group, batch, work):
         try:
-            work()
+            changed = work()
             error = ''
         except Exception as exc:
+            changed = False
             error = str(exc) or type(exc).__name__
-        with self._lock:
-            self._pending.pop(identity, None)
+        while True:
+            with self._lock:
+                writers = []
+                if group is not None and self._channel_sizes[group] == 1:
+                    for prepare in self._publishers.pop(group, ()):
+                        try:
+                            if write := prepare():
+                                writers.append(write)
+                        except Exception as exc:
+                            error = str(exc) or type(exc).__name__
+                if not writers:
+                    self._finish(identity, group, batch, changed, error)
+                    return
+            # Keep the last request pending while persisting. New readers still see the
+            # prior snapshot; new requests can join without waiting for a filesystem lock.
+            for write in writers:
+                try:
+                    write()
+                except Exception as exc:
+                    error = str(exc) or type(exc).__name__
+
+    def _finish(self, identity, group, batch, changed, error):
+        channel = group[1] if group else None
+        if channel in self._available_by_channel:
+            self._available_by_channel[channel] += 1
+        if group is not None:
+            if changed is not False:
+                self._channel_revisions[group] = self._channel_revisions.get(group, 0) + 1
+            self._channel_sizes[group] -= 1
+            if not self._channel_sizes[group]:
+                del self._channel_sizes[group]
+                self._snapshots.pop(group, None)
+        self._batch_sizes[batch] -= 1
+        if not self._batch_sizes[batch]:
+            del self._batch_sizes[batch]
+        self._pending.remove(identity)
+        if error:
             self._errors[identity] = error
-            self._revisions[identity[0]] = self._revisions.get(identity[0], 0) + 1
+        else:
+            self._errors.pop(identity, None)
+        self._revisions[identity[0]] = self._revisions.get(identity[0], 0) + 1
+        self._running -= 1
+        self._dispatch()
+        if not self._pending:
+            self._idle.notify_all()
 
     def pending(self, workspace, key=None):
         with self._lock:
-            return any(w == str(workspace) and (key is None or k == key) for w, k in self._pending)
+            if key is not None:
+                return (str(workspace), key) in self._pending
+            return any(w == str(workspace) for w, _ in self._pending)
 
     def revision(self, workspace):
         with self._lock:
             return self._revisions.get(str(workspace), 0)
 
+    def channel_state(self, workspace, channel):
+        """Material revision and outstanding work for one consumer group."""
+        key = str(workspace), channel
+        with self._lock:
+            return self._channel_revisions.get(key, 0), key in self._channel_sizes
+
+    def channel_snapshot(self, workspace, channel, capture):
+        """Read one complete revision, including when another window starts mid-refresh."""
+        group = str(workspace), channel
+        with self._lock:
+            pinned = self._snapshots.get(group, {}).get(capture)
+            if pinned is not None:
+                revision, reader = pinned
+                return revision, reader, True
+            return self._channel_revisions.get(group, 0), capture(), group in self._channel_sizes
+
     def close(self):
-        self._pool.shutdown(wait=True, cancel_futures=True)
+        with self._idle:
+            self._closed = True
+            self._idle.wait_for(lambda: not self._pending)
+        self._pool.shutdown(wait=True)
 
 
 class BackgroundPrices:
@@ -60,24 +182,70 @@ class BackgroundPrices:
     def __init__(self, service, coordinator, workspace):
         self.service, self.coordinator, self.workspace = service, coordinator, str(workspace)
         self.now = service.now
-        self._requested = set()
+        self.display_revision, self._cached, _ = coordinator.channel_snapshot(
+            self.workspace, 'valuation', service.cached_reader)
         self._results = {}
+        self._deferred = None
+        self._waiting = []
 
     @property
     def cache_warning(self):
         return self.service.cache_warning
 
+    def still_current(self):
+        """Reuse mounted quotes while any due replacements are already being fetched."""
+        revision, cached, pending = self.coordinator.channel_snapshot(
+            self.workspace, 'valuation', self.service.cached_reader)
+        if revision != self.display_revision:
+            return False
+        for key, previous in self._results.items():
+            result, due = cached(key)
+            if result != previous or (due and not pending and not self._waiting):
+                return False
+        return True
+
+    @contextmanager
+    def collect_requests(self):
+        """Discover the price and currency legs for this valuation before submitting them."""
+        requests = []
+        self._deferred = requests
+        try:
+            yield
+        finally:
+            self._deferred = None
+            self._waiting.extend(requests)
+            self.submit_waiting()
+
+    def submit_waiting(self):
+        """Retry a whole valuation rejected while every request slot was occupied."""
+        if self._waiting and self.coordinator.request_group(
+                self.workspace, self._waiting, channel='valuation', capture=self.service.cached_reader,
+                prepare_write=self.service.take_cache_write):
+            self._waiting.clear()
+        return bool(self._waiting)
+
     def _read(self, kind, value, refresh):
         key = f'{kind}:{value}'
         if key in self._results:
             return self._results[key]
-        result, due = self.service.cached(key)
+        result, due = self._cached(key)
         self._results[key] = result
-        if (due or refresh) and key not in self._requested:
-            self._requested.add(key)
-            self.coordinator.request(self.workspace, key,
-                lambda: getattr(self.service, kind)(value, refresh=refresh))
+        if due or refresh:
+            current, live_due = self.service.cached(key)
+            if not live_due and not refresh:
+                return result
+            def update():
+                getattr(self.service, kind)(value, refresh=refresh, defer_save=True)
+                return self.service.cached(key)[0] != current
+            self.request_valuation(key, update)
         return result
+
+    def request_valuation(self, key, work):
+        if self._deferred is None:
+            self.coordinator.request(self.workspace, key, work, channel='valuation',
+                                     capture=self.service.cached_reader, prepare_write=self.service.take_cache_write)
+        else:
+            self._deferred.append((key, work))
 
     def price(self, ticker, *, refresh=False):
         return self._read('price', ticker, refresh)
@@ -100,11 +268,23 @@ class BackgroundHistory:
                 lambda: self.service.get(ticker, period, refresh=refresh))
         return result
 
+    def snapshot(self, ticker, period, **options):
+        """Read the display value and remember whether its job still needs observing."""
+        generation = self.coordinator.revision(self.workspace)
+        result = self.get(ticker, period, **options)
+        pending = self.pending(ticker, period)
+        if not pending and generation != self.coordinator.revision(self.workspace):
+            # The worker may have published after get() read the cache but before
+            # pending() observed its completion. Read the publication without enqueueing.
+            result, _ = self.service.cached(ticker, period, manual=options.get('manual', False))
+        return result, pending
+
     def pending(self, ticker, period):
         return self.coordinator.pending(self.workspace, ('history', ticker, period))
 
 
-coordinator = RequestCoordinator()
+# Optional analytics leave a worker available for valuation and FX even when both queues are full.
+coordinator = RequestCoordinator(channel_limits={'fundamentals': 2, 'risk': 1})
 _services = {}
 _services_lock = RLock()
 

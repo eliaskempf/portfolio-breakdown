@@ -1,9 +1,12 @@
 """One searchable exposure table, with on-demand source and fund details."""
 from portfolio_app.interface.shared.chart_hover import chart_hover
 
-from portfolio_app.interface.shared.currency_display import money
+from portfolio_app.interface.shared.currency_display import currency_symbol, money
+from portfolio_app.interface.shared.display_names import instrument_name
+from portfolio_app.interface.shared.input_cache import cached_input
 from portfolio_app.interface.shared.ui_help import column_help
 from hashlib import sha256
+from portfolio_app.interface.shared.dialog_runtime import close_dialog_button, route_dialog_callback
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -12,50 +15,63 @@ from portfolio_app.interface.shared.charts import chart_config
 from portfolio_app.interface.shared.charts import style_figure
 from portfolio_app.funds.etf import matching_fund
 from portfolio_app.interface.views.funds.etf_ui import render_fund_details
-from portfolio_app.exposure.exposure_tables import asset_exposure_table, exposure_sources, source_contributions
+from portfolio_app.exposure.exposure_tables import asset_exposure_table, asset_search_mask, asset_source_values, exposure_sources
 from portfolio_app.exposure.label_presentation import taxonomy_colors
-from portfolio_app.interface.shared.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, render_list
-from portfolio_app.exposure.taxonomy import describe, taxonomy_names
+from portfolio_app.interface.shared.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, packed_frame_rows, render_list
+from portfolio_app.exposure.taxonomy import copy_classifications, describe, taxonomy_names
 
 
-def source_previews(exposures, selected, table, *, measure=None):
-    """Ship only compact summaries; expansion needs no server round trip."""
-    contributions = source_contributions(exposures, selected, measure=measure)
-    contributions = contributions.loc[contributions.asset_id.isin(table.asset_id)]
-    counts = contributions.asset_id.value_counts().to_dict()
-    previews = {}
-    # One sort and a linear pass also keep initial rendering cheap for large ETFs.
-    for row in contributions.sort_values('Value', ascending=False, na_position='last').to_dict('records'):
-        asset = row['asset_id']
-        if asset not in previews:
-            previews[asset] = dict(items=[], more=max(0, counts[asset] - 4))
-        items = previews[asset]['items']
-        if len(items) == 4:
-            continue
-        amount = row['Value']
-        share = row['% of asset exposure']
-        label = (row['Exposure'] + ' · ' if row['Exposure'] in {'Direct', 'Future', 'Futures proxy'} else '') + row['Source']
-        if row['Account']:
-            label += f' · {row["Account"]}'
-        items.append(dict(label=label,
-                          amount='Unavailable' if pd.isna(amount) else money(amount),
-                          share='—' if pd.isna(share) else f'{share:.2f}%'))
-    return previews
+def preview_facts(exposures, selected):
+    """Numeric facts for local disclosure. Share each distinct source label across assets."""
+    values = asset_source_values(exposures).sort_values('Value', ascending=False, na_position='last')
+    counts = values.asset_id.value_counts().to_dict()
+    top = values.groupby('asset_id', sort=False).head(4)
+    names = {}
+    for row in selected.itertuples(index=False):
+        name = instrument_name(row)
+        account = getattr(row, 'account', None)
+        names[row.position_id] = f'{name} · {account}' if pd.notna(account) and account else name
+
+    prefixes = top.Exposure.where(top.Exposure.isin(('Direct', 'Future', 'Futures proxy')), '')
+    label_ids = {}
+    source_labels = {}
+    by_asset = {}
+    amounts = top.Value.to_numpy(dtype=object, na_value=None).tolist()
+    shares = top['% of asset exposure'].to_numpy(dtype=object, na_value=None).tolist()
+    for asset, position, prefix, amount, share in zip(top.asset_id.tolist(), top.source_position_id.tolist(),
+                                                     prefixes.tolist(), amounts, shares):
+        key = (position, prefix)
+        if key not in source_labels:
+            label = names.get(position, 'Unavailable')
+            if prefix:
+                label = f'{prefix} · {label}'
+            source_labels[key] = label_ids.setdefault(label, len(label_ids))
+        if asset not in by_asset:
+            by_asset[asset] = [max(0, int(counts[asset]) - 4)]
+        by_asset[asset].append([source_labels[key], round(amount, 2) if amount is not None else None,
+                               round(share, 2) if share is not None else None])
+    return {'labels': list(label_ids), 'assets': by_asset}
 
 
-def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', geography=None, measure=None, equity=None):
+def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', load_geography, measure=None, equity=None, contribution_key, current_view=None):
     default = 'labels' if any('labels' in item for item in classifications.values()) else 'sector'
     titles = {'labels': 'Themes', 'sector': 'Sector', 'geography': 'Geography'}
     taxonomy = st.selectbox('Asset classifications', list(titles), help='Inspect the classifications used to aggregate this asset’s exposure.', index=list(titles).index(default),
                             format_func=titles.get, key='exposure_asset_classifications')
-    if geography is not None:
-        classifications = {asset: dict(entry) for asset, entry in classifications.items()}
+    def geographic_labels(geography):
+        labels = copy_classifications(classifications)
         for asset, entry in geography.classifications(exposures.asset_id).items():
-            classifications.setdefault(asset, {}).update(entry)
-    table = asset_exposure_table(exposures, classifications=classifications, taxonomy=taxonomy, complete=complete, equity=equity)
+            labels.setdefault(asset, {}).update(entry)
+        return labels
+
+    def prepare_table():
+        labels = geographic_labels(load_geography()) if taxonomy == 'geography' else classifications
+        table = asset_exposure_table(exposures, classifications=labels, taxonomy=taxonomy, complete=complete, equity=equity)
+        return table, taxonomy_colors(labels, taxonomy)
+
+    table, colors = cached_input('exposure_assets_table', (contribution_key, taxonomy, complete, equity), prepare_table)
     if query.strip():
-        terms = table[['Asset', 'Ticker']].fillna('').agg(' '.join, axis=1).str.casefold()
-        matches = terms.str.contains(query.strip().casefold(), regex=False)
+        matches = asset_search_mask(table.Asset, table.Ticker, query)
         if 'isin' in exposures:
             identifiers = exposures['isin'].fillna('').str.contains(query.strip(), case=False, regex=False)
             matches |= table.asset_id.isin(exposures.loc[identifiers, 'asset_id'])
@@ -66,15 +82,19 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         return
     signature = sha256(repr((context, list(selected.position_id), breakdown)).encode()).hexdigest()[:16]
     key = f'exposure_assets_{signature}'
+    host_key = 'exposure_asset_dialog_host'
     def select(event):
         st.session_state['exposure_asset_detail'] = event['id']
+        st.session_state['exposure_asset_dialog_generation'] = st.session_state.get('exposure_asset_dialog_generation', 0) + 1
+        if current_view and st.session_state.get('exposure_asset_dialog_host_ready'):
+            route_dialog_callback(host_key)
     columns = [ListColumn('Asset', 'Asset', help=column_help('Asset'), width=260)]
     if show_tickers:
         columns.append(ListColumn('Ticker', 'Ticker', help=column_help('Ticker'), width=110))
     columns += [ListColumn('Total', 'Total', help=column_help('Total'), numeric=True, width=140),
                 ListColumn('Allocation %', '% of selected exposure' if measure == 'Market exposure' else '% of selected portfolio', help=column_help('Allocation %'), numeric=True, width=190),
                 ListColumn('Sources', 'Sources', help=column_help('Sources'), width=190),
-                ListColumn('Labels', titles[taxonomy], help=column_help('Labels'), badges=taxonomy_colors(classifications, taxonomy))]
+                ListColumn('Labels', titles[taxonomy], help=column_help('Labels'), badges=colors)]
     if measure == 'Market exposure':
         if 'Equity %' not in table:
             table['Equity %'] = float('nan')
@@ -83,9 +103,18 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     if 'Known exposure' in table:
         columns.insert(3 if show_tickers else 2, ListColumn('Known exposure', 'Known exposure', numeric=True, width=150,
             help='Sum of resolved contributions only. An unavailable total can still have known contributions; the remainder is not zero.'))
-    render_list(frame_rows(table, id_column='asset_id'), columns, key=key, context=key, title='Exposure assets',
+    fields = ['asset_id', *(column.key for column in columns)]
+    list_key = (contribution_key, taxonomy, complete, equity, query.strip().casefold(), tuple(fields))
+    rows = cached_input('exposure_asset_rows', list_key,
+                        lambda: packed_frame_rows(table[fields], id_column='asset_id'), immutable=True)
+    revision = sha256(repr(list_key).encode()).hexdigest()
+    facts = cached_input('exposure_preview_facts', contribution_key,
+                        lambda: preview_facts(exposures, selected), immutable=True)
+    if query.strip():
+        facts = dict(facts, assets={asset: facts['assets'][asset] for asset in table.asset_id})
+    render_list(rows, columns, revision=revision, key=key, context=key, title='Exposure assets',
                 on_open=select, max_height=BOUNDED_LIST_HEIGHT if breakdown else None, default_sort='Total',
-                page_size=100 if len(table) > 200 else None, preview_column='Sources', preview_value_column='Total', preview_share_column='Allocation %', previews=source_previews(exposures, selected, table, measure=measure))
+                page_size=100 if len(table) > 200 else None, preview_column='Sources', preview_value_column='Total', preview_share_column='Allocation %', previews=dict(facts, symbol=currency_symbol()))
     if footer:
         st.caption(footer)
     if show_chart:
@@ -99,41 +128,66 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         figure = style_figure(go.Figure(go.Bar(x=largest[chart_amount], y=largest.Asset, orientation='h')))
         figure.update_layout(height=max(260, 30 * len(largest)), xaxis_title='Exposure', margin=dict(t=12, b=20, l=12, r=12))
         st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
-    asset = st.session_state.get('exposure_asset_detail')
-    if asset not in set(table.asset_id):
-        st.session_state.pop('exposure_asset_detail', None)
-        return
-    def dismiss():
-        st.session_state.pop('exposure_asset_detail', None)
-    @st.dialog('Exposure details', width='large', on_dismiss=dismiss)
-    def details():
-        row = table.loc[table.asset_id.eq(asset)].iloc[0]
-        st.subheader(row.Asset)
-        st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total']) else st.metric('Total exposure', money(row["Total"]), help='Combined direct and indirect exposure to this asset in the portfolio currency.')
-        for name in taxonomy_names(classifications):
-            st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(classifications, asset, name)}')
-        if geography is not None:
+    def current():
+        return st.session_state.get('exposure_view', 'Assets') == 'Assets' and current_view()
+
+    def show_details(asset):
+        generation = st.session_state.get('exposure_asset_dialog_generation')
+        drawn = False
+
+        def dismiss():
+            if st.session_state.get('exposure_asset_dialog_generation') == generation:
+                st.session_state.pop('exposure_asset_detail', None)
+            if current_view and st.session_state.get('exposure_asset_dialog_host_ready'):
+                route_dialog_callback(host_key)
+
+        @st.dialog('Exposure details', width='large', on_dismiss=dismiss)
+        def details():
+            nonlocal drawn
+            if drawn and current_view and not current():
+                st.rerun()
+            drawn = True
+            row = table.loc[table.asset_id.eq(asset)].iloc[0]
+            st.subheader(row.Asset)
+            st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total']) else st.metric('Total exposure', money(row["Total"]), help='Combined direct and indirect exposure to this asset in the portfolio currency.')
+            geography = load_geography()
+            labels = geographic_labels(geography)
+            for name in taxonomy_names(labels):
+                st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(labels, asset, name)}')
             st.caption('Geography source: ' + geography.sources.get(asset, 'No local metadata'))
             if reason := geography.reasons.get(asset):
                 st.caption(reason)
-        sources = exposure_sources(exposures, selected, asset, measure=measure)
-        st.caption('Asset weight uses each source’s selected measure, including signed notional for futures in market exposure. The final percentage is that source’s share of this asset’s total.')
-        render_list(frame_rows(sources), [ListColumn('Source', 'Source', help=column_help('Source')), ListColumn('Account', 'Account', help=column_help('Account')),
-                    ListColumn('Exposure', 'Source type', help=column_help('Exposure')), ListColumn('Position value', 'Source exposure' if measure == 'Market exposure' else 'Position', help=column_help('Position value'), numeric=True),
-                    ListColumn('Asset weight (%)', 'Asset weight (%)', help=column_help('Asset weight (%)'), numeric=True),
-                    ListColumn('Value', 'Contribution', help=column_help('Value'), numeric=True),
-                    ListColumn('% of asset exposure', '% of asset exposure', help=column_help('% of asset exposure'), numeric=True)],
-                    key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value')
-        if 'method' in exposures:
-            provenance = exposures.loc[exposures.asset_id.eq(asset) & exposures.source_type.eq('future'), ['method', 'as_of', 'status']].drop_duplicates()
-            for row in provenance.fillna('').itertuples():
-                st.caption(' · '.join(str(x) for x in (row.method, row.as_of, row.status) if x))
-        source_ids = exposures.loc[exposures.asset_id.eq(asset), 'source_position_id']
-        source_positions = selected.loc[selected.position_id.isin(source_ids)]
-        relevant = {f.isin for position in source_positions.to_dict('records') if (f := matching_fund(position, funds)) is not None}
-        render_fund_details([f for f in funds if f.isin in relevant], source_positions, holdings=holdings,
-                            classifications=classifications, show_tickers=show_tickers)
-        if st.button('Close exposure details', help='Return to the exposure overview.'):
-            dismiss()
+            sources = exposure_sources(exposures, selected, asset, measure=measure)
+            st.caption('Asset weight uses each source’s selected measure, including signed notional for futures in market exposure. The final percentage is that source’s share of this asset’s total.')
+            render_list(frame_rows(sources), [ListColumn('Source', 'Source', help=column_help('Source')), ListColumn('Account', 'Account', help=column_help('Account')),
+                        ListColumn('Exposure', 'Source type', help=column_help('Exposure')), ListColumn('Position value', 'Source exposure' if measure == 'Market exposure' else 'Position', help=column_help('Position value'), numeric=True),
+                        ListColumn('Asset weight (%)', 'Asset weight (%)', help=column_help('Asset weight (%)'), numeric=True),
+                        ListColumn('Value', 'Contribution', help=column_help('Value'), numeric=True),
+                        ListColumn('% of asset exposure', '% of asset exposure', help=column_help('% of asset exposure'), numeric=True)],
+                        key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value')
+            asset_rows = exposures.loc[exposures.asset_id.eq(asset)]
+            if 'method' in asset_rows:
+                provenance = asset_rows.loc[asset_rows.source_type.eq('future'), ['method', 'as_of', 'status']].drop_duplicates()
+                for row in provenance.fillna('').itertuples():
+                    st.caption(' · '.join(str(x) for x in (row.method, row.as_of, row.status) if x))
+            source_positions = selected.loc[selected.position_id.isin(asset_rows.source_position_id)]
+            relevant = {f.isin for position in source_positions.to_dict('records') if (f := matching_fund(position, funds)) is not None}
+            render_fund_details([f for f in funds if f.isin in relevant], source_positions, holdings=holdings,
+                                classifications=labels, show_tickers=show_tickers)
+            close_dialog_button('Close exposure details', key='exposure_asset_detail_close')
+        details()
+
+    mounted = False
+    @st.fragment(key=host_key)
+    def host():
+        nonlocal mounted
+        st.session_state['exposure_asset_dialog_host_ready'] = True
+        asset = st.session_state.get('exposure_asset_detail')
+        if mounted and current_view and not current():
             st.rerun()
-    details()
+        mounted = True
+        if asset in rows.ids:
+            show_details(asset)
+        else:
+            st.session_state.pop('exposure_asset_detail', None)
+    host()

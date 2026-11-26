@@ -119,3 +119,76 @@ def test_posting_ids_keep_longest_matching_event_prefix_and_correction_root():
     assert postings['security:pdf'].amount == -3
     assert postings['security:unknown:unknown-charges'].kind == 'security_unknown'
     assert len(postings) == 6
+
+
+def test_cash_only_history_uses_security_postings_without_dated_inventory(monkeypatch):
+    from datetime import date
+    from portfolio_app.performance.history_observations import HistoryScope
+    from portfolio_app.performance.history_view import history_view
+    from portfolio_app.performance.personal_performance import value_at
+
+    source = mixed_journal()
+    # Retain the corrected purchase, its later charge, the sale and its explicit receipt.
+    journal = replace(source, contracts=(), positions=(), events=tuple(e for e in source.events
+                      if e.id in {'cash', 'sale-receipt'}))
+    scope = HistoryScope(accounts=('broker',))
+    store = ObservationStore()
+    calculation = HistoryCalculation(journal, store)
+    calls = []
+    securities = calculation.securities
+    def track(stamp=None):
+        calls.append(stamp)
+        return securities(stamp)
+    monkeypatch.setattr(calculation, 'securities', track)
+    for day, expected in [(9, 991), (2, 980), (4, 991), (10, None)]:
+        stamp = f'2026-01-{day:02}'
+        assert value_at(journal, scope, store, stamp, 'EUR').amount == expected
+        assert calculation.value(scope, stamp, 'EUR').amount == expected
+    view = history_view(journal, scope, store, 'All', today=date(2026, 1, 10), calculation=calculation)
+    points = {p['Date']: p['Value'] for p in view.points}
+    assert points['2026-01-02'] == 980 and points['2026-01-04'] == 991
+    assert view.end == '2026-01-04'  # The receipt moves a claim into cash at the same value.
+    assert calls and set(calls) == {None}
+
+
+def test_group_member_closes_use_loan_claim_and_futures_equity_of_the_owning_account():
+    from portfolio_app.performance.history_observations import HistoryScope, Observation
+
+    journal = mixed_journal()
+    stock, account = HistoryScope(('invented-stock',)), HistoryScope(accounts=('broker',))
+    scope = HistoryScope(stock.positions, account.accounts)
+    dates = [f'2026-01-{n:02}' for n in range(1, 11)]
+    store = ObservationStore(tuple(Observation(subject+day, 'price', subject, day, amount, 'EUR')
+        for day in dates for subject, amount in [('invented-stock', D(12)), ('future', D(103))]))
+    calculation, independent = HistoryCalculation(journal, store), HistoryCalculation(journal, store)
+    for day in dates:
+        close, members = calculation.value_with_members(scope, day, 'EUR')
+        assert close == independent.value(scope, day, 'EUR')
+        if day == dates[-1]:
+            assert close.amount is None and not members  # An unknown distribution charge makes cash incomplete.
+        else:
+            separate = [independent.value(member, day, 'EUR').amount for member in (stock, account)]
+            assert members == separate
+            assert close.amount == sum(separate)
+
+
+def test_unknown_cash_and_known_cash_share_fx_without_sharing_coverage():
+    from portfolio_app.ledger.account_journal import Event
+    from portfolio_app.performance.history_observations import HistoryScope, Observation
+    stamp = '2026-01-10'
+    source = mixed_journal()
+    journal = replace(source, accounts=(*source.accounts, Account('reserve', 'Invented reserve')),
+                      contracts=(), positions=(), events=(
+                          *(e for e in source.events if e.id in {'cash', 'sale-receipt'}),
+                          Event('reserve-open', '2026-01-01', 'cash_open', 'reserve', 'EUR', 10)))
+    scope = HistoryScope(accounts=('broker', 'reserve'))
+    rate = Observation('euro', 'fx', 'EUR/USD', stamp, 2, 'EUR', target='USD')
+    calculation = HistoryCalculation(journal, ObservationStore((rate,)))
+    value, members = calculation.value_with_members(scope, stamp, 'USD')
+    assert value.amount is None and not members
+    assert len(value.reasons) == 1 and str(value.reasons[0]).startswith('broker:')
+    assert [e.subject for e in value.evidence] == ['EUR/USD']
+    conflict = Observation('inverse', 'fx', 'USD/EUR', stamp, 1, 'USD', target='EUR')
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        HistoryCalculation(journal, ObservationStore((rate, conflict))).value(
+            HistoryScope(accounts=('broker',)), stamp, 'USD')

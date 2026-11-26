@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
+from functools import cache, cached_property
 import re
 from uuid import uuid4
 
@@ -30,13 +31,15 @@ class MissingInput:
     target: str = ''
 
 
-def scope_names(directory, journal, scope):
+def scope_names(directory, journal, scope, *, holdings=None):
     """Readable, scope-restricted names; missing display metadata never exposes IDs."""
     names = {identity: f'Holding {index+1}' for index, identity in enumerate(scope.positions)}
     try:
-        holdings = read_snapshot(directory / 'holdings.csv').holdings
-        names.update({row.position_id: str(row['name']) for _, row in holdings.iterrows()
-                      if row.position_id in names and pd.notna(row.get('name')) and row['name']})
+        if holdings is None:
+            holdings = read_snapshot(directory / 'holdings.csv').holdings
+        if 'name' in holdings:
+            names.update({identity: str(name) for identity, name in zip(holdings.position_id, holdings['name'])
+                          if identity in names and pd.notna(name) and name})
     except (DataError, OSError):
         pass
     for book in journal.securities:
@@ -56,33 +59,55 @@ def scope_names(directory, journal, scope):
     return names
 
 
+class HistoryReasonFormatter:
+    """Share display identities only across explanations from one journal and view."""
+
+    def __init__(self, journal, get_names):
+        self.journal = journal
+        self.get_names = get_names
+
+    @cached_property
+    def _labels(self):
+        names = dict(self.get_names())
+        for book in self.journal.securities:
+            for event in book.records:
+                names[event.id] = f'{event.date or "Undated"} transaction'
+        for event in self.journal.events:
+            names[event.id] = f'{event.date} account entry'
+        embedded = ((key, value) for key, value in names.items() if len(key) >= 16 or '-' in key or ':' in key)
+        replacements = sorted(embedded, key=lambda pair: -len(pair[0]))
+        return names, replacements
+
+    def format(self, reasons, *, limit=None):
+        if limit is not None and limit <= 0:
+            return ()
+        results = []
+        for reason in issue_tree(reasons):
+            causes = getattr(reason, 'causes', ())
+            if causes:
+                reason = str(reason).removesuffix(' '.join(causes)).rstrip()
+            names, replacements = self._labels
+            identity, separator, detail = reason.partition(': ')
+            label = identity if re.fullmatch(r'\d{4}-\d{2}-\d{2}', identity) else names.get(identity, 'History')
+            message = f'{label}: {detail}' if separator else reason
+            message = message.replace('charges have not been confirmed', 'confirm transaction fees')
+            for stored, label in replacements:
+                if stored not in message:
+                    continue
+                message = re.sub(r'(?<![\w-])'+re.escape(stored)+r'(?![\w-])', lambda _: label, message)
+            message = re.sub(r'\bsecurity:[^\s,;]+', 'payment', message)
+            message = re.sub(r'\b[a-f0-9]{24,64}\b', 'record', message)
+            if message not in results:
+                results.append(message)
+                if len(results) == limit:
+                    break
+        return tuple(results)
+
+
 def readable_reasons(directory, journal, scope, reasons, *, names=None):
     """Remove storage identities from explanations; preserve the actual limitation."""
-    names = dict(names) if names is not None else scope_names(directory, journal, scope)
-    for book in journal.securities:
-        for event in book.records:
-            names[event.id] = f'{event.date or "Undated"} transaction'
-    for event in journal.events:
-        names[event.id] = f'{event.date} account entry'
-    results = {}
-    # Daily-return wrappers include their children's raw display text. Render
-    # that evidence separately so holding names survive de-duplication.
-    for reason in issue_tree(reasons):
-        causes = getattr(reason, 'causes', ())
-        if causes:
-            reason = str(reason).removesuffix(' '.join(causes)).rstrip()
-        identity, separator, detail = reason.partition(': ')
-        label = identity if re.fullmatch(r'\d{4}-\d{2}-\d{2}', identity) else names.get(identity, 'History')
-        message = f'{label}: {detail}' if separator else reason
-        message = message.replace('charges have not been confirmed', 'confirm transaction fees')
-        for stored, label in sorted(names.items(), key=lambda pair: -len(pair[0])):
-            if len(stored) < 16 and not any(marker in stored for marker in ('-', ':')):
-                continue
-            message = re.sub(r'(?<![\w-])'+re.escape(stored)+r'(?![\w-])', lambda _: label, message)
-        message = re.sub(r'\bsecurity:[^\s,;]+', 'payment', message)
-        message = re.sub(r'\b[a-f0-9]{24,64}\b', 'record', message)
-        results[message] = None
-    return tuple(results)
+    formatter = HistoryReasonFormatter(journal, lambda: names if names is not None else scope_names(directory, journal, scope))
+    return formatter.format(reasons)
 
 
 def brief_reasons(messages):
@@ -112,9 +137,36 @@ def _currencies(journal, scope, observations, target):
     return currencies - {''}
 
 
-def _dated_inputs(reasons, journal, scope, observations):
+def _missing_fx_lookup(observations):
+    @cache
+    def needs_fx(source, destination, stamp, *, closing=False):
+        if source == destination:
+            return False
+        indexed = index_observations(observations)
+        if closing:
+            from portfolio_app.performance.history_valuation import valuation_fx
+            value, _ = valuation_fx(indexed, source, destination, stamp)
+        else:
+            value = rate(indexed, source, destination, stamp)
+        return value is None
+    return needs_fx
+
+
+def _dated_inputs(reasons, journal, scope, observations, *, needs_fx=None):
     """Return only the correctable market evidence named by this calculation."""
     subjects = None
+    needs_fx = needs_fx or _missing_fx_lookup(observations)
+
+    @cache
+    def price_currency(subject):
+        index = index_observations(observations)
+        rows = index.scope_rows.get(('price', subject))
+        if rows:
+            # A correction saved later can apply to an older date.
+            return index.active[rows[-1]].currency
+        contract_id = next((p.contract_id for p in journal.positions if p.id == subject), subject)
+        return next((c.currency for c in journal.contracts if c.id == contract_id), '')
+
     missing = set()
     for reason in issue_tree(reasons):
         identity, separator, detail = reason.partition(': ')
@@ -125,24 +177,10 @@ def _dated_inputs(reasons, journal, scope, observations):
             if subjects is None:
                 subjects = _subjects(journal, scope)
             if identity in subjects:
-                observations = index_observations(observations)
-                series = observations.price_series.get(identity)
-                if series:
-                    currency = series[-1][-1].currency
-                else:
-                    contract_id = next((p.contract_id for p in journal.positions if p.id == identity), identity)
-                    currency = next((c.currency for c in journal.contracts if c.id == contract_id), '')
-                missing.add(MissingInput('price', identity, price[1], currency))
+                missing.add(MissingInput('price', identity, price[1], price_currency(identity)))
         fx = re.search(r'([A-Z]{3})/([A-Z]{3}) FX on (\d{4}-\d{2}-\d{2})$', detail)
-        if fx:
-            observations = index_observations(observations)
-            if detail.startswith('missing value or '):
-                from portfolio_app.performance.history_valuation import valuation_fx
-                existing, _ = valuation_fx(observations, fx[1], fx[2], fx[3])
-            else:
-                existing = rate(observations, fx[1], fx[2], fx[3])
-            if existing is None:
-                missing.add(MissingInput('fx', fx[1]+'/'+fx[2], fx[3], fx[1], fx[2]))
+        if fx and needs_fx(fx[1], fx[2], fx[3], closing=detail.startswith('missing value or ')):
+            missing.add(MissingInput('fx', fx[1]+'/'+fx[2], fx[3], fx[1], fx[2]))
     return missing
 
 
@@ -153,23 +191,24 @@ def missing_inputs(view, journal, scope, observations, target):
         for field in ('value_reasons', 'flow_reasons', 'capital_reasons',
                       'money_weighted_reasons', 'time_weighted_reasons'):
             reasons.extend(getattr(result, field))
-    missing = _dated_inputs(reasons, journal, scope, observations)
+    needs_fx = _missing_fx_lookup(observations)
+    missing = _dated_inputs(reasons, journal, scope, observations, needs_fx=needs_fx)
     # Flow diagnostics deliberately do not guess whether a missing cash amount is FX.
     # Offer a rate only when the amount and its actual currency are known.
     for cash in replay_securities(journal.securities).cash:
         if (cash.position_id in scope.positions) == (cash.account_id in scope.accounts and not cash.external):
             continue
         if (cash.amount is not None and cash.amount != 0 and view.all_start <= cash.date <= view.today
-                and rate(observations, cash.currency, target, cash.date) is None):
+                and needs_fx(cash.currency, target, cash.date)):
             missing.add(MissingInput('fx', cash.currency+'/'+target, cash.date, cash.currency, target))
     for event in effective_events(journal):
         if not view.all_start <= event.date <= view.today:
             continue
         if event.account_id in scope.accounts and event.amount and event.currency:
-            if rate(observations, event.currency, target, event.date) is None:
+            if needs_fx(event.currency, target, event.date):
                 missing.add(MissingInput('fx', event.currency+'/'+target, event.date, event.currency, target))
         if event.other_account_id in scope.accounts and event.other_amount and event.other_currency:
-            if rate(observations, event.other_currency, target, event.date) is None:
+            if needs_fx(event.other_currency, target, event.date):
                 missing.add(MissingInput('fx', event.other_currency+'/'+target, event.date, event.other_currency, target))
     return tuple(sorted(missing, key=lambda item: (item.date, item.kind, item.subject)))
 

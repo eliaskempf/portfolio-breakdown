@@ -13,7 +13,7 @@ from portfolio_app.workspace.atomic_file import staged_text
 from threading import Lock, Thread
 
 from portfolio_app.workspace.locking import write_lock
-from portfolio_app.funds.etf import load_funds, matching_fund
+from portfolio_app.funds.etf import FundCatalog, matching_fund
 from portfolio_app.funds.etf_sources import SOURCES, download, install_snapshot, record_aliases, refresh_snapshot as refresh_provider
 from portfolio_app.funds.etf_discovery import Discovery
 from portfolio_app.funds.providers.vaneck import refresh_snapshot as refresh_vaneck
@@ -145,7 +145,8 @@ class RefreshCoordinator:
                 except BlockingIOError:
                     return
                 records = read_json(cache / 'status.json')
-                for fund in load_funds(directory / 'etfs'):
+                catalog = FundCatalog()
+                for fund in catalog.load(directory / 'etfs'):
                     if fund.isin not in eligible or not supported(fund):
                         continue
                     prior = records.get(fund.isin, {})
@@ -163,7 +164,7 @@ class RefreshCoordinator:
                     write_json(cache / 'status.json', records)
                 discover = self.discover or Discovery(download).resolve
                 for key, row in candidates.items():
-                    current = load_funds(directory / 'etfs')
+                    current = catalog.load(directory / 'etfs')
                     if matching_fund(row, current) or (not force and not attempt_due(records.get(key, {}), self.now())):
                         continue
                     record = {**records.get(key, {}), 'attempted_at': self.now().isoformat(),

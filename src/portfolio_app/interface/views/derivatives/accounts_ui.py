@@ -233,9 +233,11 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
         st.info(str(exc))
 
 
-def render_actual_positions(directory, journal, *, valued=None):
+def render_actual_positions(directory, journal, *, valued=None, state=None):
+    if not journal.positions:
+        return
     ledger = _imports()
-    state = ledger.replay(journal)
+    state = ledger.replay(journal) if state is None else state
     ungrouped = {identity: balance for identity, balance in state.positions.items() if not balance.spec.investment_id}
     if not ungrouped:
         return

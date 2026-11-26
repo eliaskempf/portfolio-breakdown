@@ -105,7 +105,15 @@ it is distinct from historical volatility.
 Fundamentals and adjusted histories have separate private caches, normally valid
 for 24 hours, with a 15-minute failed-request cooldown. Explicit refresh retries
 immediately; failures may retain visibly stale data. Ordinary holdings remain
-available if analytics fails.
+available if analytics fails. Overview, Positions and Key metrics show cached
+fundamentals as soon as the view opens. Missing values appear as a dash. The app
+refreshes due listings in the background and updates the displayed metrics once
+the requests finish.
+
+Historical risk uses the saved adjusted histories for the selected holdings,
+benchmark and exchange rates. When those histories are due for refresh, the
+dated estimate stays visible until the full replacement is ready. The first
+calculation can take longer if a required history has never been retrieved.
 
 Dated issuer fees match the exact share class; an ETF exposure proxy cannot supply
 another fund's fee. Provider expense ratios are labeled fallbacks. **Maintain fund

@@ -7,7 +7,7 @@ import yaml
 from streamlit.testing.v1 import AppTest
 
 from test_ui import by_label, launch, theme_view
-from list_helpers import list_frame
+from list_helpers import exposure_breakdown, list_frame
 from test_ui import activate
 
 
@@ -49,6 +49,8 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     path = multi_fund_workspace / 'holdings.csv'
     before = path.read_bytes()
     app = launch(multi_fund_workspace)
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     assert not app.exception
     assert not any('Unsupported Fund' in info.value for info in app.info)
     by_label(app.checkbox, 'Show sold positions').check().run()
@@ -67,6 +69,12 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     assert table.loc[table.Asset == 'Invented Alpha', 'Total'].iloc[0] == 125.
     assert table.loc[table.Asset == 'Synthetic World', 'Total'].iloc[0] == 100.
     assert table['Total'].sum() == 300.
+    app.session_state['exposure_individual_funds_open'] = False
+    app.run()
+    assert not any(t.label == 'Synthetic World' for t in app.toggle)
+    assert effective(app).loc[lambda t: t.Asset == 'Invented Alpha', 'Total'].item() == 125.
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     # Targets follow the same selective expansion, and the intact fund retains
     # its own performance instead of inheriting missing constituent history.
     theme_view(app)
@@ -84,14 +92,53 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
 
 def test_stock_view_respects_individual_fund_expansion(multi_fund_workspace):
     app = launch(multi_fund_workspace)
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     by_label(app.toggle, 'Synthetic World').set_value(False).run()
     by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
     assert not app.exception and not app.error
     companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total' in item.value)
     assert companies['Total'].sum() == 125.
+    app.session_state['company_unresolved'] = True
+    app.run()
     unresolved = next(item.value for item in app.dataframe if 'Status' in item.value and 'Exposure' in item.value)
     assert 'Synthetic World' in unresolved.Exposure.tolist()
+
+
+def test_company_search_reuses_ownership_until_positions_or_fund_weights_change(multi_fund_workspace, monkeypatch):
+    from portfolio_app.interface.views.exposure import stock_ui
+    calculate = stock_ui.stock_exposure
+    calls = []
+
+    def count(*args, **kwargs):
+        calls.append(1)
+        return calculate(*args, **kwargs)
+
+    monkeypatch.setattr(stock_ui, 'stock_exposure', count)
+
+    app = launch(multi_fund_workspace)
+    by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
+
+    def visible_totals():
+        assert not app.exception and not app.error
+        return next(item.value for item in app.dataframe if 'Company ID' in item.value)['Total'].tolist()
+
+    assert visible_totals() == [175.]
+    by_label(app.text_input, 'Search exposure').set_value('absent synthetic name').run()
+    assert visible_totals() == []
+    by_label(app.text_input, 'Search exposure').set_value('alpha').run()
+    assert visible_totals() == [175.]
+    assert len(calls) == 1
+
+    weights = multi_fund_workspace / 'etfs' / 'world.csv'
+    weights.write_text(weights.read_text().replace(',0.5,equity', ',0.2,equity'))
+    app.run()
+    assert visible_totals() == [145.]
+    assert len(calls) == 2
+    by_label(app.multiselect, 'Holdings').set_value(['company', 'world']).run()
+    assert visible_totals() == [120.]
+    assert len(calls) == 3
 
 
 def test_proxy_status_and_newly_supported_funds_default_on(multi_fund_workspace):
@@ -101,10 +148,12 @@ def test_proxy_status_and_newly_supported_funds_default_on(multi_fund_workspace)
     manifest['proxy_source'] = 'Invented same-index fund; approximate exposure'
     path.write_text(yaml.safe_dump(manifest))
     app = launch(multi_fund_workspace)
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     by_label(app.checkbox, 'Show sold positions').check().run()
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert by_label(app.toggle, 'Synthetic World (proxy)').value
-    assert any('Proxy:' in item.value for item in app.info)
+    assert any('Proxy:' in item.value for item in app.caption)
     by_label(app.toggle, 'Synthetic Emerging').set_value(False).run()
     manifest.update(fund_id='new', name='New synthetic breakdown', isin='ZZ4444444444', tickers=['FUND-C'], proxy_source='')
     (directory / 'new.yaml').write_text(yaml.safe_dump(manifest))
@@ -127,7 +176,7 @@ def test_reviewed_company_mapping_reaches_allocation_and_stock_ui(multi_fund_wor
     app = launch(multi_fund_workspace)
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert not app.exception and not app.error
-    company = effective(app).loc[lambda x: x.Asset == 'Invented Alpha'].iloc[0]
+    company = exposure_breakdown(app).loc[lambda x: x.Asset == 'Invented Alpha'].iloc[0]
     assert company['Direct'] == 100.
     assert company['ETF-derived'] == 100.
     by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
@@ -201,6 +250,8 @@ def test_reviewed_company_name_reaches_chart_and_merge_review(multi_fund_workspa
 
 def test_fund_selection_survives_master_hiding_it_in_the_same_rerun(multi_fund_workspace):
     app = launch(multi_fund_workspace)
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     by_label(app.toggle, 'Synthetic World').set_value(False)
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()
@@ -208,3 +259,91 @@ def test_fund_selection_survives_master_hiding_it_in_the_same_rerun(multi_fund_w
     assert not app.exception and not app.error
     assert not by_label(app.toggle, 'Synthetic World').value
     assert by_label(app.toggle, 'Synthetic Emerging').value
+
+
+def test_return_visits_reuse_expansion_and_invalidate_changed_evidence(multi_fund_workspace, monkeypatch):
+    from portfolio_app.interface.views.exposure import exposure_ui, exposure_assets_ui
+
+    calls = []
+    for module, name in ((exposure_ui, 'prepare_exposures'), (exposure_assets_ui, 'preview_facts')):
+        original = getattr(module, name)
+        def counted(*args, _call=original, **kwargs):
+            calls.append(_call.__name__)
+            return _call(*args, **kwargs)
+        monkeypatch.setattr(module, name, counted)
+
+    from portfolio_app.exposure.company_merges import MergePlan
+    prepared = []
+    for owner, method in ((exposure_ui, 'build_plan'), (MergePlan, 'apply')):
+        original = getattr(owner, method)
+        def counted_plan(*args, _name=method, _call=original, **kwargs):
+            prepared.append(_name)
+            return _call(*args, **kwargs)
+        monkeypatch.setattr(owner, method, counted_plan)
+
+    app = launch(multi_fund_workspace)
+    def company():
+        assert not app.exception
+        return effective(app).loc[lambda t: t.Asset.eq('Invented Alpha')].iloc[0]
+
+    assert company()['Total'] == 175.
+    calls.clear()
+    activate(app, 'Overview')
+    activate(app, 'Exposure')
+    by_label(app.text_input, 'Search exposure').set_value('Alpha').run()
+    assert company()['Total'] == 175.
+    assert not calls
+
+    path = multi_fund_workspace / 'etfs/world.csv'
+    path.write_text(path.read_text().replace('0.5,equity', '0.3,equity'))
+    app.run()
+    assert company()['Total'] == 155.
+    assert calls == ['prepare_exposures', 'preview_facts']
+    quotes = multi_fund_workspace / 'demo_prices.json'
+    data = json.loads(quotes.read_text())
+    data['prices']['COMPANY']['price'] = 120
+    quotes.write_text(json.dumps(data))
+    app.run()
+    assert company()['Total'] == 175.
+    assert prepared == ['build_plan', 'apply'] * 2  # Initial and corrected fund.
+    # A quantity edit changes both holdings and exposures while retaining issuer identities.
+    path = multi_fund_workspace / 'holdings.csv'
+    original = path.read_text()
+    path.write_text(original.replace('ZZ1111111111,1,20', 'ZZ1111111111,2,20'))
+    app.run()
+    assert company()['Total'] == 295.
+    assert prepared == ['build_plan', 'apply'] * 2
+    path.write_text(original)
+    app.run()
+
+    (multi_fund_workspace / 'classifications.yaml').write_text(yaml.safe_dump({
+        'company': {'classifications': {'sector': [['Invented industry']]}}}))
+    app.run()
+    assert company()['Labels'] == ['Invented industry']
+    assert prepared == ['build_plan', 'apply'] * 3
+
+    app.session_state['exposure_merges_open'] = False
+    by_label(app.toggle, 'Break down ETFs').set_value(False).run()
+    path.write_text(original.replace('Invented Alpha', 'Revised Alpha'))
+    app.run()
+    assert not app.exception and prepared == ['build_plan', 'apply'] * 3
+    app.session_state['exposure_merges_open'] = True
+    app.run()
+    assert not app.exception and prepared == ['build_plan', 'apply'] * 3 + ['build_plan']
+
+
+
+def test_exposure_geography_is_resolved_only_on_demand(multi_fund_workspace, monkeypatch):
+    from portfolio_app.interface.views.exposure import exposure_ui
+    original = exposure_ui.resolve_geography
+    calls = []
+    def resolve(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(exposure_ui, 'resolve_geography', resolve)
+    app = launch(multi_fund_workspace)
+    assert not app.exception and not calls
+    by_label(app.selectbox, 'Asset classifications').set_value('geography').run()
+    assert not app.exception and len(calls) == 1
+    by_label(app.get('button_group'), 'Exposure view').set_value('Geography').run()
+    assert not app.exception and len(calls) == 1
