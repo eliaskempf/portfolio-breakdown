@@ -132,9 +132,12 @@ def select_tab(page, name):
 
 def reveal_earlier_history(page):
     """Legacy reconstruction is a secondary expander in the transaction list."""
-    review = page.get_by_role('button', name='Review against portfolio', exact=True)
-    enter = page.get_by_role('button', name='Enter earlier transactions', exact=True)
-    expander = page.get_by_text('Add earlier history', exact=True)
-    if expander.count() and not review.is_visible() and not enter.is_visible():
-        expander.click()
-        settle(page)
+    summary = page.locator('summary').filter(has=page.get_by_text('Add earlier history', exact=True))
+    if summary.count():
+        section = summary.locator('..')
+        if section.get_attribute('open') is None:
+            summary.click()
+        expect(section).to_have_attribute('open', '')
+        # Streamlit clips this section while animating its height. The review
+        # button can already be visible before the panel releases that clip.
+        expect(section).to_have_css('overflow-y', 'visible')

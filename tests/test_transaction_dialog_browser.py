@@ -111,6 +111,22 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
     page, root = transaction_page
     page.set_viewport_size({'width': width, 'height': 900})
     dialog = page.get_by_role('dialog')
+    review = dialog.get_by_role('button', name='Review against portfolio', exact=True)
+    apply = dialog.get_by_role('button', name='Apply history', exact=True)
+    table = dialog.get_by_role('table', name='Transactions', exact=True)
+
+    def open_review():
+        reveal_earlier_history(page)
+        review.click()
+        playwright.expect(apply).to_be_visible()
+        settle(page)
+
+    def return_to_list(action):
+        action.click()
+        playwright.expect(table).to_be_visible()
+        playwright.expect(apply).to_have_count(0)
+        settle(page)
+
     dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
     watch_dialog(page)
     dialog.evaluate('''e => {
@@ -129,30 +145,30 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
         if iteration:
             if entry == 'editor':
                 dialog.get_by_role('button', name='Edit position', exact=False).click(); settle(page)
-            table = dialog.get_by_role('table', name='Transactions', exact=True)
             table.locator('tr[data-transaction-id="buy"]').get_by_role('button').click(); settle(page)
             price = dialog.get_by_role('textbox', name='Unit price', exact=True)
             price.fill('11'); price.press('Tab'); settle(page)
             dialog.get_by_role('button', name='Save changes', exact=True).click(); settle(page)
-        reveal_earlier_history(page)
-        dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-        dialog.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
-        playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_have_count(1)
+        open_review()
+        return_to_list(apply)
+        playwright.expect(table).to_have_count(1)
         playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True, include_hidden=True)).to_have_count(1)
         for label in ('Apply history', 'Apply incomplete history', 'Keep portfolio unchanged', 'Back to transactions'):
             playwright.expect(dialog.get_by_role('button', name=label, exact=True)).to_have_count(0)
         playwright.expect(dialog.get_by_text('Review options', exact=True)).to_have_count(0)
         playwright.expect(dialog.get_by_text('Confirm complete history', exact=False)).to_have_count(0)
-        assert load_journal(root)[0].securities[0].reviews[-1].date
+        book = load_journal(root)[0].securities[0]
+        assert book.reviews[-1].date
+        active_prices = [record.price for record in book.records
+                         if record.kind == 'buy' and record.id in book.active_ids]
+        assert active_prices == [Decimal(11 if iteration else 10)]
     assert page.evaluate('window.missingDialogFrames') == 0
     assert dialog.evaluate('e=>e===window.originalDialog')
     page.evaluate('cancelAnimationFrame(window.dialogFrame)')
     page.evaluate('cancelAnimationFrame(window.historyFrame)')
     assert page.evaluate('window.mixedHistoryFrames') == 0
     assert page.locator('#page-runs').inner_text() == '1'
-    reveal_earlier_history(page)
-    dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    apply = dialog.get_by_role('button', name='Apply history', exact=True)
+    open_review()
     playwright.expect(apply).to_have_attribute('data-testid', 'stBaseButton-primary')
     actions = [dialog.get_by_role('button', name=label, exact=True) for label in
                ('Apply history', 'Keep portfolio unchanged')]
@@ -160,14 +176,13 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
     assert all(box['x'] >= 0 and box['x']+box['width'] <= width for box in boxes)
     if width == 1280:
         assert max(box['y'] for box in boxes)-min(box['y'] for box in boxes) <= 1
-    apply.click(); settle(page)
-    assert not load_journal(root)[0].securities[0].reviews[-1].complete_through
-    playwright.expect(dialog.get_by_role('button', name='Apply history', exact=True)).to_have_count(0)
-    reveal_earlier_history(page)
-    dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    dialog.get_by_role('button', name='Keep portfolio unchanged', exact=True).click(); settle(page)
-    playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_have_count(1)
-    playwright.expect(dialog.get_by_role('button', name='Apply history', exact=True)).to_have_count(0)
+    return_to_list(apply)
+    journal, applied_revision = load_journal(root)
+    assert not journal.securities[0].reviews[-1].complete_through
+    open_review()
+    return_to_list(dialog.get_by_role('button', name='Keep portfolio unchanged', exact=True))
+    assert load_journal(root)[1] == applied_revision
+    playwright.expect(table).to_have_count(1)
     playwright.expect(dialog.get_by_text('Review options', exact=True)).to_have_count(0)
 
 
