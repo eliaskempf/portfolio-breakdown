@@ -113,6 +113,13 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
             if long_history:
                 # The first visit may build the index and qualify its summary.
                 # Later ranges reuse that index. A cached chart needs no checks.
+                unknown = settings['unknown_fee_positions']
+                if any(chart['unknown_capital'] != bool(unknown) for chart in charts):
+                    raise AssertionError(f'{action["period"]}: unexpected capital coverage for {unknown} incomplete positions')
+                builds = sum(chart['gain_builds'] for chart in charts)
+                if unknown and builds > unknown * (settings['purchases'] + 2):
+                    raise AssertionError(f'{action["period"]}: {builds} recorded-gain builds for {unknown} incomplete positions')
+                action['recorded_gain_builds'] = builds
                 estimates = settings['estimated_purchases']
                 checks = sum(chart['estimate_checks'] for chart in charts)
                 if i == 0 and not checks:
@@ -370,16 +377,19 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                     checks.append(dict(surface=surface, scenario=scenario, **metrics))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 
-            for scenario in ('cash-history', 'long-history'):
+            for case in ('cash-history', 'long-history', 'long-history-missing-fees'):
+                missing_fees = case == 'long-history-missing-fees'
+                scenario = 'long-history' if missing_fees else case
                 with TemporaryDirectory(prefix='portfolio-cash-history-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
-                    create_workspace(workspace, profile, today=as_of, cash_history=True, long_history=scenario == 'long-history')
+                    create_workspace(workspace, profile, today=as_of, cash_history=True, long_history=scenario == 'long-history',
+                                     missing_fees=missing_fees)
                     metrics = benchmark(executable, workspace, Path(tmp) / 'trial', 'navigation', surface, scenario)
                     for action in metrics['actions']:
-                        key = (scenario, action['period'])
+                        key = (case, action['period'])
                         if action['digest'] != expected.setdefault(key, action['digest']):
                             raise AssertionError('Account-history series differed across ranges or renderers')
-                    result.setdefault(scenario.replace('-', '_'), []).append(dict(surface=surface, **metrics))
+                    result.setdefault(case.replace('-', '_'), []).append(dict(surface=surface, **metrics))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 
     rows = ['| Surface | Launch | Reuse | Launch to ready (ms) | First chart (ms) | Warm chart median / p95 (ms) |',
@@ -410,6 +420,10 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                     f"{all_days['member_closes_calculated']} single-member valuations with {all_days['fx_lookups']} "
                     f"FX lookups and {all_days['estimated_purchase_checks']} scope checks on {check['estimated_purchases']} estimated purchases "
                     f"for {all_days['closes']} dates.\n")
+    for check in result.get('long_history_missing_fees', []):
+        all_days = next(action for action in check['actions'] if action['period'] == 'All')
+        summary += (f"\n{check['surface']} ten-year All with four unknown purchase fees: "
+                    f"{all_days['chart_ms']:.0f} ms to chart, {all_days['recorded_gain_builds']} recorded-gain builds.\n")
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:

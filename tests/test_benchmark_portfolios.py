@@ -111,8 +111,9 @@ def test_purchase_fx_benchmark_needs_dated_rates_and_has_partial_closes(tmp_path
     assert json.loads((workspace / '.cache/prices.json').read_bytes())['fx:USD']['quote']['price'] == .9
 
 
-@pytest.mark.parametrize('long_history, purchases, deposit_count, cadence', [(False, 25, 730, 1), (True, 122, 121, 30)])
-def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchases, deposit_count, cadence):
+@pytest.mark.parametrize('long_history, purchases, deposit_count, cadence, missing_fees',
+                         [(False, 25, 730, 1, False), (True, 122, 121, 30, False), (True, 122, 121, 30, True)])
+def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchases, deposit_count, cadence, missing_fees):
     import json
     from collections import Counter
     from datetime import date, timedelta
@@ -121,7 +122,7 @@ def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchas
     fixture = module_from_spec(spec)
     spec.loader.exec_module(fixture)
     workspace = tmp_path / 'synthetic'
-    fixture.create_workspace(workspace, today=date(2026, 5, 31), cash_history=True, long_history=long_history)
+    fixture.create_workspace(workspace, today=date(2026, 5, 31), cash_history=True, long_history=long_history, missing_fees=missing_fees)
     expected = json.loads((tmp_path / 'cash-history.json').read_bytes())
     journal, _ = load_journal(workspace)
     assert (expected['accounts'], expected['positions'], expected['purchases']) == (4, 12, purchases)
@@ -137,6 +138,7 @@ def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchas
     for index, book in enumerate(journal.securities):
         buys = [e for e in book.records if e.kind == 'buy']
         assert len(buys) == purchases and buys[0].date == expected['start']
+        assert [b for b in buys if not b.charges_known] == ([buys[0]] if missing_fees and index < 4 else [])
         stagger = index % 12 if long_history else 0
         assert buys[-1].date == (start + timedelta(days=(purchases-1)*30 + stagger)).isoformat()
 

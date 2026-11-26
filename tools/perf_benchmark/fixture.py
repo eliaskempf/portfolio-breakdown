@@ -64,7 +64,7 @@ def holdings_and_funds(directory, profile, today, *, large_risk_matrix=False):
 
 
 def create_workspace(directory: Path, profile='small', *, today=None, checklist=False, purchase_fx=False, cash_history=False,
-                     long_history=False, large_risk_matrix=False):
+                     long_history=False, large_risk_matrix=False, missing_fees=False):
     directory.mkdir()
     today = today or date.today()
     duration = 3650 if long_history else 730
@@ -103,7 +103,8 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         book = book_for(journal, row)
         stagger = index % 12 if long_history else 0
         buys = tuple(SecurityEvent(f'b-{index}-{t}', 'buy', day(t * 30 + (stagger if t else 0)), quantity=Decimal(1),
-            price=Decimal(100), currency='USD' if purchase_fx else 'EUR', charges_known=not (checklist and index % 4 == 0 and t == 1),
+            price=Decimal(100), currency='USD' if purchase_fx else 'EUR',
+            charges_known=not ((checklist and index % 4 == 0 and t == 1) or (missing_fees and index < 4 and t == 0)),
             estimated=long_history and index % 4 == 0 and t % 10 == 1)
             for t in range(purchases))
         books.append(reconstruction_candidate(replace(book, records=buys),
@@ -135,6 +136,7 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
                         closing_prices=rows.manual_price.tolist(), purchases=purchases)
         if long_history:
             expected['quote_currencies'] = quote_currencies
+            expected['unknown_fee_positions'] = sum(any(e.kind == 'buy' and not e.charges_known for e in b.records) for b in books)
             expected['estimated_purchases'] = sum(e.estimated for b in books for e in b.records if e.kind == 'buy')
         (directory.parent / 'cash-history.json').write_text(json.dumps(expected), encoding='utf-8')
     save_journal(directory, replace(journal, securities=tuple(books)), None)
