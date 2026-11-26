@@ -25,6 +25,46 @@ def finish(jobs, workspace):
         Event().wait(.005)
 
 
+def test_cold_portfolio_groups_price_and_held_acquisition_fx_in_one_publication(tmp_path, now, jobs, monkeypatch):
+    from portfolio_app.application import valuation_requests
+    from portfolio_app.portfolio.holdings import parse_holdings
+    from portfolio_app.portfolio.portfolio import prepare_portfolio
+
+    class Provider:
+        def price(self, ticker):
+            return Quote(50, 'USD', now)
+
+        def fx(self, currency):
+            return Quote({'USD': .8, 'CHF': 1.1}[currency], 'EUR', now)
+
+    groups = []
+    submit = jobs.request_group
+    def capture(workspace, requests, **options):
+        groups.append([key for key, _ in requests])
+        return submit(workspace, requests, **options)
+    monkeypatch.setattr(jobs, 'request_group', capture)
+    holdings = parse_holdings(
+        'id,name,ticker,shares,acquisition_price,acquisition_currency\n'
+        'one,Invented USD,SYN-ONE,1,40,USD\n'
+        'two,Invented CHF,SYN-TWO,1,30,CHF\n'
+        'sold,Invented closed,SYN-SOLD,0,1,CAD\n'
+        'three,Invented without cost,SYN-THREE,1,,AUD\n')
+    prices = PriceService(Provider(), now=lambda: now)
+    def value():
+        reader = BackgroundPrices(prices, jobs, str(tmp_path))
+        with valuation_requests(reader, None):
+            return prepare_portfolio(holdings, reader).set_index('id')
+
+    assert value().at['sold', 'current_value_reporting'] == 0
+    finish(jobs, tmp_path)
+    assert len(groups) == 1
+    assert sorted(groups[0]) == ['fx:CHF', 'fx:USD', 'price:SYN-ONE', 'price:SYN-THREE', 'price:SYN-TWO']
+    ready = value()
+    assert ready.at['one', 'unrealized_gain'] == 10
+    assert ready.at['two', 'unrealized_gain'] == pytest.approx(40 / 1.1 - 30)
+    assert len(groups) == 1
+
+
 def test_slow_quotes_do_not_block_and_requests_are_deduplicated(tmp_path, now, jobs):
     started, release = Event(), Event()
     class Provider:

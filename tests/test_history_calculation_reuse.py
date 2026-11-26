@@ -44,6 +44,54 @@ def test_standalone_negative_equity_scan_reuses_its_calculation(monkeypatch):
     assert module.calculate_history(journal, scope, obs, START, END).time_weighted == pytest.approx(.2)
 
 
+def test_chart_validation_leaves_exact_close_details_for_the_requested_endpoint(monkeypatch):
+    from datetime import timedelta
+    from test_daily_twr import example
+    from portfolio_app.performance import personal_performance as performance, history_valuation
+    first = date(2024, 1, 1)
+    days = [(first + timedelta(days=i)).isoformat() for i in range(150)]
+    journal, scope, store = example((), quantity=2, prices=[(d, 100+i) for i, d in enumerate(days)], account=True)
+    calculation = HistoryCalculation(journal, store)
+    requested = []
+    original = history_valuation.provenance
+    def observe(row, day):
+        requested.append(day)
+        return original(row, day)
+    monkeypatch.setattr(performance, 'provenance', observe)
+    monkeypatch.setattr(history_valuation, 'provenance', observe)
+    for period in ('1M', 'All'):
+        view = history_view(journal, scope, store, period, today=date.fromisoformat(days[-1]), calculation=calculation)
+        assert view.all_result.ending_value == 698
+        assert view.all_result.valuation_evidence[0].as_of == days[-1]
+    assert days[-1] in requested and len(set(requested)) <= 4
+    assert days[35] not in requested
+    close = calculation.value(scope, days[35], 'EUR')
+    assert close.evidence == (original(store.observations[35], days[35]),)
+    assert close.amount == 470
+    calls = len(requested)
+    assert calculation.value(scope, days[35], 'EUR') is close
+    assert len(requested) == calls
+
+
+@pytest.mark.parametrize('supplied', [False, True])
+def test_retained_missing_or_supplied_close_needs_no_member_revaluation(monkeypatch, supplied):
+    import portfolio_app.performance.personal_performance as performance
+    scope = HistoryScope(('stock',))
+    rows = (Observation('total', 'value', scope.key, START, 150, 'EUR'),) if supplied else ()
+    store = ObservationStore(rows)
+    journal = Journal()
+    complete = performance.value_at(journal, scope, store, START, 'EUR')
+    assert complete.amount == (150 if supplied else None)
+    calc = HistoryCalculation(journal, store)
+    calc.retain_value(scope, START, 'EUR', complete)
+    def unexpected(*args, **kwargs):
+        pytest.fail('A retained aggregate or missing close has no derived member amounts')
+    monkeypatch.setattr(performance, '_resolve_close', unexpected)
+    result, members = calc.value_with_members(scope, START, 'EUR')
+    assert result is complete and not members
+    assert calc.close(scope, START, 'EUR').carried_dates('price', START) == []
+
+
 def test_unrelated_fx_does_not_add_chart_points_or_missing_prices():
     journal = Journal(version=2, securities=(book(E('opening', 'opening', START, quantity=1, amount=10, currency='EUR')),))
     scope = HistoryScope(('stock',))
@@ -296,12 +344,12 @@ def test_full_history_scalars_visit_only_required_closes(monkeypatch, summary):
     view = history_view(journal, scope, store, 'All', today=today)
     assert view.all_result.time_weighted is not None
     calculation = HistoryCalculation(journal, store)
-    value = calculation.value
+    value = calculation.close
     dates = set()
     def observe(scope, stamp, target):
         dates.add(stamp)
         return value(scope, stamp, target)
-    monkeypatch.setattr(calculation, 'value', observe)
+    monkeypatch.setattr(calculation, 'close', observe)
     needed = {today.isoformat(), prices[-1][0], '2024-01-31', start.isoformat()}
     if summary:
         result = full_history_summary(calculation, scope, today, 'EUR')
@@ -309,7 +357,7 @@ def test_full_history_scalars_visit_only_required_closes(monkeypatch, summary):
         needed.add(prices[-2][0])
     else:
         assert full_history_time_weighted(calculation, scope, today, 'EUR') == view.all_result.time_weighted
-    assert dates <= needed
+    assert dates and dates <= needed
 
 
 @pytest.mark.parametrize('case', ['negative close', 'negative boundary', 'corrected boundary',
@@ -344,6 +392,96 @@ def test_full_history_scalars_preserve_eligibility(case):
     expected = view.all_result.time_weighted
     assert (expected is not None) == (case in {'fully sold', 'corrected boundary', 'negative other currency', 'single close'})
     assert full_history_time_weighted(HistoryCalculation(journal, store), scope, today, 'EUR') == expected
+
+
+@pytest.mark.parametrize('summary', [False, True])
+def test_nonnegative_accounts_do_not_value_every_holding_outside_the_window(monkeypatch, summary):
+    from portfolio_app.ledger.account_journal import Account, Event
+    from datetime import timedelta
+    from test_daily_twr import example
+    from portfolio_app.performance.history_view import full_history_summary
+    first = date(2024, 1, 1)
+    days = [(first + timedelta(days=i)).isoformat() for i in range(150)]
+    journal, scope, store = example((), quantity=2, prices=[(d, 100+i) for i, d in enumerate(days)], account=True)
+    journal = replace(journal, accounts=(*journal.accounts, Account('other', 'Invented other account')),
+        events=(*journal.events, Event('withdraw', days[10], 'cash_flow', 'cash', 'EUR', -30),
+                Event('other-open', days[0], 'cash_open', 'other', 'EUR', -100)))
+    today = date.fromisoformat(days[-1])
+    reference = history_view(journal, scope, store, 'All', today=today)
+    calculation = HistoryCalculation(journal, store)
+    calls = set()
+    original = calculation.close
+    def observe(selected, stamp, target):
+        if selected == scope:
+            calls.add(stamp)
+        return original(selected, stamp, target)
+    monkeypatch.setattr(calculation, 'close', observe)
+    if summary:
+        result = full_history_summary(calculation, scope, today, 'EUR')
+        assert result.useful and result.all_result == reference.all_result
+    else:
+        chart = history_view(journal, scope, store, '1M', today=today, calculation=calculation)
+        assert chart.all_result == reference.all_result
+        assert chart.points == tuple(p for p in reference.points if p['Date'] >= chart.requested_start)
+    assert calls and not calls.intersection(days[11:110])
+
+
+@pytest.mark.parametrize('length', [128, 129, 400])
+def test_dense_account_history_with_missing_prices_validates_in_one_forward_pass(monkeypatch, length):
+    from datetime import timedelta
+    from test_daily_twr import example
+    from portfolio_app.ledger import account_journal as ledger
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    first = date(2024, 1, 1)
+    days = [(first + timedelta(days=i)).isoformat() for i in range(length)]
+    journal, scope, store = example((), quantity=1, account=True, prices=[(days[0], 100)])
+    journal = replace(journal, events=(*journal.events, *(ledger.Event(
+        'deposit-'+day, day, 'cash_flow', 'cash', 'EUR', 1) for day in days[1:])))
+    passes = []
+    original = ledger._replay_states
+    def count(*args, **kwargs):
+        passes.append(True)
+        yield from original(*args, **kwargs)
+    monkeypatch.setattr(ledger, '_replay_states', count)
+    result = full_history_time_weighted(HistoryCalculation(journal, store), scope, date.fromisoformat(days[-1]), 'EUR')
+    assert result is None and len(passes) == 1
+
+
+@pytest.mark.parametrize('liability', ['loan', 'pending purchase'])
+def test_positive_cash_with_a_liability_still_checks_interior_equity(liability):
+    from portfolio_app.ledger.account_journal import Event
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from test_daily_twr import example, trade
+    first, trade_day, low, last = '2024-01-01', '2024-01-02', '2024-01-03', '2024-03-31'
+    trades = (replace(trade('buy', 'buy', trade_day, 80), value_date=last),) if liability == 'pending purchase' else ()
+    journal, scope, store = example(trades, quantity=1, opening_cash=10, account=True,
+                                    prices=[(first, 100), (trade_day, 100), (low, 1), (last, 100)])
+    if liability == 'loan':
+        journal = replace(journal, events=(*journal.events, Event('loan', first, 'debt_open', 'cash', 'EUR', 80,
+                                                                   reference='invented-loan')))
+    calc = HistoryCalculation(journal, store)
+    assert calc.value(scope, low, 'EUR').amount < 0 < calc.value(scope, last, 'EUR').amount
+    assert full_history_time_weighted(calc, scope, date.fromisoformat(last), 'EUR') is None
+    view = history_view(journal, scope, store, '1M', today=date.fromisoformat(last), calculation=calc)
+    assert any('negative equity' in reason for reason in view.all_result.time_weighted_reasons)
+
+
+def test_foreign_cash_still_checks_conflicting_rates_outside_the_chart():
+    from portfolio_app.ledger.account_journal import Event
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from portfolio_app.portfolio.holdings import DataError
+    from test_daily_twr import example
+    first, middle, last = '2024-01-01', '2024-01-05', '2024-03-31'
+    journal, scope, store = example((), quantity=1, account=True, prices=[(day, 100) for day in (first, middle, last)])
+    journal = replace(journal, events=(*journal.events, Event('dollars', first, 'cash_open', 'cash', 'USD', 10)))
+    rates = tuple(Observation('usd-'+day, 'fx', 'USD/EUR', day, 1, 'USD', 'EUR') for day in (first, middle, last))
+    inverse = Observation('inverse', 'fx', 'EUR/USD', middle, 2, 'EUR', 'USD')
+    store = replace(store, observations=(*store.observations, *rates, inverse))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        full_history_time_weighted(HistoryCalculation(journal, store), scope, date.fromisoformat(last), 'EUR')
+    supplied = Observation('aggregate', 'value', scope.key, middle, 310, 'EUR')
+    covered = replace(store, observations=(*store.observations, supplied))
+    assert full_history_time_weighted(HistoryCalculation(journal, covered), scope, date.fromisoformat(last), 'EUR') == 0
 
 
 def test_scalar_twr_still_detects_interior_conflicting_closing_fx():
@@ -383,13 +521,13 @@ def test_one_way_fx_closes_do_not_require_daily_scope_valuations(monkeypatch):
     today = date.fromisoformat(days[-1])
     expected = history_view(journal, scope, store, 'All', today=today).all_result.time_weighted
     assert expected == pytest.approx(.89)
-    value, calls = calculation.value, set()
+    value, calls = calculation.close, set()
     def observe(scope, stamp, target):
         calls.add(stamp)
         return value(scope, stamp, target)
-    monkeypatch.setattr(calculation, 'value', observe)
+    monkeypatch.setattr(calculation, 'close', observe)
     assert full_history_time_weighted(calculation, scope, today, 'EUR') == expected
-    assert calls <= {days[0], days[-1]}
+    assert calls and calls <= {days[0], days[-1]}
 
 
 def test_scalar_twr_checks_reciprocal_fx_carried_into_the_valuation_interval():
@@ -511,6 +649,75 @@ def test_position_capital_tracks_its_payments_and_delayed_charges(monkeypatch):
     assert rebuilt == [days[0], days[1], days[3]]
 
 
+def test_capital_searches_event_dates_only_when_crossing_an_interval(monkeypatch):
+    import portfolio_app.performance.personal_performance as module
+    journal = Journal(version=2, securities=(book(
+        E('open', 'opening', '2024-01-05', source='confirmed_zero_start'),
+        E('buy', 'buy', '2024-01-10', quantity=1, price=10, currency='EUR', charges_known=True)),))
+    store, scope, start = ObservationStore(), HistoryScope(('stock',)), '2024-01-01'
+    days = [f'2024-01-{day:02}' for day in (2, 4, 5, 9, 6, 10, 17, 14, 9, 5, 2, 3)]
+    expected = [module._period_capital(HistoryCalculation(journal, store), scope, start, day, 'EUR') for day in days]
+    calculation = HistoryCalculation(journal, store)
+    dates = calculation.event_dates(scope)
+    searched = []
+    bisect = module.bisect_right
+    def counted(sequence, day):
+        if sequence is dates:
+            searched.append(day)
+        return bisect(sequence, day)
+    monkeypatch.setattr(module, 'bisect_right', counted)
+    actual = [calculation.period_capital(scope, start, day, 'EUR') for day in days]
+    assert actual == expected
+    assert [basis.invested_capital for basis in actual] == [0, 0, 0, 0, 0, 10, 10, 10, 0, 0, 0, 0]
+    assert len(searched) <= 5  # Five intervals visited, including two revisits.
+
+    # A later opening can need a price and the other reporting currency needs FX.
+    for lower, target in [('2024-01-10', 'EUR'), (start, 'USD'), (start, 'EUR')]:
+        day = '2024-01-17'
+        assert calculation.period_capital(scope, lower, day, target) == module._period_capital(
+            HistoryCalculation(journal, store), scope, lower, day, target)
+    calculation._facts.clear()
+    assert calculation.period_capital(scope, start, days[0], 'EUR') == expected[0]
+
+
+@pytest.mark.parametrize('scope,net', [
+    (HistoryScope(accounts=('cash',)), -9),
+    (HistoryScope(('stock', 'second')), 12),
+    (HistoryScope(('stock',), ('cash',)), 3),
+])
+def test_only_selected_members_change_a_scopes_capital(scope, net, monkeypatch):
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.ledger.security_history import Charge
+    import portfolio_app.performance.personal_performance as module
+    days = [f'2024-01-{day:02}' for day in range(2, 9)]
+    own = book(E('own-open', 'opening', START),
+               E('own-buy', 'buy', days[1], quantity=1, price=10, currency='EUR', charges_known=True,
+                 charges=(Charge(D(2), 'EUR', date=days[3]),)), account='cash')
+    second = book(E('second-open', 'opening', START), identity='second')
+    other = book(E('outside-open', 'opening', START),
+                 E('outside-buy', 'buy', days[4], quantity=1, price=20, currency='EUR', charges_known=True),
+                 identity='outside', account='outside-cash')
+    journal = Journal(version=2, securities=(own, second, other),
+        accounts=(Account('cash', 'Inside'), Account('outside-cash', 'Outside')),
+        events=(Event('open', START, 'cash_open', 'cash', 'EUR', D(100)),
+                Event('other-open', START, 'cash_open', 'outside-cash', 'EUR', D(100)),
+                Event('other-deposit', days[2], 'cash_flow', 'outside-cash', 'EUR', D(30)),
+                Event('deposit', days[5], 'cash_flow', 'cash', 'EUR', D(3))))
+    store = ObservationStore()
+    expected = [module._period_capital(HistoryCalculation(journal, store), scope, START, day, 'EUR') for day in days]
+    original, rebuilt = module._period_capital, []
+    def counted(calc, selected, start, end, target):
+        rebuilt.append(end)
+        return original(calc, selected, start, end, target)
+    monkeypatch.setattr(module, '_period_capital', counted)
+    calculation = HistoryCalculation(journal, store)
+    actual = [calculation.period_capital(scope, START, day, 'EUR') for day in days]
+    assert actual == expected
+    assert actual[-1].net_contributions == net
+    assert days[2] not in rebuilt and days[4] not in rebuilt
+    assert [calculation.period_capital(scope, START, day, 'EUR') for day in reversed(days)] == expected[::-1]
+
+
 def test_cashflows_change_capital_without_rechecking_unchanged_ledger_coverage(monkeypatch):
     from portfolio_app.ledger.account_journal import Account, Event
     import portfolio_app.performance.personal_performance as module
@@ -567,3 +774,83 @@ def test_daily_net_contributions_consume_each_posting_once_in_decimal_order(monk
             # two payments first would round up a full unit on every date.
             assert total == 1000
     assert len(visited) == len(set(visited)) == 1 + 2 * len(days)
+
+
+def test_sibling_returns_and_range_capital_use_validated_security_closes(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.ledger.security_history import _SecurityReplay, SecurityTimeline
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from test_daily_twr import example, trade
+
+    first = date(2024, 1, 1)
+    dates = [(first + timedelta(days=i)).isoformat() for i in range(SecurityTimeline.MAX_SNAPSHOTS + 14)]
+    events = tuple(trade('buy-'+day, 'buy', day, 10) for day in dates[1:])
+    journal, scope, store = example(events, prices=[(day, 10) for day in dates])
+    original = journal.securities[0]
+    sibling_events = tuple(replace(e, id='sibling-'+e.id) for e in original.records)
+    sibling = replace(original, position_id='sibling', records=sibling_events,
+                      active_ids=tuple(e.id for e in sibling_events))
+    journal = replace(journal, securities=(original, sibling))
+    store = ObservationStore(tuple(replace(o, subject='SYNTH') for o in store.observations))
+    calculation = HistoryCalculation(journal, store)
+    calculation.securities()  # The overview already requested the canonical complete inventory.
+    def unexpected_replay(*args, **kwargs):
+        pytest.fail('a closing valuation reconstructed previously validated FIFO lots')
+    monkeypatch.setattr(_SecurityReplay, 'advance', unexpected_replay)
+    for members in (scope, HistoryScope(('sibling',)), HistoryScope(('invented', 'sibling'))):
+        assert full_history_time_weighted(calculation, members, date.fromisoformat(dates[-1]), 'EUR') == 0
+        assert calculation.capital(members, dates[21], 'EUR').amount == 210 * len(members.positions)
+
+
+def test_dated_close_shares_fx_across_members_and_preserves_per_member_evidence(monkeypatch):
+    import portfolio_app.performance.personal_performance as module
+    from portfolio_app.ledger.account_journal import Account, Event
+    from test_daily_twr import example
+
+    friday, saturday, monday = '2024-01-05', '2024-01-06', '2024-01-08'
+    journal, _, _ = example((), quantity=1)
+    accounts = (Account('first', 'Invented first'), Account('second', 'Invented second'))
+    journal = replace(journal, accounts=accounts, events=(
+        Event('first-open', friday, 'cash_open', 'first', 'USD', 10),
+        Event('second-open', friday, 'cash_open', 'second', 'USD', 3),
+        Event('eu-open', friday, 'cash_open', 'second', 'EUR', 4)))
+    scope = HistoryScope(('invented',), ('first', 'second'))
+    prices = tuple(Observation('p-'+day, 'price', 'invented', day, 20, 'USD') for day in (saturday, monday))
+    store = ObservationStore((*prices, Observation('friday-fx', 'fx', 'EUR/USD', friday, 2, 'EUR', target='USD')))
+    calls, original = [], module.valuation_fx_quotes
+    def observed(store, source, target, stamp):
+        calls.append((source, stamp))
+        return original(store, source, target, stamp)
+    monkeypatch.setattr(module, 'valuation_fx_quotes', observed)
+    calc = HistoryCalculation(journal, store)
+    weekend, members = calc.value_with_members(scope, saturday, 'EUR')
+    assert weekend.amount == D('20.5') and members == [10, 5, D('5.5')]
+    assert [(e.subject, e.as_of, e.method) for e in weekend.evidence] == [
+        ('invented', saturday, 'close'), *[('EUR/USD', friday, 'closed_fx_session')]*3]
+    unsupported, members = calc.value_with_members(scope, monday, 'EUR')
+    assert unsupported.amount is None and not members
+    assert [str(issue).split(':')[0] for issue in unsupported.reasons] == ['invented', 'first', 'second']
+    assert [day for currency, day in calls if currency == 'USD'] == [saturday, monday]
+
+
+def test_shared_fx_preserves_component_rounding_and_checks_only_used_currencies():
+    from decimal import localcontext
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.performance.personal_performance import value_at
+    from portfolio_app.portfolio.holdings import DataError
+
+    accounts = tuple(Account(name, name) for name in ('first', 'second'))
+    journal = Journal(accounts=accounts, events=tuple(
+        Event('opening-'+a.id, START, 'cash_open', a.id, 'USD', 5) for a in accounts))
+    scope = HistoryScope(accounts=('first', 'second'))
+    inverse = Observation('inverse', 'fx', 'EUR/USD', START, 3, 'EUR', target='USD')
+    with localcontext() as context:
+        context.prec = 3
+        members = []
+        result = value_at(journal, scope, ObservationStore((inverse,)), START, 'EUR', member_amounts=members)
+        assert result.amount == D('3.32') and members == [D('1.66'), D('1.66')]
+    conflict = ObservationStore((inverse, Observation('direct', 'fx', 'USD/EUR', START, 1, 'USD', target='EUR')))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        value_at(journal, scope, conflict, START, 'EUR')
+    empty = replace(journal, events=tuple(replace(e, amount=0) for e in journal.events))
+    assert value_at(empty, scope, conflict, START, 'EUR').amount == 0

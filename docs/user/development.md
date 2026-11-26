@@ -98,6 +98,12 @@ stopping the timer leaves widget events available for user interactions. Verify 
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
 
+Streamlit 1.66.1 can replace a finished script runner while its final UI messages
+are still queued for delivery. When the next request redraws a different fragment,
+the previous view can stay blank. `interface/shared/fragment_handoff.py` allows
+the session to deliver that pending output in order. Its regression tests exercise
+the runtime's message queues when updating the Streamlit dependency.
+
 Streamlit streams updates at numeric element paths and retires unused elements
 at the end of a rerun. Optional messages or controls must not shift the paths of
 later content. Reserve fixed sibling sections with
@@ -792,7 +798,12 @@ staggered across each month, and four cash accounts with monthly deposits. It
 opens Performance from Allocation, selects 3M, then All, and returns to 1Y.
 The report records chart paint and settled times, checks every daily balance
 including the unknown balance before the first cash opening, and counts
-portfolio valuations during each range change.
+portfolio and single-member valuations during each range change. Historical closes
+span EUR, USD and GBP with changing direct and inverse rates. The benchmark
+checks the converted balances and bounds FX lookups by the currencies valued.
+Of the purchases, 156 have estimated payments. The benchmark checks that the
+gain summary retains its estimate qualification and counts how often the
+calculation checks which positions those purchases affect.
 
 The mixed-history profile uses the same holdings and prices. Some overlapping
 constituents have only fund-local identifiers and company names. It also includes

@@ -134,8 +134,10 @@ whose connected holdings are reviewed together.
 
 Explicitly supplied estimates can support daily TWR and annualized XIRR. Affected
 results retain the estimate qualification in gain/TWR and annualized-return
-tooltips, without separate estimate captions. Missing transaction details and market
-observations remain separate limitations. An estimated acquisition cost does not by itself
+tooltips, without separate estimate captions. For period returns, an estimated
+fee uses its own payment date. Estimated trade payments on a confirmed new
+account’s first day count from its zero opening. Missing transaction details
+and market observations remain separate limitations. An estimated acquisition cost does not by itself
 make a return estimated when that return uses independently known cash flows and
 market values. Unknown amounts stay unknown; a matching ending quantity does not
 certify complete history. The former separate daily-Dietz diagnostic is retired.
@@ -285,6 +287,11 @@ Account cash openings precede separately recorded same-day account trades, fees
 and external funding; these events must not disappear into the first closing
 valuation. Security starting balances remain end-of-day snapshots, and derived
 security payments already included in an account opening are not posted again.
+At an existing account's opening, settled cash and outstanding linked security
+payments together determine equity. Recording receipt of a payment moves its
+amount from the outstanding claim into cash. The same dated closing FX values
+cash, debt and claims in each currency. An earlier trade can establish an
+outstanding payment without establishing the account's equity before its snapshot.
 An explicitly newly funded account instead starts at zero before its first-day
 transactions, including linked securities purchases and fees. A confirmed empty
 security opening dated the preceding day is consistent with that declaration.

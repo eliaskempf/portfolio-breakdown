@@ -6,7 +6,7 @@ avoids demanding prices which cancel algebraically (including a first purchase
 from zero), while never filling a required boundary or spanning an unknown flow.
 """
 from datetime import date, timedelta
-from decimal import Decimal, localcontext
+from decimal import Decimal, getcontext, localcontext
 from itertools import groupby
 import math
 
@@ -29,6 +29,14 @@ def _daily_boundaries(calculation, scope, start, end, target, opening, ending, f
     # Immutable context: reuse funded-boundary prefixes for range/hover requests.
     cache = calculation._get(('daily_twr', scope, start, target), dict)
     factor, base, invested, reason = Decimal(1), opening, opening > 0, ''
+    valuation_context = getcontext()
+
+    def close(day):
+        # Other history metrics share this dated monetary value. Use their
+        # precision even while the return ratios compound at higher precision.
+        with localcontext(valuation_context):
+            return calculation.close(scope, day, target)
+
     with localcontext() as context:
         context.prec = 50
         for stamp, entries in groupby(flows, key=lambda f: f.date):
@@ -43,7 +51,7 @@ def _daily_boundaries(calculation, scope, start, end, target, opening, ending, f
             reason = ''
             if incoming:
                 previous_day = (date.fromisoformat(stamp)-timedelta(days=1)).isoformat()
-                value = calculation.value(scope, previous_day, target) if stamp != start else None
+                value = close(previous_day) if stamp != start else None
                 before = opening if stamp == start else value.amount
                 if before is None:
                     reason = Issue(f'{previous_day}: daily TWR needs a supported opening valuation. '
@@ -58,7 +66,7 @@ def _daily_boundaries(calculation, scope, start, end, target, opening, ending, f
                     base = before + incoming
                     invested |= base > 0
             if outgoing and not reason:
-                value = calculation.value(scope, stamp, target)
+                value = close(stamp)
                 after = ending if stamp == end else value.amount
                 if after is None:
                     reason = Issue(f'{stamp}: daily TWR needs a supported closing valuation. '

@@ -111,8 +111,9 @@ def test_purchase_fx_benchmark_needs_dated_rates_and_has_partial_closes(tmp_path
     assert json.loads((workspace / '.cache/prices.json').read_bytes())['fx:USD']['quote']['price'] == .9
 
 
-@pytest.mark.parametrize('long_history, purchases, deposit_count, cadence', [(False, 25, 730, 1), (True, 122, 121, 30)])
-def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchases, deposit_count, cadence):
+@pytest.mark.parametrize('long_history, purchases, deposit_count, cadence, missing_fees',
+                         [(False, 25, 730, 1, False), (True, 122, 121, 30, False), (True, 122, 121, 30, True)])
+def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchases, deposit_count, cadence, missing_fees):
     import json
     from collections import Counter
     from datetime import date, timedelta
@@ -121,7 +122,7 @@ def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchas
     fixture = module_from_spec(spec)
     spec.loader.exec_module(fixture)
     workspace = tmp_path / 'synthetic'
-    fixture.create_workspace(workspace, today=date(2026, 5, 31), cash_history=True, long_history=long_history)
+    fixture.create_workspace(workspace, today=date(2026, 5, 31), cash_history=True, long_history=long_history, missing_fees=missing_fees)
     expected = json.loads((tmp_path / 'cash-history.json').read_bytes())
     journal, _ = load_journal(workspace)
     assert (expected['accounts'], expected['positions'], expected['purchases']) == (4, 12, purchases)
@@ -137,8 +138,25 @@ def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchas
     for index, book in enumerate(journal.securities):
         buys = [e for e in book.records if e.kind == 'buy']
         assert len(buys) == purchases and buys[0].date == expected['start']
+        assert [b for b in buys if not b.charges_known] == ([buys[0]] if missing_fees and index < 4 else [])
         stagger = index % 12 if long_history else 0
         assert buys[-1].date == (start + timedelta(days=(purchases-1)*30 + stagger)).isoformat()
+
+    if long_history:
+        from decimal import Decimal
+        estimates = [e for b in journal.securities for e in b.records if e.estimated]
+        assert len(estimates) == expected['estimated_purchases'] == 39
+        assert all(e.kind == 'buy' and e.gross == 100 for e in estimates)
+        store, _ = load_observations(workspace)
+        first_quotes = {o.subject: o.currency for o in store.observations if o.kind == 'price' and o.date == expected['start']}
+        currencies = [first_quotes[b.position_id] for b in journal.securities]
+        assert currencies == expected['quote_currencies']
+        assert Counter(currencies) == {'EUR': 4, 'USD': 4, 'GBP': 4}
+        assert all(set(currencies[category::3]) == {'EUR', 'USD', 'GBP'} for category in range(3))
+        for offset, usd, inverse_gbp in [(0, '.8', '.8'), (29, '.8', '.8'), (30, '.9', '.75')]:
+            stamp = (start + timedelta(days=offset)).isoformat()
+            assert {(o.currency, o.target): o.amount for o in store.index.fx[stamp]} == {
+                ('USD', 'EUR'): Decimal(usd), ('EUR', 'GBP'): Decimal(inverse_gbp)}
 
 
 def test_market_chart_benchmark_starts_with_durable_price_and_fx_ranges(tmp_path):
@@ -168,3 +186,45 @@ def test_market_chart_benchmark_starts_with_durable_price_and_fx_ranges(tmp_path
         assert len(chart.prices) == len(indices) < size and chart.dates[-1] == settings['end'] + 'T00:00:00'
         assert chart.prices == tuple((100 + i * .0001) * (.8 + i * .0001) for i in indices)
     assert {stamp[-6:] for stamp in stock.dates} == {'+01:00', '+02:00'}
+
+
+def test_failed_reference_keeps_first_request_and_independent_candidate_results(tmp_path, monkeypatch):
+    import json
+    benchmark_dir = Path(__file__).resolve().parents[1] / 'tools/perf_benchmark'
+    monkeypatch.syspath_prepend(str(benchmark_dir))
+    spec = spec_from_file_location('benchmark_comparison', benchmark_dir / 'run.py')
+    comparison = module_from_spec(spec)
+    spec.loader.exec_module(comparison)
+    from renderer import market_chart_failure
+
+    reference, candidate = tmp_path / 'reference', tmp_path / 'candidate'
+    reference.write_bytes(b'invented reference')
+    candidate.write_bytes(b'invented candidate')
+    monkeypatch.setattr(comparison, 'create_workspace', lambda *args, **kwargs: None)
+    calls = []
+    manual = dict(event='market_range_requested', automatic=False, selection=['5Y'])
+    automatic = dict(event='market_range_requested', automatic=True, selection=['5Y'])
+
+    def measure(exe, workspace, trial, name, surface, experiment, **kwargs):
+        calls.append(name)
+        if len(calls) == 1:
+            trial.mkdir()
+            events = [dict(event='previous_visit'), manual, *([automatic] * 24)]
+            (trial / 'server.jsonl').write_text(''.join(json.dumps(e)+'\n' for e in events))
+            raise market_chart_failure(trial, 1, dict(error='Invented stale plot', state={'requested': '5Y'}))
+        if len(calls) == 2:
+            checkpoint = json.loads((output / 'results.json').read_text())
+            assert checkpoint['failures'][0]['market_chart']['server_events'][0] == manual
+        return dict(actions=[dict(paint_ms=12)])
+
+    monkeypatch.setattr(comparison, 'benchmark', measure)
+    output = tmp_path / 'results'
+    with pytest.raises(RuntimeError, match='1 comparison trial'):
+        comparison.run_comparison(candidate, reference, output, ['native'], 2, 'small', 'market-chart')
+    result = json.loads((output / 'results.json').read_text())
+    assert calls == ['reference', 'candidate', 'candidate', 'reference']
+    assert [(r['variant'], r['pair']) for r in result['runs']] == [('candidate', 0), ('candidate', 1), ('reference', 1)]
+    failure, = result['failures']
+    assert (failure['variant'], failure['surface'], failure['pair']) == ('reference', 'native', 0)
+    assert failure['market_chart']['server_events'] == [manual, *([automatic] * 24)]
+    assert failure['market_chart']['state'] == {'requested': '5Y'}

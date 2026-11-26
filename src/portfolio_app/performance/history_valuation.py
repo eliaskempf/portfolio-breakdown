@@ -142,6 +142,11 @@ class ValuationEvidence:
 
 
 def valuation_fx(observations, source, target, stamp):
+    value, rows = valuation_fx_quotes(observations, source, target, stamp)
+    return value, tuple(provenance(row, stamp) for row in rows)
+
+
+def valuation_fx_quotes(observations, source, target, stamp):
     """Dated closing FX, or the prior close across documented closed sessions.
 
     This is a daily valuation convention, not transaction conversion evidence.
@@ -163,10 +168,10 @@ def valuation_fx(observations, source, target, stamp):
             previous -= timedelta(days=1)
     if value is None:
         return None, ()
-    evidence = tuple(provenance(o, stamp) for o in observations.fx.get(as_of, ())
+    rows = tuple(o for o in observations.fx.get(as_of, ())
         if o.side == 'close' and ((o.currency, o.target) == (source, target)
                                  or (o.currency, o.target) == (target, source)))
-    return value, evidence
+    return value, rows
 
 
 def price_at(observations, subjects, stamp, *, events=(), contract=None):
@@ -181,15 +186,13 @@ def price_at(observations, subjects, stamp, *, events=(), contract=None):
         if exact:
             return exact
     for subject in subjects:
-        series = observations.price_series.get(subject, ())
         dates = observations.price_dates.get(subject, ())
         index = bisect_right(dates, stamp)-1
         if index < 0:
             continue
-        candidates = series[index]
-        if len(candidates) != 1:
+        previous = observations.closing_prices[subject][dates[index]]
+        if isinstance(previous, list):
             continue
-        previous = candidates[0]
         if contract is not None:
             from portfolio_app.derivatives.futures_sessions import closed_interval as futures_closed_interval
             if futures_closed_interval(contract, previous.date, stamp):

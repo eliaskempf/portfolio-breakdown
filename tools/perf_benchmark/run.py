@@ -22,6 +22,10 @@ from renderer import measure_view, wait
 
 def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False, company_accounts=False):
     trial.mkdir()
+    if scenario == 'correction':
+        from portfolio_app.performance.history_observations import load_observations
+        original, revision = load_observations(workspace)
+        holdings_before = (workspace / 'holdings.csv').read_bytes()
     if scenario == 'market-chart':
         markets = prepare_market_chart(workspace)
         (trial / 'market-chart.json').write_text(json.dumps(markets), encoding='utf-8')
@@ -89,11 +93,29 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
+    if scenario == 'correction':
+        corrected, changed = load_observations(workspace)
+        row = corrected.observations[-1]
+        previous = next((o for o in original.active if o.id == row.replaces), None)
+        backups = list((workspace / '.backups').glob('history-observations-*.json'))
+        saves = [event['ms'] for event in events if event['event'] == 'manual_save']
+        if (len(saves) != 1 or len(backups) != 1 or hashlib.sha256(backups[0].read_bytes()).hexdigest() != revision
+                or changed == revision or corrected.observations[:-1] != original.observations
+                or previous is None or row.key != previous.key or str(row.amount) != '237.12345'
+                or row.source != 'manual: invented' or row.listing != previous.listing
+                or row.calendar != previous.calendar or row.exchange_timezone != previous.exchange_timezone
+                or corrected.classifications != original.classifications or corrected.reviews != original.reviews
+                or (workspace / 'holdings.csv').read_bytes() != holdings_before):
+            raise AssertionError('Correction did not preserve the original history, provenance, holdings and backup')
+        report.update(save_ms=saves[0], observations=len(corrected.observations))
+        return report
     if scenario in {'cash-history', 'long-history'}:
         from dateutil.relativedelta import relativedelta
         settings = json.loads((workspace.parent / 'cash-history.json').read_bytes())
         start, end = (date.fromisoformat(settings[key]) for key in ('start', 'end'))
         long_history = scenario == 'long-history'
+        if long_history:
+            report['estimated_purchases'] = settings['estimated_purchases']
         for i, action in enumerate(report['actions']):
             action.pop('dispatch_ms')
             during = interval(action)
@@ -109,10 +131,39 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
             if len(points) != (end-first).days+1:
                 raise AssertionError(f'Incomplete cash-history range: {action["period"]}, {len(points)} closes')
             if long_history:
+                # The first visit may build the index and qualify its summary.
+                # Later ranges reuse that index. A cached chart needs no checks.
+                unknown = settings['unknown_fee_positions']
+                if any(chart['unknown_capital'] != bool(unknown) for chart in charts):
+                    raise AssertionError(f'{action["period"]}: unexpected capital coverage for {unknown} incomplete positions')
+                builds = sum(chart['gain_builds'] for chart in charts)
+                if unknown and builds > unknown * (settings['purchases'] + 2):
+                    raise AssertionError(f'{action["period"]}: {builds} recorded-gain builds for {unknown} incomplete positions')
+                action['recorded_gain_builds'] = builds
+                estimates = settings['estimated_purchases']
+                checks = sum(chart['estimate_checks'] for chart in charts)
+                if i == 0 and not checks:
+                    raise AssertionError('The cold chart did not exercise the estimated purchase probe')
+                if checks > estimates * (2 if i == 0 else 1):
+                    raise AssertionError(f'{action["period"]}: {checks} scope checks for {estimates} estimated purchases')
+                if any(not chart['estimated_gain'] for chart in charts):
+                    raise AssertionError(f'{action["period"]}: gain lost its estimate qualification')
+                action['estimated_purchase_checks'] = checks
                 closes = sum(e['closes'] for e in charts)
                 if i > 0 and closes > len(points) + 2:
                     raise AssertionError(f'{action["period"]} recalculated {closes} portfolio closes for {len(points)} dates')
                 action['portfolio_closes_calculated'] = closes
+                member_closes = sum(e['member_closes'] for e in charts)
+                # Allow individual opening and endpoint checks. A daily replay of
+                # each member grows with both chart length and portfolio size.
+                if member_closes > 4 * (settings['positions'] + settings['accounts']):
+                    raise AssertionError(f'{action["period"]} calculated {member_closes} individual member closes')
+                action['member_closes_calculated'] = member_closes
+                valuations = sum(e['valuations'] for e in charts)
+                fx_lookups = sum(e['fx_lookups'] for e in charts)
+                if fx_lookups > valuations * len(set(settings['quote_currencies']) | {'EUR'}):
+                    raise AssertionError(f'{action["period"]} performed {fx_lookups} FX lookups across {valuations} valuations')
+                action['fx_lookups'] = fx_lookups
             for offset, (stamp, actual) in enumerate(points):
                 day = first + timedelta(days=offset)
                 if stamp[:10] != day.isoformat():
@@ -123,10 +174,14 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                         raise AssertionError('The combined balance before the first cash opening must be unknown')
                     continue
                 balance = settings['accounts'] * (100 + (t//30 if long_history else t))
+                # Calculate the expected EUR balance independently from the app.
+                alternate = (t//30) % 2
+                rates = {'EUR': 1., 'USD': .90 if alternate else .80, 'GBP': 1/(.75 if alternate else .80)}
                 for index, close in enumerate(settings['closing_prices']):
                     stagger = index % 12 if long_history else 0
                     shares = 1 + max(0, (t-stagger)//30)
-                    balance += shares * (100 + (close-100) * t / (end-start).days)
+                    rate = rates[settings['quote_currencies'][index]] if long_history else 1.
+                    balance += shares * (100 + (close-100) * t / (end-start).days) * rate
                 if actual is None or not isclose(actual, balance, rel_tol=1e-12):
                     raise AssertionError(f'Incorrect cash-history close for {day}: {actual}, expected {balance}')
             action['closes'] = len(points)
@@ -342,16 +397,19 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                     checks.append(dict(surface=surface, scenario=scenario, **metrics))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 
-            for scenario in ('cash-history', 'long-history'):
+            for case in ('cash-history', 'long-history', 'long-history-missing-fees'):
+                missing_fees = case == 'long-history-missing-fees'
+                scenario = 'long-history' if missing_fees else case
                 with TemporaryDirectory(prefix='portfolio-cash-history-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
-                    create_workspace(workspace, profile, today=as_of, cash_history=True, long_history=scenario == 'long-history')
+                    create_workspace(workspace, profile, today=as_of, cash_history=True, long_history=scenario == 'long-history',
+                                     missing_fees=missing_fees)
                     metrics = benchmark(executable, workspace, Path(tmp) / 'trial', 'navigation', surface, scenario)
                     for action in metrics['actions']:
-                        key = (scenario, action['period'])
+                        key = (case, action['period'])
                         if action['digest'] != expected.setdefault(key, action['digest']):
                             raise AssertionError('Account-history series differed across ranges or renderers')
-                    result.setdefault(scenario.replace('-', '_'), []).append(dict(surface=surface, **metrics))
+                    result.setdefault(case.replace('-', '_'), []).append(dict(surface=surface, **metrics))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 
     rows = ['| Surface | Launch | Reuse | Launch to ready (ms) | First chart (ms) | Warm chart median / p95 (ms) |',
@@ -376,7 +434,16 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                     f"3M {quarter['chart_ms']:.0f} ms, repeat 1Y {repeat['chart_ms']:.0f} ms.\n")
     for check in result.get('long_history', []):
         actions = ', '.join(f"{a['period']} {a['chart_ms']:.0f}/{a['settled_ms']:.0f} ms" for a in check['actions'])
-        summary += f"\n{check['surface']} ten-year history paint/settle: {actions}.\n"
+        all_days = next(action for action in check['actions'] if action['period'] == 'All')
+        summary += (f"\n{check['surface']} ten-year history paint/settle: {actions}. "
+                    f"The All chart used {all_days['portfolio_closes_calculated']} whole-portfolio and "
+                    f"{all_days['member_closes_calculated']} single-member valuations with {all_days['fx_lookups']} "
+                    f"FX lookups and {all_days['estimated_purchase_checks']} scope checks on {check['estimated_purchases']} estimated purchases "
+                    f"for {all_days['closes']} dates.\n")
+    for check in result.get('long_history_missing_fees', []):
+        all_days = next(action for action in check['actions'] if action['period'] == 'All')
+        summary += (f"\n{check['surface']} ten-year All with four unknown purchase fees: "
+                    f"{all_days['chart_ms']:.0f} ms to chart, {all_days['recorded_gain_builds']} recorded-gain builds.\n")
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
@@ -442,6 +509,50 @@ def check_exposure(report, expected, surface, profile):
         dimension['digest'] = digest
 
 
+def check_comparison(report, expected, *, surface, name, profile, experiment):
+    if experiment == 'correction':
+        if report['digest'] != expected.setdefault('corrected_chart', report['digest']):
+            raise AssertionError('The chart after the correction differed across binaries or renderers')
+        print(surface, name, 'correction save / click to settled ms', round(report['save_ms']), round(report['settled_ms']), flush=True)
+    elif experiment == 'market-chart':
+        print(surface, name, 'market chart first and repeat paint ms',
+              [round(a['paint_ms']) for a in report['actions']], flush=True)
+    elif experiment == 'checklist':
+        for action in report['actions']:
+            if action['digest'] != expected.setdefault(surface, action['digest']):
+                raise AssertionError('Checklist cells or diagnostic tooltips differ across visits or binaries')
+        print(surface, name, 'first and repeat checklist paint ms',
+              [round(a['paint_ms']) for a in report['actions']], flush=True)
+    elif experiment == 'collection':
+        if report['digest'] != expected.setdefault(surface, report['digest']):
+            raise AssertionError('Collection policy changed displayed financial data')
+        print(surface, name, 'median settled ms', round(median(a['settled_ms'] for a in report['actions'])),
+              'server MiB', [round(b / 2**20) for b in report['server_resident_bytes']], flush=True)
+    elif experiment.startswith('risk'):
+        actions = report['actions']
+        if experiment == 'risk-stale' and name == 'candidate':
+            if actions[0]['digest'] == actions[1]['digest']:
+                raise AssertionError('Corrected history did not change the displayed risk matrix')
+            actions = actions[1:]
+        for action in actions:
+            sample = (action['metrics'], action['digest'])
+            if sample != expected.setdefault(surface, sample):
+                raise AssertionError('Risk metrics or correlations changed across actions or binaries')
+        print(surface, name, 'risk chart ms', [round(a['chart_ms']) for a in report['actions']], flush=True)
+    else:
+        check_exposure(report, expected, surface, profile)
+        print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
+              'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
+              'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
+        for visit in report['themes']:
+            if visit.get('show_tickers'):
+                print(surface, name, 'ticker-enabled sector paint / settled ms',
+                      round(visit['chart_ms']), round(visit['settled_ms']), flush=True)
+            for dimension in visit.get('dimensions', []):
+                print(surface, name, dimension['name'], 'paint / settled ms',
+                      round(dimension['chart_ms']), round(dimension['settled_ms']), flush=True)
+
+
 def run_comparison(candidate, reference, destination, surfaces, pairs, profile, experiment):
     destination.mkdir(parents=True, exist_ok=False)
     result = dict(experiment=experiment, profile=profile, platform=sys.platform, revision=os.environ.get('GITHUB_SHA'),
@@ -456,48 +567,30 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                 with TemporaryDirectory(prefix=experiment + '-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
                     create_workspace(workspace, profile, today=as_of, checklist=experiment == 'checklist',
-                                     large_risk_matrix=experiment == 'risk' and profile == 'mixed-history')
-                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, experiment,
-                                       themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
-                    if experiment == 'market-chart':
-                        print(surface, name, 'market chart first and repeat paint ms',
-                              [round(a['paint_ms']) for a in report['actions']], flush=True)
-                    elif experiment == 'checklist':
-                        for action in report['actions']:
-                            if action['digest'] != expected.setdefault(surface, action['digest']):
-                                raise AssertionError('Checklist cells or diagnostic tooltips differ across visits or binaries')
-                        print(surface, name, 'first and repeat checklist paint ms',
-                              [round(a['paint_ms']) for a in report['actions']], flush=True)
-                    elif experiment == 'collection':
-                        if report['digest'] != expected.setdefault(surface, report['digest']):
-                            raise AssertionError('Collection policy changed displayed financial data')
-                        print(surface, name, 'median settled ms', round(median(a['settled_ms'] for a in report['actions'])),
-                              'server MiB', [round(b / 2**20) for b in report['server_resident_bytes']], flush=True)
-                    elif experiment.startswith('risk'):
-                        actions = report['actions']
-                        if experiment == 'risk-stale' and name == 'candidate':
-                            if actions[0]['digest'] == actions[1]['digest']:
-                                raise AssertionError('Corrected history did not change the displayed risk matrix')
-                            actions = actions[1:]
-                        for action in actions:
-                            sample = (action['metrics'], action['digest'])
-                            if sample != expected.setdefault(surface, sample):
-                                raise AssertionError('Risk metrics or correlations changed across actions or binaries')
-                        print(surface, name, 'risk chart ms', [round(a['chart_ms']) for a in report['actions']], flush=True)
+                                     large_risk_matrix=experiment == 'risk' and profile == 'mixed-history',
+                                     long_history=experiment == 'correction')
+                    trial = Path(tmp) / 'trial'
+                    identity = dict(variant=name, surface=surface, pair=pair)
+                    print('Starting', experiment, surface, name, 'pair', pair + 1, flush=True)
+                    try:
+                        report = benchmark(exe, workspace, trial, name, surface, experiment,
+                                           themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
+                        trial_expected = expected.copy()
+                        check_comparison(report, trial_expected, surface=surface, name=name,
+                                         profile=profile, experiment=experiment)
+                    except Exception as error:
+                        failure = dict(**identity, error=str(error))
+                        detail = trial / 'market-chart-failure.json'
+                        if detail.is_file():
+                            failure['market_chart'] = json.loads(detail.read_text(encoding='utf-8'))
+                        result.setdefault('failures', []).append(failure)
+                        print('Failed', experiment, surface, name, 'pair', pair + 1, str(error), flush=True)
                     else:
-                        check_exposure(report, expected, surface, profile)
-                        print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
-                              'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
-                              'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
-                        for visit in report['themes']:
-                            if visit.get('show_tickers'):
-                                print(surface, name, 'ticker-enabled sector paint / settled ms',
-                                      round(visit['chart_ms']), round(visit['settled_ms']), flush=True)
-                            for dimension in visit.get('dimensions', []):
-                                print(surface, name, dimension['name'], 'paint / settled ms',
-                                      round(dimension['chart_ms']), round(dimension['settled_ms']), flush=True)
-                    result['runs'].append(dict(variant=name, surface=surface, pair=pair, **report))
+                        expected = trial_expected
+                        result['runs'].append(dict(**identity, **report))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+    if result.get('failures'):
+        raise RuntimeError(f"{len(result['failures'])} comparison trial(s) failed; see {destination / 'results.json'}")
 
 
 if __name__ == '__main__':
@@ -506,7 +599,7 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection', 'checklist', 'market-chart'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection', 'checklist', 'market-chart', 'correction'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for a paired comparison')
     options = parser.parse_args()
@@ -516,7 +609,7 @@ if __name__ == '__main__':
             parser.error('The collection benchmark exercises the ETF look-through company grid')
         run_comparison(options.executable.resolve(), options.executable.resolve(), options.output.resolve(), surfaces,
                        options.pairs, options.profile, options.experiment)
-    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale', 'checklist', 'market-chart'}:
+    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale', 'checklist', 'market-chart', 'correction'}:
         if not options.reference:
             parser.error('A paired binary comparison requires --reference')
         if (options.experiment.startswith('risk') or options.experiment == 'market-chart') and options.profile == 'small':

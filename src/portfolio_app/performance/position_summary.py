@@ -7,25 +7,28 @@ from portfolio_app.interface.shared.currency_display import money, reporting_cur
 from portfolio_app.interface.shared.number_format import return_metric
 
 
-def render_position_summary(row, directory, journal, *, has_history, demo=False):
+def render_position_summary(row, directory, journal, *, has_history, input_revisions=None, demo=False, is_active=None):
     from portfolio_app.interface.views.history.history_ui import prepared_history_view, prepared_history_calculation
-    from portfolio_app.performance.history_observations import HistoryScope, load_observations
+    from portfolio_app.performance.history_observations import FILE, HistoryScope
+    from portfolio_app.interface.shared.input_cache import file_stamp, observation_snapshot
     from portfolio_app.performance.personal_history_refresh import refresher
     from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates
     scope = HistoryScope((row.position_id,))
     target = reporting_currency()
+    journal_revision = input_revisions[1] if input_revisions else None
     if has_history and not demo:
-        refresher.request(directory, journal, scope, target)
+        from portfolio_app.interface.views.history.history_ui import prepared_history_fingerprint
+        refresher.request(directory, journal, scope, target, input_revisions=input_revisions,
+                          fingerprint=prepared_history_fingerprint(directory, journal, journal_revision))
+
     from portfolio_app.performance.performance import is_cash_balance
     balance_only = not has_history and is_cash_balance(row)
-    cached, signature = None, None
 
-    # A retry can begin inside the chart after this region has mounted. Keep
-    # watching evidence revisions so completion also updates headlines in Price.
-    @st.fragment(run_every=2 if has_history and not demo else None)
+    @st.fragment
     @local_dialog_updates()
     def summary():
-        nonlocal cached, signature
+        if is_active is not None and not is_active():
+            return
         # The row is the current valuation; the chart never supplies a different
         # position value just because the user switches mode, range or hover.
         value = row.get('current_value_reporting')
@@ -44,17 +47,14 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
         if has_history:
             from portfolio_app.performance.gain_accounting import summarize_known_gain, amount
             from portfolio_app.interface.views.history.history_data_ui import brief_reasons, readable_reasons
-            from portfolio_app.interface.shared.input_cache import file_stamp
-            current = file_stamp(directory/'history-observations.json'), date.today()
-            if current != signature:
-                observations, revision = load_observations(directory)
-                calculation = prepared_history_calculation(directory, journal, observations, revision, target=target)
-                view = prepared_history_view(directory, journal, scope, observations, revision, 'All',
-                    target=target, include_points=False, calculation=calculation)
-                known = summarize_known_gain(journal, scope, observations, date.today().isoformat(), target,
-                    current_values={row.position_id: amount(value)}, summary_rows=row.to_frame().T, calculation=calculation)
-                cached, signature = (view, known, observations, revision, calculation.observations), current
-            view, known, observations, revision, indexed = cached
+            stamp, today = file_stamp(directory / FILE), date.today()
+            observations, revision = observation_snapshot(directory)
+            calculation = prepared_history_calculation(directory, journal, observations, revision, target=target,
+                                                       journal_revision=journal_revision)
+            view = prepared_history_view(directory, journal, scope, observations, revision, 'All',
+                target=target, include_points=False, calculation=calculation)
+            known = summarize_known_gain(journal, scope, observations, today.isoformat(), target,
+                current_values={row.position_id: amount(value)}, summary_rows=row.to_frame().T, calculation=calculation)
             gain, capital = known.amount, known.capital
             gain_note = known.coverage_note if known.partial and known.coverage_note != 'Estimated gain' else ''
             gain_help = known.coverage_help
@@ -88,5 +88,33 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
                 from portfolio_app.interface.views.history.history_data_ui import render_return_inputs
                 with third:
                     render_return_inputs(directory, journal, scope, observations, revision,
-                                         full.money_weighted_reasons, 'position_edit_return_'+row.position_id+'_', indexed=indexed)
+                                         full.money_weighted_reasons, 'position_edit_return_'+row.position_id+'_', indexed=calculation.observations)
+
+        if has_history and not demo:
+            _watch_summary_evidence(directory, stamp, revision, today, is_active)
     summary()
+
+
+def _watch_summary_evidence(directory, stamp, revision, today, is_active):
+    from portfolio_app.interface.shared.background_ui import status_fragment
+    from portfolio_app.interface.shared.dialog_runtime import local_fragment_updates
+    from portfolio_app.interface.shared.input_cache import file_stamp, observation_snapshot
+    from portfolio_app.performance.history_observations import FILE
+
+    # A retry or an external correction can finish while Price is open.
+    # Keeping the watcher separate lets unchanged polls leave all three cards in place.
+    @status_fragment(run_every=2)
+    @local_fragment_updates()
+    def watch(poll):
+        nonlocal stamp
+        if is_active is not None and not is_active():
+            poll(None)
+            return
+        if date.today() != today:
+            st.rerun()
+        current = file_stamp(directory / FILE)
+        if current != stamp:
+            if observation_snapshot(directory)[1] != revision:
+                st.rerun()
+            stamp = current
+    watch()

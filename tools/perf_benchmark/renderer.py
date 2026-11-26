@@ -130,6 +130,49 @@ def exercise_cash_history(evaluate, trial, *, long_history=False):
     return dict(ready_at=ready_at, actions=actions)
 
 
+def exercise_correction(evaluate, trial):
+    ready_at, _ = await_allocation(evaluate)
+    interact(evaluate, 'Performance', trial)
+    def read(script):
+        return evaluate('(() => {' + CONTEXT + script + '})()')
+
+    wait(lambda: read("""
+        const control = [...d.querySelectorAll('summary')].find(e => visible(e) && e.textContent.includes('Correct market data'));
+        if (!control) return false;
+        control.click(); return true;
+    """))
+    selector = "const box = d.querySelector('[class*=data_action] [role=combobox]');"
+    button = "const save = [...d.querySelectorAll('button')].find(e => visible(e) && e.textContent.trim() === 'Replace saved value');"
+    wait(lambda: read(selector + "return visible(box) && !running();"))
+    if not read(button + 'return !!save;'):
+        read(selector + """box.focus();
+            box.dispatchEvent(new w.KeyboardEvent('keydown', {key:'ArrowDown', code:'ArrowDown', bubbles:true})); return true;""")
+        wait(lambda: read("""const option = [...d.querySelectorAll('[role=option]')].find(e => visible(e) && e.textContent.trim() === 'Correct a price');
+            if (!option) return false;
+            option.click(); return true;"""))
+    wait(lambda: read(button + """
+        const input = d.querySelector('input[aria-label^="Price ("]');
+        return !!save && visible(input) && input.value === '237.12345' && !running();
+    """))
+    read(button + """
+        if (!save) throw Error('Correction button disappeared');
+        w.correctionStart = w.performance.now();
+        save.click(); return true;
+    """)
+    def settled():
+        state = read("""
+            if (exception()) return {error:d.querySelector('[data-testid=stException]').textContent};
+            const saved = [...d.querySelectorAll('[data-testid=stCaptionContainer]')].some(e =>
+                visible(e) && e.textContent.includes('Saved:') && e.textContent.includes('237.12'));
+            return saved && !running() ? {ms:w.performance.now() - w.correctionStart} : null;
+        """)
+        if state and 'error' in state:
+            raise RuntimeError(state['error'])
+        return state
+    duration = wait(settled, timeout=120)['ms']
+    return dict(ready_at=ready_at, settled_ms=duration, digest=chart_digest(evaluate))
+
+
 def exercise_purchase_fx(evaluate, trial):
     ready_at, _ = await_allocation(evaluate)
     wait(lambda: (trial / 'fx-pending').exists())
@@ -443,6 +486,14 @@ TABLE_CONTEXT = CONTEXT + """
 """
 
 
+def market_chart_failure(trial, start_event, action):
+    lines = (trial / 'server.jsonl').read_bytes().split(b'\n')[start_event:-1]
+    events = [json.loads(line) for line in lines]
+    detail = dict(**action, server_events=events)
+    (trial / 'market-chart-failure.json').write_text(json.dumps(detail), encoding='utf-8')
+    return RuntimeError(f"{action['error']}: {json.dumps(action['state'])}")
+
+
 def exercise_market_chart(evaluate, trial):
     """Click through saved price ranges and verify every plotted trading date and close."""
     fixture = json.loads((trial / 'market-chart.json').read_text())
@@ -517,21 +568,19 @@ def exercise_market_chart(evaluate, trial):
                 if (exception() || elapsed > 45000) {
                     const selected = [...(dialog()?.querySelectorAll('[aria-label="Period"] [aria-checked="true"]') ?? [])].find(visible);
                     const plots = [...(dialog()?.querySelectorAll(plotSelector) ?? [])];
-                    w.marketChartVisit = {error:'Saved market chart did not settle: '+JSON.stringify({
+                    w.marketChartVisit = {error:'Saved market chart did not settle', state:{
                         visit:c.visit, requested:c.label, selected:selected?.textContent?.trim(), running:activeRun, sawRunning, exception:exception(),
                         plots:plots.map(el => ({visible:visible(el), points:el.data?.[0]?.x?.length})),
                         expectedPoints:c.points, tracePoints:trace?.x?.length, renderedPoints:plot?.calcdata?.[0]?.length,
                         line:!!line?.getAttribute('d'), currency:plot?.layout?.yaxis?.tickprefix,
                         lastDate:trace?.x?.at(-1), stale:!!plot?.closest('[data-stale=true]'), paint
-                    })};
+                    }};
                 } else w.requestAnimationFrame(frame);
             }
             w.requestAnimationFrame(frame); return true;""")
         action = wait(lambda: read("return w.marketChartVisit;"), timeout=50)
         if 'error' in action:
-            events = (trial / 'server.jsonl').read_bytes().splitlines()[start_event:]
-            server = [json.loads(line) for line in events]
-            raise RuntimeError(f"{action['error']}; server events since click: {server[-20:]}")
+            raise market_chart_failure(trial, start_event, action)
         action['event_range'] = [start_event, event_count(trial)]
         actions.append(action)
     return dict(ready_at=ready_at, actions=actions)
@@ -941,6 +990,8 @@ def exercise_collection(evaluate, trial):
 def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
     if scenario in {'cash-history', 'long-history'}:
         return exercise_cash_history(evaluate, trial, long_history=scenario == 'long-history')
+    if scenario == 'correction':
+        return exercise_correction(evaluate, trial)
     if scenario == 'purchase-fx':
         return exercise_purchase_fx(evaluate, trial)
     if scenario == 'market-chart':

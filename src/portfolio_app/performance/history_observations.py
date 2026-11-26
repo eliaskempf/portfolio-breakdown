@@ -1,10 +1,14 @@
 """Versioned dated valuation evidence and coverage attestations, never cash posts."""
-from dataclasses import asdict, dataclass, field, replace
+from collections import OrderedDict
+from dataclasses import asdict, dataclass, field, fields, replace
 from decimal import Decimal
 from hashlib import sha256
 from functools import cached_property, lru_cache
+from io import StringIO
 import json
+from operator import attrgetter
 from pathlib import Path
+import sys
 from threading import Lock
 from weakref import WeakValueDictionary
 
@@ -161,19 +165,26 @@ class _ObservationIndex:
     def __init__(self, store):
         self.observations, self.reviews, self.classifications = store.observations, store.reviews, store.classifications
         self.active = active_observations(store)
-        self.values, self.fx = {}, {}
-        prices = {}
+        self.closing_prices, self.values, self.fx = {}, {}, {}
         for observation in self.active:
+            if observation.kind == 'price' and observation.side == 'close':
+                series = self.closing_prices.setdefault(observation.subject, {})
+                # Most dates have one close. Allocate a group only when another
+                # active row competes for the same subject and date.
+                previous = series.get(observation.date)
+                if previous is None:
+                    series[observation.date] = observation
+                elif isinstance(previous, list):
+                    previous.append(observation)
+                else:
+                    series[observation.date] = [previous, observation]
+                continue
             key = observation.kind, observation.subject, observation.date, observation.side, observation.boundary
             self.values.setdefault(key, []).append(observation)
-            if observation.kind == 'price' and observation.side == 'close':
-                prices.setdefault(observation.subject, {}).setdefault(observation.date, []).append(observation)
             if observation.kind == 'fx':
                 self.fx.setdefault(observation.date, []).append(observation)
 
-        self.price_dates = {subject: tuple(sorted(series)) for subject, series in prices.items()}
-        self.price_series = {subject: tuple(series[stamp] for stamp in self.price_dates[subject])
-                             for subject, series in prices.items()}
+        self.price_dates = {subject: tuple(sorted(series)) for subject, series in self.closing_prices.items()}
 
     @cached_property
     def scope_rows(self):
@@ -201,17 +212,59 @@ def index_observations(store):
     return store if isinstance(store, _ObservationIndex) else store.index
 
 
-def from_dict(raw):
+def from_dict(raw, *, previous=()):
+    rows = raw.get('observations', ())
+    if previous:
+        # The local calendar can move backwards between loading and saving.
+        validate_day = lru_cache(maxsize=4096)(day)
+        validated = tuple(_saved_observation(row, cached, validate_day) for row, cached in zip(rows, previous))
+        observations = validated + tuple(Observation(**row) for row in rows[len(validated):])
+    else:
+        observations = tuple(Observation(**row) for row in rows)
     return ObservationStore(
-        tuple(Observation(**o) for o in raw.get('observations', ())),
+        observations,
         tuple(CoverageReview(**{**r, 'scope': HistoryScope(**r['scope'])}) for r in raw.get('reviews', ())),
         tuple(raw.get('classifications', ())), raw['version'])
 
 
-@lru_cache(maxsize=2)
-def _observations_from_bytes(content):
-    """Exact-version parse reuse; all loaded fields are immutable value objects."""
-    return from_dict(json.loads(content))
+_parsed_stores = OrderedDict()
+_parsed_stores_lock = Lock()
+
+
+def _decode_observations(content, *, previous=()):
+    # JSON shares object keys, but each close otherwise owns new copies of its
+    # subject, date, currency and provenance. Keep the pool local to this read.
+    @lru_cache(maxsize=8192)
+    def shared_text(value):
+        return value
+
+    def share_row_text(row):
+        if 'kind' in row:
+            for name in ('kind', 'subject', 'date', 'currency', 'target', 'side', 'source', 'basis',
+                         'listing', 'calendar', 'exchange_timezone'):
+                value = row.get(name)
+                if isinstance(value, str) and value:
+                    row[name] = shared_text(value)
+        return row
+
+    raw = json.loads(content, object_hook=share_row_text)
+    return from_dict(raw, previous=previous) if previous else from_dict(raw)
+
+
+def _store_for_revision(revision, load):
+    """Retain two validated snapshots by the SHA-256 of their file bytes."""
+    with _build_lock(revision):
+        with _parsed_stores_lock:
+            if revision in _parsed_stores:
+                _parsed_stores.move_to_end(revision)
+                return _parsed_stores[revision]
+        store = load()
+        with _parsed_stores_lock:
+            _parsed_stores[revision] = store
+            evicted = _parsed_stores.popitem(last=False) if len(_parsed_stores) > 2 else None
+    # Releasing the last reference may tear down a large store and its indices.
+    del evicted
+    return store
 
 
 def load_observations(directory):
@@ -221,16 +274,76 @@ def load_observations(directory):
     try:
         content = path.read_bytes()
         revision = sha256(content).hexdigest()
-        with _build_lock(revision):
-            return _observations_from_bytes(content), revision
+        return _store_for_revision(revision, lambda: _decode_observations(content)), revision
     except (ValueError, TypeError, KeyError, OSError) as exc:
         raise DataError(f'Invalid historical observations; file retained: {exc}') from exc
 
 
+_observation_fields = tuple(field.name for field in fields(Observation))
+_observation_values = attrgetter(*_observation_fields)
+_scalar_field_types = frozenset({str, Decimal})
+_text_types = frozenset({str})
+
+
+def _observation_record(row):
+    if type(row) is Observation:
+        values = _observation_values(row)
+        if _scalar_field_types.issuperset(map(type, values)):
+            return dict(zip(_observation_fields, values))
+    # Preserve recursive dataclass conversion for legacy or extended records.
+    return asdict(row)
+
+
+def _observation_records(store):
+    if type(store) is ObservationStore and store.observations:
+        document = asdict(replace(store, observations=()))
+        document['observations'] = [_observation_record(row) for row in store.observations]
+        return document
+    return asdict(store)
+
+
+def _observation_document(store):
+    encoder = json.JSONEncoder(default=str, indent=2, allow_nan=False)
+    if sys.version_info >= (3, 13):
+        # The accelerated encoder gained indentation support in CPython 3.13.
+        return encoder.encode(_observation_records(store)) + '\n'
+    # On 3.12 encode() collects millions of small indentation tokens before
+    # joining them. Accumulate the same tokens directly in a text buffer.
+    with StringIO() as output:
+        output.writelines(encoder.iterencode(_observation_records(store)))
+        output.write('\n')
+        return output.getvalue()
+
+
+def _saved_observation(raw, cached, validate_day):
+    # Compare against the actual JSON read back from the encoder. Only ordinary
+    # immutable rows can be shared. Decimal bounds depend on the active context.
+    if type(cached) is Observation and type(raw) is dict and _text_types.issuperset(map(type, raw.values())):
+        if raw == (vars(cached) | {'amount': str(cached.amount)}):
+            validate_day(raw['date'])
+            decimal(raw['amount'], 'Observation')
+            return cached
+    return Observation(**raw)
+
+
+def _validated_update(content, store, expected_revision):
+    with _parsed_stores_lock:
+        prior = _parsed_stores.get(expected_revision)
+    if (type(store) is ObservationStore and prior is not None and prior.observations
+            and len(store.observations) >= len(prior.observations)
+            and all(saved is current for saved, current in zip(prior.observations, store.observations))):
+        return _decode_observations(content, previous=prior.observations)
+    return _decode_observations(content)
+
+
 def save_observations(directory, store, expected_revision):
-    content = json.dumps(asdict(store), default=str, indent=2, allow_nan=False) + '\n'
-    from_dict(json.loads(content))
+    content = _observation_document(store)
+    validated = _validated_update(content, store, expected_revision)
+    revision = sha256(content.encode('utf-8')).hexdigest()
     save_document(Path(directory) / FILE, content, expected_revision)
+    # Publish only after the guarded write succeeds. Readers of a different
+    # file version continue to use the revision of the bytes they actually read.
+    _store_for_revision(revision, lambda: validated)
 
 
 def add_observation(store, observation):
@@ -257,12 +370,28 @@ def rate(store, source, target, stamp, *, side=None):
 
 
 def lookup(store, kind, subject, stamp, *, side='close', boundary='', currency=None):
-    values = (store.values.get((kind, subject, stamp, side, boundary), ()) if isinstance(store, _ObservationIndex)
-              else active_observations(store))
-    matches = [o for o in values if o.kind == kind and o.subject == subject
-               and o.date == stamp and o.side == side and o.boundary == boundary
-               and (currency is None or o.currency == currency)]
-    return matches[0] if len(matches) == 1 else None
+    index = store if isinstance(store, _ObservationIndex) else vars(store).get('index')
+    if index is None:
+        # A single manual correction or supplied valuation need not index the entire history.
+        matches = [o for o in active_observations(store) if o.kind == kind and o.subject == subject
+                   and o.date == stamp and o.side == side and o.boundary == boundary
+                   and (currency is None or o.currency == currency)]
+        return matches[0] if len(matches) == 1 else None
+    if kind == 'price' and side == 'close':
+        series = index.closing_prices.get(subject)
+        values = series.get(stamp, ()) if series is not None else ()
+    else:
+        values = index.values.get((kind, subject, stamp, side, boundary), ())
+    if isinstance(values, Observation):
+        row = values
+    elif len(values) == 1:
+        row = values[0]
+    elif not values:
+        return None
+    else:
+        matches = [o for o in values if o.boundary == boundary and (currency is None or o.currency == currency)]
+        return matches[0] if len(matches) == 1 else None
+    return row if row.boundary == boundary and (currency is None or row.currency == currency) else None
 
 
 class ObservationFX:

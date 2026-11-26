@@ -133,7 +133,8 @@ def test_archive_revision_bypasses_success_cooldown(tmp_path, jobs, monkeypatch)
     assert not store.reviews
 
 
-def test_journal_change_during_download_is_not_merged(tmp_path, jobs):
+@pytest.mark.parametrize('captured_revisions', [False, True])
+def test_journal_change_during_download_is_not_merged(tmp_path, jobs, captured_revisions):
     journal, scope = setup(tmp_path)
     save_journal(tmp_path, journal, None)
     started, release = Event(), Event()
@@ -142,8 +143,14 @@ def test_journal_change_during_download_is_not_merged(tmp_path, jobs):
         assert release.wait(3)
         return ObservationStore((observation(),)), []
     refresh = HistoryRefresher(jobs, download=download)
+    options = {}
+    if captured_revisions:
+        from portfolio_app.ledger.security_history import history_fingerprint
+        from portfolio_app.portfolio.positions import read_snapshot
+        options = dict(input_revisions=(read_snapshot(tmp_path / 'holdings.csv').revision, load_journal(tmp_path)[1]),
+                       fingerprint=history_fingerprint(journal))
     try:
-        refresh.request(tmp_path, journal, scope, 'EUR')
+        refresh.request(tmp_path, journal, scope, 'EUR', **options)
         assert started.wait(1)
         _, revision = load_journal(tmp_path)
         save_journal(tmp_path, replace(journal, securities=()), revision)

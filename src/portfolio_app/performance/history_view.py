@@ -7,7 +7,7 @@ from datetime import date
 from portfolio_app.performance.history_observations import index_observations
 from portfolio_app.performance.personal_performance import PersonalPerformance, HistoryCalculation, calculate_history, known_negative_equity_dates
 from portfolio_app.performance.history_twr import chart_returns
-from portfolio_app.performance.gain_accounting import GainSummary, summarize_known_gain
+from portfolio_app.performance.gain_accounting import GainSummary, chart_gain_amounts, summarize_known_gain
 
 PERIODS = ('1M', '3M', '6M', 'YTD', '1Y', '3Y', '5Y', 'All')
 
@@ -66,10 +66,14 @@ def _period_result(calculation, scope, target, dates, start, end, negative_dates
     return result
 
 
-def _requires_full_valuation_scan(scope, recorded):
-    # Accounts can turn negative between flows. Reciprocal FX quotes can
-    # conflict on an intermediate closing date, including outside a chart window.
-    return bool(scope.accounts) or recorded.requires_fx_validation
+def _requires_full_valuation_scan(calculation, scope, recorded, last, target):
+    if recorded.requires_fx_validation or not scope.accounts:
+        return recorded.requires_fx_validation
+    # A supplied scope close or an unresolved scope can bypass the account
+    # ledger entirely. Preserve that ordering when deciding which dates to read.
+    if scope.unresolved or ('value', scope.key) in calculation.observations.scope_rows:
+        return True
+    return calculation.accounts_need_daily_marks(scope.accounts, last, target)
 
 
 @dataclass(frozen=True)
@@ -82,24 +86,24 @@ class _ValidatedDates:
 def _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
                  *, annualized, coverage, valuations=None, extra=None, retain_for_chart=False):
     def value(day):
-        return valuations[day] if valuations is not None else calculation.value(scope, day, target)
+        return valuations[day] if valuations is not None else calculation.close(scope, day, target)
 
     new_coverage = None
-    needs_scan = _requires_full_valuation_scan(scope, recorded)
-    if needs_scan and coverage is None and valuations is None:
-        valuations = {day: calculation.value(scope, day, target) for day in stamps}
+    if (coverage is None and valuations is None
+            and _requires_full_valuation_scan(calculation, scope, recorded, last, target)):
+        valuations = {day: calculation.close(scope, day, target) for day in stamps}
     if coverage is not None:
         negative = coverage.negative_dates
     elif valuations is not None:
         negative = calculation._get(('negative_equity_dates', scope, beginning, last, target), lambda:
             known_negative_equity_dates(calculation.journal, scope, calculation.observations, beginning, last,
                                         target, valuations=valuations, calculation=calculation))
-        if retain_for_chart and needs_scan:
+        if retain_for_chart and (scope.accounts or recorded.requires_fx_validation):
             # A window boundary without a recorded close is specific to this range.
             supported = [day for day in stamps if day != extra and value(day).amount is not None]
             new_coverage = coverage = _ValidatedDates(supported[-1] if supported else '', len(supported), negative)
     else:
-        # Long-only securities with positive prices need only explicit negative scope marks.
+        # With nonnegative components, only supplied scope marks can show negative equity.
         negative = tuple(sorted(day for day in recorded.negative_equity_dates if beginning <= day <= last))
     if coverage is None:
         end = next((day for day in reversed(stamps) if value(day).amount is not None), last)
@@ -143,13 +147,44 @@ def full_history_summary(calculation, scope, today, target):
     """Return the checklist metrics and whether two distinct dates have supported valuations."""
     start, end, result, stamps = _full_interval(calculation, scope, today, target, annualized=True)
     useful = result.ending_value is not None and any(
-        calculation.value(scope, day, target).amount is not None for day in reversed(stamps) if day < end)
+        calculation.close(scope, day, target).amount is not None for day in reversed(stamps) if day < end)
     return HistorySummary(start, end, result, useful)
+
+
+def _chart_valuations(calculation, scope, target, stamps, beginning, first, last, *, full_scan, include_points):
+    days = (day for day in stamps if full_scan or day >= first)
+    # Missing opening capital makes each plotted gain depend on individually
+    # supported members. A complete portfolio close already valued every member.
+    collect = (include_points and not scope.unresolved and len(scope.positions) + len(scope.accounts) > 1
+               and calculation.capital(scope, beginning, target).amount is None)
+    if not collect:
+        return {day: calculation.close(scope, day, target) for day in days}, {}, None
+
+    valuations, gains, last_members = {}, {}, None
+    for day in days:
+        members = ()
+        cached = calculation._chart_gains.get((scope, day, target))
+        if not first <= day <= last or cached is not None:
+            valuations[day] = calculation.close(scope, day, target)
+            if cached is not None and first <= day <= last:
+                gains[day] = cached  # A very long chart can evict this before rendering the point.
+        else:
+            valuations[day], members = calculation.close_with_members(scope, day, target)
+        # Only a later supported close establishes that the previous one needs
+        # chart amounts. The final supported close supplies the detailed summary.
+        if last_members is not None and valuations[day].amount is not None:
+            prior, subtotals = last_members
+            calculation.retain_value(scope, prior, target, valuations[prior])
+            gains[prior] = chart_gain_amounts(calculation, scope, prior, target, member_closes=subtotals)
+            last_members = None
+        if members:
+            last_members = day, members
+    return valuations, gains, last_members
 
 
 def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None, annualized=True, period_annualized=True):
     calculation = calculation or HistoryCalculation(journal, index_observations(observations))
-    observations = calculation.observations
+    journal, observations = calculation.journal, calculation.observations
     today = today or date.today()
     dates = calculation.event_dates(scope)
     earliest = date.fromisoformat(min(dates)) if dates else today
@@ -159,8 +194,10 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     beginning = earliest.isoformat()
     stamps, extra = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last)
     coverage = calculation._validated_history_dates.get((scope, target, beginning, last))
-    full_scan = first <= beginning or (_requires_full_valuation_scan(scope, recorded) and coverage is None)
-    valuations = {stamp: calculation.value(scope, stamp, target) for stamp in stamps if full_scan or stamp >= first}
+    full_scan = first <= beginning or (coverage is None
+        and _requires_full_valuation_scan(calculation, scope, recorded, last, target))
+    valuations, projected_gains, last_members = _chart_valuations(calculation, scope, target, stamps, beginning,
+        first, last, full_scan=full_scan, include_points=include_points)
     values = {stamp: valuation.amount for stamp, valuation in valuations.items()}
     available = [stamp for stamp, value in values.items() if value is not None]
     all_start = beginning
@@ -171,14 +208,19 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     if validated_useful is None and not useful and not full_scan and all_result.ending_value is not None:
         # The last supported endpoint is known; an earlier close can establish
         # chart availability even when the visible window is entirely empty.
-        useful = any(calculation.value(scope, day, target).amount is not None
+        useful = any(calculation.close(scope, day, target).amount is not None
                      for day in reversed(stamps) if day < min(first, all_end))
-    def known_gain(day):
-        if day in valuations:
-            calculation.retain_value(scope, day, target, valuations[day])
-        return summarize_known_gain(journal, scope, observations, day, target, calculation=calculation)
+    def gain_point(day):
+        if day in projected_gains:
+            return projected_gains.pop(day)
+        calculation.retain_value(scope, day, target, valuations[day])
+        return chart_gain_amounts(calculation, scope, day, target)
 
-    all_known = known_gain(all_end)
+    if all_end in valuations:
+        calculation.retain_value(scope, all_end, target, valuations[all_end])
+    members = last_members[1] if last_members is not None and last_members[0] == all_end else None
+    all_known = summarize_known_gain(journal, scope, observations, all_end, target,
+                                     calculation=calculation, _member_closes=members)
     window = [stamp for stamp in available if first <= stamp <= last]
     start,end = (window[0],window[-1]) if window else (first,last)
     if first <= all_start:
@@ -205,13 +247,16 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
                     and all_result.net_contributions is not None and not missing else None)
         gain = values[stamp] - invested if values[stamp] is not None and invested is not None else None
         if invested is None:
-            known = all_known if stamp == all_end else known_gain(stamp)
-            invested, gain = known.capital, known.amount
+            if stamp == all_end:
+                invested, gain = all_known.capital, all_known.amount
+            else:
+                invested, gain = calculation._get((scope, stamp, target), lambda: gain_point(stamp),
+                                                  cache=calculation._chart_gains)
         points.append({'Date':stamp, 'Value':float(values[stamp]) if values[stamp] is not None else None,
             'Invested capital':float(invested) if invested is not None else None,
             'Total gain':float(gain) if gain is not None else None,
-            'Price as of': ', '.join(sorted({e.as_of for e in valuations[stamp].evidence if e.kind == 'price' and e.as_of != stamp})),
-            'FX as of': ', '.join(sorted({e.as_of for e in valuations[stamp].evidence if e.kind == 'fx' and e.as_of != stamp})),
+            'Price as of': ', '.join(valuations[stamp].carried_dates('price', stamp)),
+            'FX as of': ', '.join(valuations[stamp].carried_dates('fx', stamp)),
             'TWR':returns.get(stamp)})
     # Rendering may join neighbors; missing observations stay missing in math.
     gaps = tuple((stamp,valuations[stamp].reasons) for stamp in stamps if start <= stamp <= end and values[stamp] is None)

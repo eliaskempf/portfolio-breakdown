@@ -125,21 +125,24 @@ def test_saved_csv_enables_returns_without_inventing_market_inputs(tmp_path):
     assert missing.ending_value is None and missing.time_weighted is None
 
 
-def test_price_only_closes_share_capital_until_a_mapped_receipt_changes_coverage(monkeypatch):
+@pytest.mark.parametrize('account_only', [False, True])
+def test_price_only_closes_share_capital_until_a_mapped_receipt_changes_coverage(monkeypatch, account_only):
     from portfolio_app.performance import personal_performance as history
     from portfolio_app.ingestion.transaction_csv import ImportReceipt
     from test_daily_twr import example, trade, START
     prices = [(f'2024-01-{day:02}', 100 + day) for day in range(1, 9)]
-    journal, scope, store = example((trade('buy', 'buy', '2024-01-02', 100),), prices=prices)
+    journal, scope, store = example((trade('buy', 'buy', '2024-01-02', 100),), prices=prices, account=account_only)
     row = normalize(dict(schema_version='2', source_id='invented-coverage', event_id='pending',
         timestamp_utc='2024-01-05T10:00:00Z', event_type='buy', account_id='Invented', asset_id='STOCK',
         quantity='1', gross_amount='10', currency='EUR', fee_amount='0'))
     receipt = ImportReceipt(row.identity, row.raw, row.facts, positions=(('Invented', 'STOCK', scope.positions[0]),))
     journal = replace(journal, version=5, transaction_imports=(receipt,))
+    if account_only:
+        scope = HistoryScope(accounts=scope.accounts)
     days = ('2024-01-03', '2024-01-04', '2024-01-05', '2024-01-08')
     expected = [calculate_history(journal, scope, store, START, end, returns=False) for end in days]
     assert expected[0].net_contributions is not None and expected[2].net_contributions is None
-    assert len({item.ending_value for item in expected}) == 4
+    assert len({item.ending_value for item in expected}) == (1 if account_only else 4)
     calls = []
     coverage = history.coverage_reasons
     def counted(*args, **kwargs):

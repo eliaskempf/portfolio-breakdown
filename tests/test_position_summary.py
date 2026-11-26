@@ -13,7 +13,7 @@ from test_personal_performance import journal, observed
 from test_ui import by_label
 
 
-def launch(tmp_path, *, history=True, complete=True, estimated=False):
+def launch(tmp_path, *, history=True, complete=True, estimated=False, demo=True):
     (tmp_path/'holdings.csv').write_text('position_key,id,name,ticker,shares,acquisition_price,acquisition_currency\n'
         'holding,invented,Invented holding,SYNTH,15,5.333333333333333,EUR\n')
     j, scope = journal(), HistoryScope(('holding',))
@@ -33,7 +33,7 @@ from portfolio_app.portfolio.positions import read_snapshot
 path = Path({str(tmp_path)!r})
 row = read_snapshot(path/'holdings.csv').holdings.assign(
     current_value_reporting=300., unrealized_gain_reporting=220., cost_basis_reporting=80., return_pct=275.).iloc[0]
-render_position_detail(row, path, demo=True)
+render_position_detail(row, path, demo={demo!r})
 ''', default_timeout=15).run()
     return app, calculate_history(j, scope, store, '2024-01-01', '2025-01-01')
 
@@ -68,6 +68,54 @@ def test_personal_headlines_are_identical_across_charts_ranges_and_tabs(tmp_path
     details = app.dataframe[0].value.set_index('Position').Details
     assert details['Return on cost'] == return_percent(275)
     assert details['Unrealized gain'] == '+€220.00'
+
+
+def test_summary_and_holdings_refresh_use_the_loaded_input_revisions(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import history_fingerprint
+    from portfolio_app.performance.personal_history_refresh import RefreshStatus, refresher
+    from portfolio_app.portfolio.positions import read_snapshot
+
+    from portfolio_app.interface.views.positions import position_detail
+    from portfolio_app.market.history import DemoHistoryProvider, HistoryService
+    market = HistoryService(DemoHistoryProvider(), tmp_path / '.cache' / 'history')
+    monkeypatch.setattr(position_detail, 'history_for', lambda _: market)
+    request = Mock(return_value=RefreshStatus())
+    monkeypatch.setattr(refresher, 'request', request)
+    app, _ = launch(tmp_path, demo=False)
+    assert not app.exception
+    request.reset_mock()
+    by_label(app.get('button_group'), 'History type').set_value('Holdings').run()
+    assert not app.exception
+    saved, revision = load_journal(tmp_path)
+    expected = (read_snapshot(tmp_path / 'holdings.csv').revision, revision)
+    assert request.call_count >= 2
+    for call in request.call_args_list:
+        assert call.kwargs['input_revisions'] == expected
+        assert call.kwargs['fingerprint'] == history_fingerprint(saved)
+
+
+def test_recorded_details_reuse_the_validated_ledger_and_observations(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from portfolio_app.ledger import security_history
+    from portfolio_app.performance import gain_components, history_observations
+
+    app, _ = launch(tmp_path)
+    hashes = Mock(wraps=security_history.history_fingerprint)
+    replays = Mock(wraps=gain_components.replay_securities)
+    reads = Mock(wraps=history_observations.load_observations)
+    monkeypatch.setattr(security_history, 'history_fingerprint', hashes)
+    monkeypatch.setattr(gain_components, 'replay_securities', replays)
+    monkeypatch.setattr(history_observations, 'load_observations', reads)
+    by_label(app.get('button_group'), 'Position detail view').set_value('Details').run()
+    assert not app.exception
+    details = app.dataframe[0].value.set_index('Position').Details
+    assert details['Recorded purchase payments'] == '€60.00'
+    assert details['Unrealized gain'] == '+€220.00'
+    replays.assert_not_called()
+    hashes.assert_not_called()
+    reads.assert_not_called()
 
 
 def test_summary_only_uses_recorded_cost_and_leaves_annualized_return_unknown(tmp_path):
@@ -146,3 +194,122 @@ render_position_detail(row, root, demo=True)
     by_label(app.get('button_group'), 'Position detail view').set_value('Details').run()
     assert not app.exception
     assert app.dataframe[0].value.set_index('Position').Details['Return on cost'] == expected
+
+
+def test_headline_watcher_updates_only_on_new_evidence_or_day(tmp_path, monkeypatch):
+    from datetime import date, timedelta
+    import streamlit as st
+    from portfolio_app.interface.shared import background_ui, dialog_runtime, input_cache
+    from portfolio_app.performance import position_summary
+    from portfolio_app.performance.history_observations import FILE
+
+    calls, reads, intervals = [], [], []
+    active = [True]
+    revision = ['first']
+    def register(*, run_every):
+        assert run_every == 2
+        def capture(fn):
+            calls.append(fn)
+            return lambda: fn(intervals.append)
+        return capture
+    monkeypatch.setattr(background_ui, 'status_fragment', register)
+    monkeypatch.setattr(dialog_runtime, 'local_fragment_updates', lambda: lambda fn: fn)
+    def read(directory):
+        reads.append(directory)
+        return None, revision[0]
+    monkeypatch.setattr(input_cache, 'observation_snapshot', read)
+    class Rerender(Exception):
+        pass
+    def rerender():
+        raise Rerender
+    monkeypatch.setattr(st, 'rerun', rerender)
+
+    today = date.today()
+    path = tmp_path / FILE
+    path.write_text('first', encoding='utf-8')
+    position_summary._watch_summary_evidence(tmp_path, input_cache.file_stamp(path), revision[0], today, lambda: active[0])
+    tick, = calls
+    tick(intervals.append)
+    assert not reads
+    path.write_text('same revision', encoding='utf-8')
+    tick(intervals.append)
+    tick(intervals.append)
+    assert reads == [tmp_path]
+    revision[0] = 'second'
+    path.write_text('changed', encoding='utf-8')
+    with pytest.raises(Rerender):
+        tick(intervals.append)
+    active[0] = False
+    tick(intervals.append)
+    assert intervals == [None] and reads == [tmp_path, tmp_path]
+    active[0] = True
+    with pytest.raises(Rerender):
+        position_summary._watch_summary_evidence(tmp_path, input_cache.file_stamp(path), revision[0],
+                                                 today - timedelta(days=1), lambda: True)
+
+
+def test_headline_owner_survives_chart_switches_and_retires_with_the_dialog(monkeypatch):
+    import streamlit as st
+    from portfolio_app.interface.views.positions.position_detail import _position_view_guard
+    state = dict(portfolio_workspace_context='first', position_edit_selected='invented',
+                 position_edit_action='Details', position_edit_dialog=True, position_detail_generation=1)
+    monkeypatch.setattr(st, 'session_state', state)
+    checks = []
+    active = _position_view_guard('invented', include_view=False, checked_journal=lambda: checks.append('headline'))
+    original_chart = _position_view_guard('invented', checked_journal=lambda: checks.append('original chart'))
+    state['position_edit_history_mode_invented'] = 'Price'
+    assert active() and not original_chart()
+    for key, replacement in [('position_edit_selected', 'other'), ('position_edit_action', 'Edit position'),
+                             ('portfolio_workspace_context', 'second'), ('position_edit_dialog', False), ('position_detail_generation', 2)]:
+        before = state[key]
+        state[key] = replacement
+        assert not active()
+        state[key] = before
+    assert checks == ['headline']
+
+
+@pytest.mark.parametrize('changed_file', ['holdings.csv', 'account-journal.json'])
+def test_open_position_reuses_inputs_until_the_selected_sources_change(tmp_path, monkeypatch, changed_file):
+    from portfolio_app.interface.shared import dialog_runtime
+    from portfolio_app.interface.views.positions.position_ui import _checked_position_journal, position_dialog_sources
+    from portfolio_app.workspace import storage
+    import streamlit as st
+
+    holdings = tmp_path / 'holdings.csv'
+    journal_file = tmp_path / 'account-journal.json'
+    holdings.write_text('invented first holding')
+    journal_file.write_text('invented journal fixture')
+    revisions = tuple(storage.revision(source) for source in (holdings, journal_file))
+    stamps = position_dialog_sources(tmp_path)[:2]
+    journal_snapshot = object(), revisions[1]
+    reads = []
+    revision = storage.revision
+
+    def track_revision(source):
+        reads.append(source)
+        return revision(source)
+
+    class RefreshOwner(Exception):
+        pass
+
+    def rerender():
+        raise RefreshOwner
+
+    monkeypatch.setattr(storage, 'revision', track_revision)
+    monkeypatch.setattr(dialog_runtime, 'local_dialog_updates', lambda: lambda fn: fn)
+    monkeypatch.setattr(st, 'rerun', rerender)
+    current = _checked_position_journal(holdings, stamps, revisions, journal_snapshot)
+    assert current() is journal_snapshot and reads == []
+    source = tmp_path / changed_file
+    temporary = source.with_suffix('.new')
+    temporary.write_bytes(source.read_bytes())
+    temporary.replace(source)
+    assert current() is journal_snapshot
+    assert current() is journal_snapshot and reads == [source]
+
+    source.write_text('invented replacement')
+    with pytest.raises(RefreshOwner):
+        current()
+    source.unlink()
+    with pytest.raises(RefreshOwner):
+        current()

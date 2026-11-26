@@ -25,6 +25,28 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario == 'correction':
+        import streamlit as st
+        from portfolio_app.interface.views.history import history_data_ui
+        from portfolio_app.performance.personal_history_refresh import refresher
+
+        refresher.download = lambda directory, journal, scope, store, start, end, target: (store, ())
+        render = history_data_ui._save_form
+        def render_form(*args, **kwargs):
+            # The measured interaction starts at Save. Set up the same editable
+            # value before mounting the real widget on every rendering engine.
+            if kwargs['kind'] == 'price' and kwargs['key'].endswith('price_'):
+                st.session_state.setdefault(kwargs['key'] + 'amount', '237.12345')
+            return render(*args, **kwargs)
+        history_data_ui._save_form = render_form
+        save = history_data_ui.save_observations
+        def measured_save(*args, **kwargs):
+            start = time.perf_counter()
+            result = save(*args, **kwargs)
+            record('manual_save', ms=(time.perf_counter() - start) * 1000)
+            return result
+        history_data_ui.save_observations = measured_save
+        return
     if scenario in {'cash-history', 'long-history'}:
         from threading import local
         from portfolio_app.performance import history_view as views, personal_performance as performance
@@ -39,23 +61,53 @@ def observe_server(trial):
             return original_capital(calculation, scope, *args)
 
         if scenario == 'long-history':
-            original_value = performance.value_at
+            from portfolio_app.performance import gain_accounting, gain_components
+            recorded_gains = gain_components.recorded_security_gains
+            def measured_gains(*args, **kwargs):
+                if getattr(work, 'scope', None) is not None:
+                    work.gain_builds += 1
+                return recorded_gains(*args, **kwargs)
+            gain_components.recorded_security_gains = measured_gains
+            original_members = gain_accounting.affected_positions
+            def measured_members(book, event):
+                if event.estimated and getattr(work, 'scope', None) is not None:
+                    work.estimate_checks += 1
+                return original_members(book, event)
+            gain_accounting.affected_positions = measured_members
+
+            original_fx = performance.valuation_fx_quotes
+            def measured_fx(*args, **kwargs):
+                if getattr(work, 'scope', None) is not None:
+                    work.fx_lookups += 1
+                return original_fx(*args, **kwargs)
+            performance.valuation_fx_quotes = measured_fx
+
+            original_value = performance._resolve_close
             def measured_value(journal, scope, *args, **kwargs):
-                if scope == getattr(work, 'scope', None):
+                selected = getattr(work, 'scope', None)
+                if selected is not None:
+                    work.valuations += 1
+                if scope == selected:
                     work.closes += 1
+                elif selected is not None and len(scope.positions) + len(scope.accounts) == 1:
+                    work.member_closes += 1
                 return original_value(journal, scope, *args, **kwargs)
-            performance.value_at = measured_value
+            performance._resolve_close = measured_value
 
         original_chart = views.history_view
         def measured_chart(*args, **kwargs):
-            work.positions = work.closes = 0
+            work.positions = work.closes = work.member_closes = work.valuations = work.fx_lookups = work.estimate_checks = work.gain_builds = 0
             work.scope = args[1] if len(args) > 1 else kwargs['scope']
             try:
                 result = original_chart(*args, **kwargs)
-                record('cash_history_calculated', points=len(result.points), positions=work.positions, closes=work.closes)
+                record('cash_history_calculated', points=len(result.points), positions=work.positions,
+                       closes=work.closes, member_closes=work.member_closes,
+                       valuations=work.valuations, fx_lookups=work.fx_lookups,
+                       gain_builds=work.gain_builds, unknown_capital=result.all_known.capital is None,
+                       estimate_checks=work.estimate_checks, estimated_gain=result.all_known.coverage_note == 'Estimated gain')
                 return result
             finally:
-                del work.positions, work.scope
+                del work.positions, work.closes, work.member_closes, work.valuations, work.fx_lookups, work.estimate_checks, work.scope
 
         performance._period_capital = measured_capital
         views.history_view = measured_chart
@@ -133,11 +185,11 @@ def observe_server(trial):
         def observe_market_request(session, client_state=None):
             if client_state is not None:
                 fragment = client_state.fragment_id
-                for widget in client_state.widget_states.widgets:
-                    if 'position_edit_history_' in widget.id and widget.id.endswith('_period'):
-                        record('market_range_requested', selection=list(widget.string_array_value.data),
-                               fragment=fragment, registered=not fragment or session._fragment_storage.contains(fragment),
-                               automatic=client_state.is_auto_rerun)
+                period = next((w for w in client_state.widget_states.widgets
+                               if 'position_edit_history_' in w.id and w.id.endswith('_period')), None)
+                record('market_range_requested', selection=list(period.string_array_value.data) if period else None,
+                       fragment=fragment, registered=not fragment or session._fragment_storage.contains(fragment),
+                       automatic=client_state.is_auto_rerun)
             return handle_request(session, client_state)
 
         enqueue = ScriptRunContext.enqueue
@@ -342,7 +394,7 @@ def observe_collections(trial, record):
     import gc
     from threading import local
     from streamlit import config
-    from portfolio_app.performance.history_observations import _observations_from_bytes
+    from portfolio_app.performance import history_observations
     from streamlit.runtime.scriptrunner.script_runner import ScriptRunner
     from streamlit.runtime.scriptrunner_utils.script_run_context import ScriptRunContext
 
@@ -351,6 +403,16 @@ def observe_collections(trial, record):
     enqueue = ScriptRunContext.enqueue
     collect = gc.collect
     finish = ScriptRunner._on_script_finished
+    parse = history_observations.from_dict
+    parse_lock = Lock()
+    parses = 0
+
+    @wraps(parse)
+    def parse_observations(*args, **kwargs):
+        nonlocal parses
+        with parse_lock:
+            parses += 1
+        return parse(*args, **kwargs)
 
     def chart(ctx, msg):
         if msg.HasField('delta') and msg.delta.new_element.HasField('plotly_chart'):
@@ -372,10 +434,11 @@ def observe_collections(trial, record):
             state.in_cleanup = False
             record('script_finished', chart_ms=getattr(state, 'chart_ms', 0), forced=state.forced,
                    policy=config.get_option('runner.postScriptGC'), automatic=gc.isenabled(),
-                   observation_parses=_observations_from_bytes.cache_info().misses,
+                   observation_parses=parses,
                    cleanup_collections=gc.get_stats()[2]['collections'] - before)
             state.chart_ms = 0
 
+    history_observations.from_dict = parse_observations
     ScriptRunContext.enqueue = chart
     gc.collect = count_collect
     ScriptRunner._on_script_finished = finished

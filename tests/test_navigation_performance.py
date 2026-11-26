@@ -66,6 +66,39 @@ def test_closed_dialog_skips_history_loader(tmp_path):
         assert not app.session_state['position_edit_dialog']
 
 
+def test_position_details_share_current_effective_holdings_with_parent(tmp_path):
+    from dataclasses import replace
+    from decimal import Decimal
+    from portfolio_app.ledger import security_history
+    from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
+    from portfolio_app.performance.cost_basis import fingerprint
+
+    create_demo_data(tmp_path)
+    row = read_snapshot(tmp_path / 'holdings.csv').holdings.iloc[0]
+    opening = security_history.SecurityEvent('invented-open', 'opening', '2024-01-01',
+        quantity=Decimal(3), amount=Decimal(30), currency='EUR')
+    book = security_history.SecurityBook(row.position_id, row.id, fingerprint(row),
+        records=(opening,), active_ids=(opening.id,))
+    save_journal(tmp_path, Journal(version=2, securities=(book,)), None)
+    _, revision = load_journal(tmp_path)
+    with patch.object(security_history, 'effective_holdings', wraps=security_history.effective_holdings) as derive:
+        app = app_for(tmp_path)
+        app.session_state['position_edit_selected'] = row.position_id
+        app.session_state['position_edit_action'] = 'Details'
+        app.session_state['position_edit_dialog'] = True
+        with patch('portfolio_app.interface.views.positions.position_detail.render_position_detail') as detail:
+            app.run()
+            assert not app.exception
+            assert detail.call_args.args[0].shares == 3
+            assert derive.call_count == 1
+            updated = replace(book, records=(replace(opening, quantity=Decimal(4)),))
+            save_journal(tmp_path, Journal(version=2, securities=(updated,)), revision)
+            app.run()
+            assert not app.exception
+            assert detail.call_args.args[0].shares == 4
+            assert derive.call_count == 2
+
+
 def test_cached_inputs_reload_external_edits(tmp_path):
     create_demo_data(tmp_path)
     with patch('portfolio_app.interface.shared.input_cache.read_snapshot', wraps=read_snapshot) as reads:

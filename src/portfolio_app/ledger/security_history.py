@@ -3,11 +3,13 @@
 Records are retained once. Only explicitly selected records affect balances;
 review receipts retain previous selections. An opening is a boundary, not a buy.
 """
-from copy import deepcopy
+from bisect import bisect_right
+from copy import copy, deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from decimal import Decimal, localcontext
 from hashlib import sha256
+from operator import itemgetter
 import json
 
 from portfolio_app.derivatives.derivative_types import decimal, identifier, iso_date
@@ -335,6 +337,10 @@ class SecurityBalance:
     issues: tuple[str, ...] = ()
 
     @property
+    def has_issues(self):
+        return bool(self.issues)
+
+    @property
     def costs(self):
         return tuple(p for lot in self.lots for p in lot.costs)
 
@@ -352,6 +358,7 @@ class SecurityCash:
     value_date: str = ''
     external: bool = False
     event_id: str = ''
+    estimated: bool = False
 
 
 @dataclass(frozen=True)
@@ -428,6 +435,42 @@ def _consume(lots, quantity):
     return tuple(remaining), tuple(moved)
 
 
+@dataclass(frozen=True, slots=True)
+class _SecurityClose:
+    quantity: Decimal
+    boundary: str
+    has_issues: bool
+
+
+class _ClosingHistory:
+    """Dated valuation inputs from successful batches of the canonical FIFO replay."""
+
+    def __init__(self):
+        self.by_position = {}
+        self.offset = 0
+
+    def collect(self, changes, book, event, states):
+        for identity in affected_positions(book, event):
+            state = states[identity]
+            changes[identity, event.date] = _SecurityClose(state.quantity, state.boundary, state.has_issues)
+
+    def commit(self, changes, offset):
+        # A timeline advances by whole dates. Same-day changes in this batch
+        # already contain the final state, including changes made by other books.
+        for (identity, stamp), close in changes.items():
+            self.by_position.setdefault(identity, []).append((stamp, close))
+        self.offset = offset
+
+    def positions(self, identities, stamp):
+        result = {}
+        for identity in identities:
+            rows = self.by_position.get(identity, ())
+            index = bisect_right(rows, stamp, key=itemgetter(0))
+            if index:
+                result[identity] = rows[index-1][1]
+        return result
+
+
 class _SecurityReplay:
     """Advance the canonical FIFO replay, committing only a successful batch."""
 
@@ -440,11 +483,12 @@ class _SecurityReplay:
         self.offset = 0
         self._latest_cash_date = ''
 
-    def advance(self, as_of=None, sequence=None):
+    def advance(self, as_of=None, sequence=None, *, closings=None):
         from portfolio_app.performance.cost_basis import component
         owners = self.owners
         states = dict(self.state.positions)
         new_cash, new_disposals = [], []
+        changes = {}
         offset = self.offset
         with localcontext() as context:
             context.prec = 60
@@ -483,6 +527,8 @@ class _SecurityReplay:
                         estimated = any(p.get('quality') == 'estimated' for p in costs)
                         lots = (SecurityLot(e.id, e.quantity, costs, estimated),) if e.quantity else ()
                     states[book.position_id] = SecurityBalance(e.quantity, lots, e.date)
+                    if closings is not None and index >= closings.offset:
+                        closings.collect(changes, book, e, states)
                     continue
                 if e.kind in ('buy', 'sell', 'split', 'transfer', 'transfer_in', 'transfer_out', 'inventory_in', 'inventory_out', 'swap', 'reward', 'asset_fee') and not e.quantity:
                     raise DataError('Trade, split and transfer quantities must be positive.')
@@ -550,14 +596,17 @@ class _SecurityReplay:
                     gross = e.gross if e.kind in ('buy', 'sell') else e.amount
                     sign = -1 if e.kind in ('buy', 'fee', 'tax') else 1
                     new_cash.append(SecurityCash(e.id, book.position_id, book.account_id, e.date, e.sequence,
-                        e.currency, None if gross is None else sign*gross, e.kind, e.value_date, event_id=e.id))
+                        e.currency, None if gross is None else sign*gross, e.kind, e.value_date, event_id=e.id,
+                        estimated=e.estimated and gross is not None))
                 for i, c in enumerate(e.charges):
                     new_cash.append(SecurityCash(f'{e.id}:charge:{i}', book.position_id, book.account_id,
                         c.date or e.date, e.sequence, c.currency, None if c.amount is None else -c.amount,
-                        c.kind, external=c.external, event_id=e.id))
+                        c.kind, external=c.external, event_id=e.id, estimated=e.estimated and bool(c.amount)))
                 if e.kind in ('buy', 'sell', 'distribution') and not e.charges_known:
                     new_cash.append(SecurityCash(f'{e.id}:unknown-charges', book.position_id, book.account_id,
                         e.date, e.sequence, e.currency, None, 'fee', event_id=e.id))
+                if closings is not None and index >= closings.offset:
+                    closings.collect(changes, book, e, states)
         cash = self.state.cash + tuple(new_cash)
         disposals = self.state.disposals + tuple(new_disposals)
         latest = max((posting.date for posting in new_cash), default='')
@@ -568,6 +617,8 @@ class _SecurityReplay:
         self.state = SecuritiesState(states, cash, disposals)
         self.offset = offset
         self._latest_cash_date = latest
+        if changes:
+            closings.commit(changes, offset)
         return snapshot
 
 
@@ -577,44 +628,66 @@ def replay_securities(books, *, as_of=None, sequence=None):
 
 
 class SecurityTimeline:
-    """Dated snapshots from one forward replay; historical queries can arrive in any order.
+    """Dated snapshots from resumable forward replay, for queries in any order.
 
     Charges can settle on another date, so snapshots filter cash by its own date
-    while the cursor retains future cash postings. Balances and lots are immutable;
-    each snapshot owns its positions mapping and never sees subsequent mutations.
+    while the cursor retains future cash postings. Recent snapshots retain a
+    resumable cursor at the same date. Each visible snapshot owns its positions
+    mapping and never sees subsequent advances.
     """
 
     MAX_SNAPSHOTS = 64
 
     def __init__(self, books):
         from collections import OrderedDict
+        self._closings = _ClosingHistory()
+        self._validated_index = 0
         self.books = tuple(books)
         self.replay = _SecurityReplay(self.books)
         self.dates = sorted({e.date for _, e in self.replay.events} |
                             {c.date for _, e in self.replay.events for c in e.charges if c.date})
-        self.snapshots = OrderedDict({0: self.replay.state})
+        self._initial = copy(self.replay)
+        self.snapshots = OrderedDict({0: replace(self.replay.state, positions=dict(self.replay.state.positions))})
+        self._cursors = {}
         self._cursor_index = 0
         self._complete = None
 
     def at(self, stamp=None):
-        from bisect import bisect_right
         index = len(self.dates) if stamp is None else bisect_right(self.dates, stamp)
         if index == len(self.dates) and self._complete is not None:
             return self._complete
         if index in self.snapshots:
             self.snapshots.move_to_end(index)
             return self.snapshots[index]
-        # An uncached backwards request resets the forward cursor once. The
-        # following ascending chart pass then advances incrementally again.
-        cursor = _SecurityReplay(self.books) if index < self._cursor_index else self.replay
-        snapshot = cursor.advance(self.dates[index-1]) if index else cursor.state
+        cursor = self.replay
+        if index != self._cursor_index + 1:
+            # A visible snapshot can omit future-dated charges. Resume the closest
+            # preceding private state, including pending postings and event offset.
+            prior = max((i for i in self._cursors if i < index), default=0)
+            if index < self._cursor_index or prior > self._cursor_index:
+                cursor = copy(self._cursors.get(prior, self._initial))
+        snapshot = (cursor.advance(self.dates[index-1], closings=self._closings) if index else
+                    replace(cursor.state, positions=dict(cursor.state.positions)))
+        self._validated_index = max(self._validated_index, index)
         self.replay, self._cursor_index = cursor, index
         if index == len(self.dates):
             self._complete = snapshot
         self.snapshots[index] = snapshot
+        # advance replaces its state and never mutates a previously saved one.
+        self._cursors[index] = copy(cursor)
         while len(self.snapshots) > self.MAX_SNAPSHOTS:
-            self.snapshots.popitem(last=False)
+            evicted, _ = self.snapshots.popitem(last=False)
+            self._cursors.pop(evicted, None)
         return snapshot
+
+    def validate_through(self, stamp):
+        """Validate the whole ledger prefix before reusing facts about an individual book."""
+        if bisect_right(self.dates, stamp) > self._validated_index:
+            self.at(stamp)
+
+    def closing_positions(self, identities, stamp):
+        self.validate_through(stamp)
+        return self._closings.positions(identities, stamp)
 
 
 @dataclass(frozen=True)

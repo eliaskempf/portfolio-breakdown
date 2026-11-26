@@ -89,7 +89,7 @@ def _freshness(observation, *, now=None, fallback=False, error='', closed=False,
     return Valuation(observation, status, label, detail, qualified)
 
 
-def select_valuations(journal, manual=None, automatic=None, settlements=None, *, now=None, errors=None, disputed=None):
+def select_valuations(journal, manual=None, automatic=None, settlements=None, *, now=None, errors=None, disputed=None, state=None):
     """A settlement changes basis, not the independent absolute market price.
 
     Same-day date-only manual marks win ambiguous comparisons. Accepted source
@@ -100,7 +100,8 @@ def select_valuations(journal, manual=None, automatic=None, settlements=None, *,
     automatic, settlements, errors = automatic or {}, settlements or {}, errors or {}
     events = effective_events(journal)
     result = {}
-    for pid, balance in replay(journal).positions.items():
+    state = replay(journal) if state is None else state
+    for pid, balance in state.positions.items():
         history = [e for e in events if e.position_id == pid and e.kind in BASIS_KINDS]
         last = history[-1] if history else None
         recorded = None
@@ -138,7 +139,7 @@ def select_valuations(journal, manual=None, automatic=None, settlements=None, *,
     return result
 
 
-def load_valuations(directory, journal, *, now=None):
+def load_valuations(directory, journal, *, now=None, state=None):
     from portfolio_app.ledger.account_observations import load_observations
     from portfolio_app.derivatives.futures_quotes import read_quotes, latest_quotes, disputed_quotes, collector
     from portfolio_app.derivatives.settlement_archive import SettlementArchive
@@ -160,7 +161,7 @@ def load_valuations(directory, journal, *, now=None):
                                        if archive.latest(contract, day).price == q.price]
     except DataError as exc:
         errors.update({c.id: str(exc) for c in journal.contracts})
-    return select_valuations(journal, manual, automatic, settlements, now=now, errors=errors, disputed=disputed), rates
+    return select_valuations(journal, manual, automatic, settlements, now=now, errors=errors, disputed=disputed, state=state), rates
 
 
 def valuation_fields(valuation):

@@ -84,24 +84,31 @@ class DatedFlows:
         return result
 
     def total(self, start, end, *, amount_needed):
+        amount, reasons, _ = self.total_with_estimates(start, end, amount_needed=amount_needed)
+        return amount, reasons
+
+    def total_with_estimates(self, start, end, *, amount_needed):
         """Extend a net contribution total in posting order as the chart advances."""
         key = start, amount_needed
         previous = self.last_total
         if previous and previous[0] == key and start <= previous[1] <= end:
-            _, prior_end, (amount, reasons) = previous
+            _, prior_end, (amount, reasons, estimated) = previous
             if prior_end == end:
-                return amount, reasons
+                return amount, reasons, estimated
             # The prior close already includes this date, even if an account
             # opened then. New postings must still be checked while net is unknown.
             flows, missing = self.interval(prior_end, end, include_account_start=False)
         else:
             amount = Decimal(0) if amount_needed else None
             reasons = ()
+            estimated = False
             flows, missing = self.interval(start, end)
         if missing:
             amount = None
             reasons = tuple(sorted(set((*reasons, *missing))))
         elif amount is not None:
             amount = sum((flow.amount for flow in flows), amount)
-        self.last_total = key, end, (amount, reasons)
-        return amount, reasons
+        if self.calculation.has_estimated_inputs and not estimated:
+            estimated = any(flow.estimated for flow in flows)
+        self.last_total = key, end, (amount, reasons, estimated)
+        return amount, reasons, estimated

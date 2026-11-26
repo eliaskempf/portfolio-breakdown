@@ -161,14 +161,14 @@ class PreparedPortfolio:
     status: ValuationStatus
 
 
-def prepare_application(inputs, prices, *, refresh=False, reporting_currency='EUR', historical=None):
+def prepare_application(inputs, prices, *, refresh=False, reporting_currency='EUR', historical=None, cost_cache=None):
     holdings = inputs.snapshot.holdings
     source = analysis_targets(holdings, inputs.allocation) if inputs.allocation else holdings
     valued = prepare_portfolio(source, prices, refresh=refresh,
-                               reporting_currency=reporting_currency, historical=historical)
+                               reporting_currency=reporting_currency, historical=historical, cost_cache=cost_cache)
     stale = valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])
     from portfolio_app.performance.performance import cash_balance_only
-    missing_cost = valued.shares.gt(0) & ~cash_balance_only(valued) & valued.unrealized_gain_reporting.isna()
+    missing_cost = valued.shares.gt(0) & ~cash_balance_only(valued, cost_cache=cost_cache) & valued.unrealized_gain_reporting.isna()
     problems = valued.loc[valued.shares.gt(0) & (missing_cost | valued.current_value_reporting.isna() | stale),
                           ['name', 'performance_note', 'valuation_note']].copy()
     return PreparedPortfolio(valued, ValuationStatus(int(valued.cost_estimated.sum()),

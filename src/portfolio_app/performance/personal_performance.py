@@ -12,11 +12,11 @@ from functools import cached_property
 import math
 
 from portfolio_app.ledger.account_journal import effective_events, replay
-from portfolio_app.performance.history_observations import HistoryScope, index_observations, lookup, rate
-from portfolio_app.ledger.security_history import cash_postings, history_fingerprint, replay_securities, selected_events, affected_positions
+from portfolio_app.performance.history_observations import HistoryScope, Observation, index_observations, lookup, rate
+from portfolio_app.ledger.security_history import cash_postings, history_fingerprint, replay_securities, selected_events
 
 from portfolio_app.performance.history_diagnostics import HistoryIssue as Issue
-from portfolio_app.performance.history_valuation import price_at, provenance, valuation_fx, ValuationEvidence
+from portfolio_app.performance.history_valuation import price_at, provenance, valuation_fx_quotes, ValuationEvidence
 
 ZERO = Decimal(0)
 
@@ -27,6 +27,30 @@ class AmountResult:
     reasons: tuple[str, ...] = ()
     evidence: tuple[ValuationEvidence, ...] = ()
 
+    def carried_dates(self, kind, stamp):
+        return sorted({row.as_of for row in self.evidence if row.kind == kind and row.as_of != stamp})
+
+    @property
+    def supplied(self):
+        return bool(self.evidence and self.evidence[0].kind == 'value')
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedClose:
+    amount: Decimal | None
+    reasons: tuple[str, ...] = ()
+    quotes: tuple[Observation, ...] = ()
+
+    def carried_dates(self, kind, stamp):
+        return sorted({row.date for row in self.quotes if row.kind == kind and row.date != stamp})
+
+    @property
+    def supplied(self):
+        return bool(self.quotes and self.quotes[0].kind == 'value')
+
+    def detailed(self, stamp):
+        return AmountResult(self.amount, self.reasons, tuple(provenance(row, stamp) for row in self.quotes))
+
 
 @dataclass(frozen=True)
 class PeriodCapital:
@@ -35,6 +59,14 @@ class PeriodCapital:
     net_contributions: Decimal | None
     invested_capital: Decimal | None
     flow_reasons: tuple[str, ...]
+    estimated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _CapitalInterval:
+    since: str | None
+    until: str | None
+    capital: PeriodCapital
 
 
 @dataclass(frozen=True)
@@ -48,6 +80,7 @@ class ExternalFlow:
     expense: Decimal = ZERO
     income: Decimal = ZERO
     postings: tuple[str, ...] = ()
+    estimated: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,22 +106,26 @@ class PersonalPerformance:
     estimated: bool = False
 
 
-def estimated_return_inputs(journal, scope, start, end, *, events_by_position=None):
-    """Cost-only estimates do not qualify returns; estimated flows do."""
-    for book in journal.securities:
-        for event in (events_by_position[book.position_id] if events_by_position is not None else selected_events(book)):
-            if not start < event.date <= end:
-                continue
-            inside = book.position_id in scope.positions
-            affected = bool(affected_positions(book, event).intersection(scope.positions)) or book.account_id in scope.accounts
-            if event.estimated and affected and (event.kind in ('buy', 'sell', 'distribution', 'fee', 'tax')
-                    or any(c.amount for c in event.charges)):
-                return True
-            crosses = (inside and event.kind in ('inventory_in', 'inventory_out', 'transfer_in', 'transfer_out')) or (
-                event.kind == 'swap' and inside != (event.other_position_id in scope.positions))
-            if crosses and event.valuation_amount is not None and (event.estimated or event.valuation_quality == 'estimated'):
-                return True
-    return False
+def _has_estimated_inputs(events):
+    return any(e.estimated or e.valuation_quality == 'estimated' for e in events)
+
+
+def estimated_return_inputs(journal, scope, start, end, *, events_by_position=None, calculation=None, target='EUR'):
+    """Whether the selected interval uses supplied estimates for dated payments or flows."""
+    if end < start:
+        return False
+    if calculation is None:
+        groups = (selected_events(b) for b in journal.securities) if events_by_position is None else events_by_position.values()
+        if not any(_has_estimated_inputs(events) for events in groups):
+            return False
+        from portfolio_app.performance.history_observations import ObservationStore
+        calculation = HistoryCalculation(journal, ObservationStore())
+    if not calculation.has_estimated_inputs:
+        return False
+    if calculation.estimated_account_payments(scope, start, end):
+        return True
+    totals = calculation.dated_flows(scope, target)
+    return totals.total_with_estimates(start, end, amount_needed=False)[2]
 
 
 class HistoryCalculation:
@@ -113,30 +150,39 @@ class HistoryCalculation:
             or not e.charges_known) for identity, events in self._events.items()}
         self._cost_dates = {identity: tuple(e.date for e in events if e.kind == 'cost')
                             for identity, events in self._events.items()}
-        self._estimated_events = {identity: tuple(e for e in events if e.estimated or
-            e.valuation_quality == 'estimated') for identity, events in self._events.items()}
         self._unresolved_receipts = unresolved_receipts(journal)
         events = [event for selected in self._events.values() for event in selected]
+        self.has_estimated_inputs = _has_estimated_inputs(events)
         # Holdings change on event dates; separately dated charges also change cash.
-        self._security_dates = sorted({event.date for event in events} |
-            {charge.date for event in events for charge in event.charges if charge.date})
-        self._flow_dates = sorted(set(self._security_dates) | {e.date for e in self._account_events})
-        self._capital_dates = sorted(set(self._flow_dates) | {stamp for stamp, _ in self._unresolved_receipts if stamp})
+        security_dates = {event.date for event in events} | {
+            charge.date for event in events for charge in event.charges if charge.date}
+        self._flow_dates = sorted(security_dates | {e.date for e in self._account_events})
         self.fingerprint = history_fingerprint(journal)
         self._facts = OrderedDict()
+        # Daily chart gains depend on the complete ledger and observation snapshot.
+        # Keep these scalar pairs through turnover of the much larger set of member facts.
+        self._chart_gains = OrderedDict()
+        self._last_chart_member_capitals = None
         # The selected chart owns this compact summary. Comparison series can
         # read it without displacing it with sibling scopes.
         self._validated_history_dates = {}
         self._flows = OrderedDict()
         self._position_flows = {}
 
-    def _get(self, key, load):
-        if key not in self._facts:
-            self._facts[key] = load()
-        self._facts.move_to_end(key)
-        while len(self._facts) > 8192:
-            self._facts.popitem(last=False)
-        return self._facts[key]
+    def _get(self, key, load, *, cache=None):
+        cache = self._facts if cache is None else cache
+        if key not in cache:
+            return self._remember(cache, key, load())
+        cache.move_to_end(key)
+        return cache[key]
+
+    @staticmethod
+    def _remember(cache, key, value):
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > 8192:
+            cache.popitem(last=False)
+        return value
 
     def event_dates(self, scope):
         from portfolio_app.performance.gain_accounting import ScopeEventDates
@@ -151,37 +197,108 @@ class HistoryCalculation:
         return self._get(('observation_dates', scope, target),
                          lambda: scope_observation_dates(self.journal, scope, self.observations, target))
 
-    def securities(self, stamp=None):
+    @cached_property
+    def _security_timeline(self):
         from portfolio_app.ledger.security_history import SecurityTimeline
-        timeline = self._get(('security_timeline',), lambda: SecurityTimeline(self.journal.securities))
-        return timeline.at(stamp)
+        return SecurityTimeline(self.journal.securities)
+
+    def securities(self, stamp=None):
+        return self._security_timeline.at(stamp)
+
+    def _security_gain_interval(self, identity, stamp):
+        self._security_timeline.validate_through(stamp)
+        # Scope dates include transfers, swaps, fees paid in other assets and
+        # separately dated charges. Another book's independent trade changes none.
+        dates = self._get(('security_gain_dates', identity), lambda:
+            self.event_dates(HistoryScope((identity,))) if identity in self._books else ())
+        return bisect_right(dates, stamp)
 
     def security_gains(self, identity, stamp, target):
         from portfolio_app.performance.gain_components import recorded_security_gains
-        interval = bisect_right(self._security_dates, stamp)
+        book = self._books[identity]
+        interval = self._security_gain_interval(identity, stamp)
         def load():
-            book = self._books[identity]
             return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target, self._events[identity])
         return self._get(('security_gains', identity, interval, target), load)
 
-    def account_postings(self):
-        return self._get(('account_postings',), lambda: cash_postings(
-            self.journal, security_cash=self.securities().cash))
-
     def partial_lot_costs(self, identity, stamp, target):
         from portfolio_app.performance.gain_components import partial_lot_costs
-        interval = bisect_right(self._security_dates, stamp)
+        interval = self._security_gain_interval(identity, stamp)
         return self._get(('partial_lot_costs', identity, interval, target), lambda:
             partial_lot_costs(self.securities(stamp).positions.get(identity), self.observations, target))
 
-    def accounts(self, stamp):
+    @cached_property
+    def _account_postings(self):
+        return cash_postings(self.journal, security_cash=self.securities().cash)
+
+    @property
+    def _account_timeline(self):
         from portfolio_app.ledger.account_timeline import AccountTimeline
-        timeline = self._get(('account_timeline',), lambda: AccountTimeline(self.journal, self.account_postings()))
-        return timeline.at(stamp)
+        return self._get(('account_timeline',), lambda: AccountTimeline(self.journal, self._account_postings))
+
+    def accounts(self, stamp):
+        return self._account_timeline.at(stamp)
+
+    def accounts_need_daily_marks(self, accounts, end, target):
+        """Check the sign of account components only where the canonical ledger changes."""
+        def check():
+            selected = set(accounts)
+            # Futures P&L can change sign between ledger entries. Closing FX
+            # can also conflict on a price-only date even when balances are positive.
+            if any(position.account_id in selected for position in self.journal.positions):
+                return True
+            reciprocal = {source for source, other in self.observations.reciprocal_closing_pairs if other == target}
+            timeline = self._account_timeline
+            dates = timeline.retained_prefix(end)
+            # Endpoint searches can visit dates in reverse when prices are
+            # missing. A longer ledger needs one forward valuation pass.
+            if dates is None:
+                return True
+            for day in dates:
+                state = timeline.at(day)
+                if (any(owner in selected for owner, currency in state.unknown_cash)
+                        or any(owner in selected and (amount < 0 or (amount and currency in reciprocal))
+                               for (owner, currency), amount in state.cash.items())
+                        or any(owner in selected and amount for (owner, _, _), amount in state.loans.items())
+                        or any(claim.account_id in selected and
+                               (claim.amount < 0 or (claim.amount and claim.currency in reciprocal))
+                               for claim in state.pending.values())):
+                    return True
+            return False
+        return self._get(('accounts_need_daily_marks', accounts, end, target), check)
+
+    def close(self, scope, stamp, target):
+        """Resolve equity and its ordered source rows without constructing display evidence."""
+        return self._get(('value', scope, stamp, target), lambda: _resolve_close(
+            self.journal, scope, self.observations, stamp, target, calculation=self))
 
     def value(self, scope, stamp, target):
-        return self._get(('value', scope, stamp, target), lambda: value_at(
-            self.journal, scope, self.observations, stamp, target, calculation=self))
+        return self._detailed_value(scope, stamp, target, self.close(scope, stamp, target))
+
+    def _detailed_value(self, scope, stamp, target, close):
+        if isinstance(close, AmountResult):
+            return close
+        # Once requested, keep the detail in the same bounded slot as the source rows.
+        value = close.detailed(stamp)
+        key = ('value', scope, stamp, target)
+        if self._facts.get(key) is close:
+            self._remember(self._facts, key, value)
+        return value
+
+    def value_with_members(self, scope, stamp, target):
+        """Value one date with each member subtotal for a fully supported, derived close."""
+        close, members = self.close_with_members(scope, stamp, target)
+        return self._detailed_value(scope, stamp, target, close), members
+
+    def close_with_members(self, scope, stamp, target):
+        cached = self._facts.get(('value', scope, stamp, target))
+        if cached is not None and (cached.amount is None or cached.supplied):
+            return self.close(scope, stamp, target), ()
+        members = []
+        close = _resolve_close(self.journal, scope, self.observations, stamp, target,
+                               calculation=self, member_amounts=members)
+        self.retain_value(scope, stamp, target, close)
+        return close, members
 
     def retain_value(self, scope, stamp, target, value):
         """Reuse an already validated close for gain accounting and overlapping chart ranges."""
@@ -190,6 +307,11 @@ class HistoryCalculation:
     def opening(self, scope, stamp, target):
         return self._get(('opening', scope, stamp, target), lambda: opening_value_at(
             self.journal, scope, self.observations, stamp, target, calculation=self))
+
+    @cached_property
+    def _opening_claims(self):
+        ordinary = {a: day for a, day in self._account_starts.items() if a not in self._account_inceptions}
+        return _opening_security_claims(self.journal, ordinary, calculation=self)
 
     def capital(self, scope, stamp, target):
         return self._get(('capital', scope, stamp, target), lambda: capital_at_start(
@@ -231,9 +353,24 @@ class HistoryCalculation:
                     dates[identity].add(stamp)
         return dates
 
-    def _position_capital_dates(self, scope):
-        dates = self.event_dates(scope)
-        receipt_dates = self._receipt_dates_by_position.get(scope.positions[0])
+    @cached_property
+    def _positions_by_account(self):
+        positions = defaultdict(list)
+        for book in self.journal.securities:
+            if book.account_id:
+                positions[book.account_id].append(book.position_id)
+        return positions
+
+    def _linked_positions(self, scope):
+        return {identity for account in scope.accounts for identity in self._positions_by_account.get(account, ())}
+
+    def _scope_capital_dates(self, scope):
+        # Include linked books even when their payments precede an ordinary
+        # account opening. Their evidence can qualify flows or coverage.
+        linked = self._linked_positions(scope).difference(scope.positions)
+        boundary = HistoryScope((*scope.positions, *linked), scope.accounts) if linked else scope
+        dates = self.event_dates(boundary)
+        receipt_dates = {day for identity in boundary.positions for day in self._receipt_dates_by_position.get(identity, ())}
         return sorted(receipt_dates.union(dates)) if receipt_dates else dates
 
     def _coverage_dates(self, scope):
@@ -241,7 +378,7 @@ class HistoryCalculation:
         dates = {e.date for identity in members for e in self._coverage_events.get(identity, ())}
         if scope.accounts:
             accounts = set(scope.accounts)
-            members.update(b.position_id for b in self.journal.securities if b.account_id in accounts)
+            members.update(self._linked_positions(scope))
             # An ordinary cash flow changes contributions. Its conversion is
             # checked separately on its payment date by external_flows.
             dates.update(e.date for e in self._account_events if e.account_id in accounts and e.kind != 'cash_flow')
@@ -260,18 +397,46 @@ class HistoryCalculation:
             latest[boundary] = result
         return latest[boundary]
 
+    @cached_property
+    def _estimated_account_payment_dates(self):
+        # Combined asset/cash scopes have internal payments which affect closing
+        # cash even though they never appear among external contributions.
+        payments = [c for c in self.securities().cash if c.estimated and c.account_id and not c.external]
+        if not payments:
+            return {}
+        dates = defaultdict(set)
+        for posting in cash_postings(self.journal, security_cash=payments):
+            dates[posting.account_id].add(posting.date)
+        return {account: sorted(stamps) for account, stamps in dates.items()}
+
+    def estimated_account_payments(self, scope, start, end):
+        if not self.has_estimated_inputs or not scope.accounts:
+            return False
+        for account in scope.accounts:
+            dates = self._estimated_account_payment_dates.get(account, ())
+            if bisect_right(dates, start) < bisect_right(dates, end):
+                return True
+            # Canonical postings before an ordinary settled-cash snapshot are
+            # deferred claims. A confirmed inception includes its first-day payments.
+            if self._account_starts.get(account) == start and bisect_right(dates, start):
+                return True
+        return False
+
     def period_capital(self, scope, start, end, target):
-        """Opening value, cash and cost evidence are independent of the closing mark."""
-        latest = self._get(('period_capital', scope, start, target), dict)
-        dates = self._capital_dates
-        if len(scope.positions) == 1 and not scope.accounts:
-            dates = self._get(('position_capital_dates', scope.positions[0]), lambda: self._position_capital_dates(scope))
+        """Share one basis object within each scoped ledger interval, independently of closing prices."""
+        key = ('period_capital', scope, start, target)
+        latest = self._facts.get(key)
+        if (latest is not None and (latest.since is None or latest.since <= end)
+                and (latest.until is None or end < latest.until)):
+            self._facts.move_to_end(key)
+            return latest.capital
+        dates = self._get(('scope_capital_dates', scope), lambda: self._scope_capital_dates(scope))
         boundary = bisect_right(dates, end)
-        if boundary not in latest:
-            result = _period_capital(self, scope, start, end, target)
-            latest.clear()
-            latest[boundary] = result
-        return latest[boundary]
+        capital = _period_capital(self, scope, start, end, target)
+        since = dates[boundary-1] if boundary else None
+        until = dates[boundary] if boundary < len(dates) else None
+        self._remember(self._facts, key, _CapitalInterval(since, until, capital))
+        return capital
 
     def flow_inputs(self):
         def load():
@@ -342,7 +507,7 @@ def _portfolio_bank_starts(journal, scope, calculation):
         if any(book.active and book.account_id in banks for book in journal.securities):
             # An earlier outstanding securities payment is evidence of account
             # activity before the opening. Keep the ordinary coverage checks.
-            for posting in calculation.account_postings() if calculation else cash_postings(journal):
+            for posting in calculation._account_postings if calculation else cash_postings(journal):
                 if posting.date < banks.get(posting.account_id, ''):
                     del banks[posting.account_id]
         return banks
@@ -363,6 +528,31 @@ def initial_security_positions(journal, scope, stamp, *, calculation=None):
     inceptions = calculation._account_inceptions if calculation else account_inceptions(journal)
     accounts = {a for a in scope.accounts if inceptions.get(a) == stamp}
     return {b.position_id for b in journal.securities if b.account_id in accounts} if accounts else set()
+
+
+def _opening_security_claims(journal, ordinary, *, calculation=None):
+    """Canonical postings already owed at an ordinary settled-cash snapshot."""
+    accounts = set()
+    for book in journal.securities:
+        start = ordinary.get(book.account_id)
+        if start and book.account_id not in accounts:
+            events = calculation._events[book.position_id] if calculation else selected_events(book)
+            if any(e.date <= start and e.value_date > e.date for e in events):
+                accounts.add(book.account_id)
+    if not accounts:
+        return {}
+    if calculation:
+        postings = calculation._account_postings
+    else:
+        # Standalone opening queries only require the relevant ledger prefix.
+        state = replay_securities(journal.securities, as_of=max(ordinary[a] for a in accounts))
+        postings = cash_postings(journal, security_cash=(c for c in state.cash if c.account_id in accounts
+                                                         and c.date <= ordinary[c.account_id]))
+    claims = defaultdict(list)
+    for event in postings:
+        if event.account_id in accounts and event.date <= ordinary[event.account_id]:
+            claims[event.account_id].append(event)
+    return {account: tuple(entries) for account, entries in claims.items()}
 
 
 def opening_value_at(journal, scope, observations, stamp, target, *, calculation=None):
@@ -390,24 +580,49 @@ def opening_value_at(journal, scope, observations, stamp, target, *, calculation
         if value.amount is not None:
             total += value.amount
     bank_starts = _portfolio_bank_starts(journal, scope, calculation)
+    from portfolio_app.ledger.account_inception import account_inceptions
+    inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, events)
+    ordinary = {a: stamp for a in scope.accounts if starts.get(a) == stamp and a not in inceptions}
+    claims = {}
+    if ordinary:
+        claims = calculation._opening_claims if calculation else _opening_security_claims(journal, ordinary)
+    rates = {}
+    declarations = defaultdict(list)
+    for event in events:
+        if event.date == stamp and event.kind in ('cash_open', 'debt_open'):
+            declarations[event.account_id].append(event)
     for account in scope.accounts:
         if stamp < bank_starts.get(account, ''):
             continue
         if starts.get(account) == stamp:
-            for event in events:
-                if event.account_id != account or event.date != stamp or event.kind not in ('cash_open', 'debt_open'):
+            for event in (*declarations[account], *claims.get(account, ())):
+                if event.kind == 'security_unknown':
+                    reasons.append(Issue(f'{account}: unknown opening {event.currency} security payment on {stamp}', 'transaction'))
                     continue
-                value = convert(event.amount * (-1 if event.kind == 'debt_open' else 1), event.currency, target, stamp, observations)
-                if value is None:
+                if not event.amount:
+                    continue
+                if event.currency not in rates:
+                    rates[event.currency], _ = valuation_fx_quotes(observations, event.currency, target, stamp)
+                fx = rates[event.currency]
+                if fx is None:
                     reasons.append(Issue(f'{account}: missing opening {event.currency}/{target} FX on {stamp}', 'fx'))
                 else:
-                    total += value
+                    amount = -event.amount if event.kind == 'debt_open' else event.amount
+                    total += amount * fx
         else:
             value = value_for(HistoryScope(accounts=(account,)))
             reasons.extend(value.reasons)
             if value.amount is not None:
                 total += value.amount
     return AmountResult(None if reasons else total, tuple(dict.fromkeys(reasons)))
+
+
+def _security_positions_at(journal, scope, stamp, calculation):
+    if not scope.positions:
+        return {}
+    if calculation:
+        return calculation._security_timeline.closing_positions(scope.positions, stamp)
+    return replay_securities(journal.securities, as_of=stamp).positions
 
 
 def capital_at_start(journal, scope, observations, stamp, target, *, calculation=None):
@@ -417,10 +632,11 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     explicit opening is on this date replace market value with recorded cost.
     Saved cost conversions are evidence; latest-FX estimates are not history.
     """
-    from portfolio_app.performance.cost_basis import resolve_cost
+    from portfolio_app.performance.cost_basis import resolve_cost, uses_latest_fx_estimate
     from portfolio_app.performance.history_observations import ObservationFX
     total, reasons = ZERO, list(scope.unresolved)
-    states = (calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)).positions
+    states = _security_positions_at(journal, scope, stamp, calculation)
+    inventory = None if calculation else states
     books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     initial_positions = initial_security_positions(journal, scope, stamp, calculation=calculation)
     for identity in scope.positions:
@@ -432,17 +648,20 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
         if state and state.boundary == stamp:
             if not state.quantity:
                 continue
-            if any(c.get('conversions', {}).get(target, {}).get('method') == 'estimate' for c in state.costs):
+            if inventory is None:
+                inventory = calculation.securities(stamp).positions
+            costs = inventory[identity].costs
+            if any(uses_latest_fx_estimate(part, target) for part in costs):
                 reasons.append(Issue(f'{identity}: estimated FX is not historical acquisition evidence', 'fx'))
                 continue
-            cost = resolve_cost(list(state.costs), target, ObservationFX(observations))
+            cost = resolve_cost(list(costs), target, ObservationFX(observations))
             if cost.amount is None:
                 reasons.append(Issue(f'{identity}: {cost.note}', cost.reason_kind))
             else:
                 total += cost.exact_amount
         else:
             members = HistoryScope((identity,))
-            value = (calculation.value(members, stamp, target) if calculation else
+            value = (calculation.close(members, stamp, target) if calculation else
                      value_at(journal, members, observations, stamp, target))
             reasons.extend(value.reasons)
             if value.amount is not None:
@@ -459,39 +678,54 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     return AmountResult(None if reasons else total, tuple(dict.fromkeys(reasons)))
 
 
-def value_at(journal, scope, observations, stamp, target, *, calculation=None):
+def value_at(journal, scope, observations, stamp, target, *, calculation=None, member_amounts=None):
     """Dated equity with supported closing-price and FX closure conventions."""
+    close = _resolve_close(journal, scope, observations, stamp, target, calculation=calculation,
+                           member_amounts=member_amounts)
+    return close.detailed(stamp)
+
+
+def _resolve_close(journal, scope, observations, stamp, target, *, calculation=None, member_amounts=None):
     if scope.unresolved:
-        return AmountResult(None, scope.unresolved)
+        return _ResolvedClose(None, scope.unresolved)
     supplied = lookup(observations, 'value', scope.key, stamp, currency=target)
     if supplied:
-        return AmountResult(supplied.amount, evidence=(provenance(supplied, stamp),))
-    securities = calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)
+        return _ResolvedClose(supplied.amount, quotes=(supplied,))
+    states = _security_positions_at(journal, scope, stamp, calculation)
     accounts = (calculation.accounts(stamp) if calculation else replay(journal, as_of=stamp)) if scope.accounts else None
     books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
-    total, reasons, evidence = ZERO, [], []
+    total, reasons, quotes = ZERO, [], []
+
+    # Every component of this close uses the same dated evidence for its currency.
+    rates = {}
 
     def add(amount, denomination, identity):
         nonlocal total
         if amount == 0:
             return
-        fx, fx_evidence = valuation_fx(observations, denomination, target, stamp)
+        if denomination not in rates:
+            rates[denomination] = valuation_fx_quotes(observations, denomination, target, stamp)
+        fx, fx_quotes = rates[denomination]
         value = amount*fx if amount is not None and fx is not None else None
         if value is None:
             reasons.append(Issue(f'{identity}: missing value or {denomination}/{target} FX on {stamp}', 'fx'))
         else:
             total += value
-            evidence.extend(fx_evidence)
+            if member_amounts is not None:
+                member_amounts[-1] += value
+            quotes.extend(fx_quotes)
 
     for identity in scope.positions:
+        if member_amounts is not None:
+            member_amounts.append(ZERO)
         book = books.get(identity)
-        state = securities.positions.get(identity)
+        state = states.get(identity)
         if book and confirmed_empty_before(book, stamp, events=calculation._events[book.position_id] if calculation else None):
             continue
         if book is None or state is None or not state.boundary:
             reasons.append(Issue(f'{identity}: no opening quantity on {stamp}', 'transaction'))
             continue
-        if state.issues:
+        if state.has_issues:
             reasons.append(Issue(f'{identity}: resolve historical events before valuing the reconstructed holding', 'transaction'))
             continue
         if not state.quantity:
@@ -501,7 +735,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         if price is None:
             reasons.append(Issue(f'{identity}: missing price on {stamp}', 'price'))
         else:
-            evidence.append(provenance(price, stamp))
+            quotes.append(price)
             add(state.quantity * price.amount, price.currency, identity)
     events = calculation._account_events if calculation else effective_events(journal)
     from portfolio_app.ledger.account_inception import account_inceptions
@@ -510,6 +744,8 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     bank_starts = _portfolio_bank_starts(journal, scope, calculation)
     openings = calculation._last_cash_openings if calculation else last_cash_openings(events)
     for account in scope.accounts:
+        if member_amounts is not None:
+            member_amounts.append(ZERO)
         if stamp < bank_starts.get(account, '') or (account in inceptions and stamp < inceptions[account]):
             continue
         if account not in openings or stamp < openings[account]:
@@ -533,12 +769,14 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
             if price is None or price.currency != balance.contract.currency:
                 reasons.append(Issue(f'{identity}: missing exact-contract mark on {stamp}', 'price'))
             else:
-                evidence.append(provenance(price, stamp))
+                quotes.append(price)
                 add(balance.unsettled_pnl(price.amount), balance.contract.currency, identity)
         for identity, claim in accounts.pending.items():
             if claim.account_id == account:
                 add(claim.amount, claim.currency, identity)
-    return AmountResult(None if reasons else total, tuple(reasons), tuple(evidence))
+    if reasons and member_amounts:
+        member_amounts.clear()
+    return _ResolvedClose(None if reasons else total, tuple(reasons), tuple(quotes))
 
 
 def unresolved_receipts(journal):
@@ -651,7 +889,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
         if dated_issues is not None:
             dated_issues[stamp].append(reason)
 
-    def add(identity, stamp, sequence, amount, currency, *, include_start=False, event_id='', expense=ZERO, income=ZERO):
+    def add(identity, stamp, sequence, amount, currency, *, include_start=False, event_id='', expense=ZERO, income=ZERO, estimated=False):
         if not (start < stamp <= end or (include_start and start == stamp)):
             return
         value = convert(amount, currency, target, stamp, observations)
@@ -665,7 +903,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
                 reason = Issue(f'{identity}: missing {currency}/{target} FX on {stamp}', 'fx')
         flows.append(ExternalFlow(identity, stamp, sequence, value, reason, event_id,
             convert(expense, currency, target, stamp, observations) or ZERO,
-            convert(income, currency, target, stamp, observations) or ZERO, (identity,)))
+            convert(income, currency, target, stamp, observations) or ZERO, (identity,), estimated))
         if reason:
             issue(reason, stamp)
 
@@ -683,7 +921,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             continue
         # Asset-only purchases are contributions; account-only payments out are withdrawals.
         amount = None if c.amount is None else -c.amount if asset_inside else c.amount
-        add('security:'+c.id, c.date, c.sequence, amount, c.currency, event_id='security:'+(c.event_id or c.id),
+        add('security:'+c.id, c.date, c.sequence, amount, c.currency, event_id='security:'+(c.event_id or c.id), estimated=c.estimated,
             include_start=include_account_start and (c.position_id in initial_positions
                 or cash_inside and inceptions.get(c.account_id) == start),
             expense=-c.amount if asset_inside and c.kind in ('fee', 'tax') and c.amount is not None else ZERO,
@@ -696,20 +934,23 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             if e.flow_classification == 'external':
                 add(e.id, e.date, e.sequence,
                     None if e.valuation_amount is None else e.valuation_amount*(1 if e.kind == 'inventory_in' else -1),
-                    e.valuation_currency, include_start=initial)
+                    e.valuation_currency, include_start=initial,
+                    estimated=e.valuation_amount is not None and (e.estimated or e.valuation_quality == 'estimated'))
             else:
                 issue(f'{e.id}: inventory origin or purpose unresolved', e.date)
         if e.kind in ('transfer_in', 'transfer_out') and book.position_id in members and inside_interval:
             price = price_at(observations, (book.position_id, book.instrument_id), e.date, events=selected_events(book))
             amount = e.amount if e.amount is not None else e.quantity*price.amount if price else None
             denomination = e.currency if e.amount is not None else price.currency if price else e.currency
-            add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination, include_start=initial)
+            add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination, include_start=initial,
+                estimated=e.amount is not None and e.estimated)
         if e.kind == 'swap' and inside_interval:
             source_inside, dest_inside = book.position_id in members, e.other_position_id in members
             if source_inside != dest_inside:
                 add(e.id, e.date, e.sequence,
                     None if e.valuation_amount is None else e.valuation_amount*(-1 if source_inside else 1),
-                    e.valuation_currency, include_start=initial)
+                    e.valuation_currency, include_start=initial,
+                    estimated=e.valuation_amount is not None and (e.estimated or e.valuation_quality == 'estimated'))
         if e.kind != 'transfer' or not inside_interval:
             continue
         source_inside, dest_inside = book.position_id in members, e.other_position_id in members
@@ -757,6 +998,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             grouped[key] = replace(previous,
                 amount=previous.amount+flow.amount if previous.amount is not None and flow.amount is not None else None,
                 expense=previous.expense+flow.expense, income=previous.income+flow.income,
+                estimated=previous.estimated or flow.estimated,
                 reason=previous.reason or flow.reason, postings=(*previous.postings, *flow.postings))
     return tuple(sorted(grouped.values(), key=lambda f: (f.date, f.sequence, f.id))), tuple(sorted(set(reasons)))
 
@@ -849,7 +1091,7 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
         if not start <= stamp <= end or stamp in negative:
             continue
         value = (valuations[stamp] if valuations is not None and stamp in valuations else
-                 calculation.value(scope, stamp, target))
+                 calculation.close(scope, stamp, target))
         if value.amount is not None and value.amount < 0:
             negative.add(stamp)
     return tuple(sorted(negative))
@@ -866,7 +1108,8 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
 def _period_capital(calculation, scope, start, end, target):
     opening = calculation.opening(scope, start, target)
     coverage = calculation.coverage(scope, start, end)
-    net, missing_flows = calculation.dated_flows(scope, target).total(start, end, amount_needed=not coverage)
+    net, missing_flows, estimated = calculation.dated_flows(scope, target).total_with_estimates(start, end, amount_needed=not coverage)
+    estimated = estimated or calculation.estimated_account_payments(scope, start, end)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
     capital = calculation.capital(scope, start, target)
     # A remaining-cost correction changes neither inventory nor cash. It cannot
@@ -879,7 +1122,7 @@ def _period_capital(calculation, scope, start, end, target):
     if cost_boundaries:
         capital = AmountResult(None, (*capital.reasons, *cost_boundaries))
     invested = capital.amount + net if capital.amount is not None and net is not None else None
-    return PeriodCapital(opening, capital, net, invested, flow_reasons)
+    return PeriodCapital(opening, capital, net, invested, flow_reasons, estimated)
 
 
 def _calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None, method='daily'):
@@ -922,4 +1165,4 @@ def _calculate_history(journal, scope, observations, start, end, target='EUR', *
             twr_reasons = (reason,) if reason else ()
     return PersonalPerformance(opening.amount, ending.amount, net, invested, gain, mwr, twr, days,
         tuple(dict.fromkeys((*opening.reasons, *ending.reasons))), flow_reasons, mwr_reasons, twr_reasons,
-        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method, estimated_return_inputs(journal, scope, start, end, events_by_position=calculation._estimated_events))
+        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method, basis.estimated)

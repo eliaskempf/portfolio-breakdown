@@ -232,19 +232,26 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return background_reader.still_current()
         return market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
 
+    from portfolio_app.performance.performance import ValuationCostCache
+    cost_cache = cached_input('valuation_cost_evidence',
+        (market_workspace, snapshot.revision, leverage_context.journal_revision),
+        ValuationCostCache, immutable=True)
+    account_state = None
     with valuation_requests(price_service, historical) as valuation_history:
         with st.spinner('Valuing portfolio…'):
             prepared = prepare_application(inputs, price_service, refresh=refresh,
-                reporting_currency=reporting_currency, historical=valuation_history)
+                reporting_currency=reporting_currency, historical=valuation_history, cost_cache=cost_cache)
         valued, status = prepared.valued, prepared.status
         ordinary_valued = valued
         if actual_active:
             from portfolio_app.portfolio.actual_portfolio import capital_plan_positions, journal_positions
             from portfolio_app.derivatives.futures_valuation import load_valuations
             try:
-                valuations, manual_fx = load_valuations(data_dir, journal)
+                from portfolio_app.interface.shared.input_cache import current_account_state
+                account_state = current_account_state(data_dir, journal, leverage_context.journal_revision)
+                valuations, manual_fx = load_valuations(data_dir, journal, state=account_state)
                 valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
-                    valuations=valuations, fx_rates=manual_fx)
+                    valuations=valuations, fx_rates=manual_fx, state=account_state)
             except DataError as exc:
                 workspace_error(exc, workspace_panel)
                 mark_view_ready()
@@ -342,7 +349,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
                                    allocation=allocation, valued=display_valued.loc[display_valued.shares.ne(0)].copy() if hide_empty else display_valued,
-                                   account_valued=valued, percent=percent, defer_dialog=True, journal=journal, has_accounts=broker_workspace)
+                                   account_valued=valued, percent=percent, defer_dialog=True, journal=journal, has_accounts=broker_workspace, account_state=account_state)
     def open_valued_position(position_id, *, editing=False):
         from portfolio_app.ledger.bank_accounts import bank_detail_position
         if actual_active and (bank_position := bank_detail_position(journal, position_id)):
