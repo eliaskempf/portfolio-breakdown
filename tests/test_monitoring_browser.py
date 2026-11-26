@@ -159,9 +159,16 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
     settle(page)
     rule=rule_from_dict(load_monitoring(root)[0]['rules'][0])
     for tab in ['Monitoring','Exposure','Positions','Rebalance','Futures','Overview']:
+        destination = page.get_by_role('tab', name=tab, exact=True)
+        destination.click()
+        playwright.expect(destination).to_have_attribute('aria-selected', 'true')
+        settle(page)
         record_evaluations(root,rule,[Evaluation('2026-10-13',10.,condition='normal'),Evaluation('2026-10-13',70.,condition='triggered')])
-        page.get_by_role('tab',name=tab,exact=True).click()
+        # Rerun this tab to observe the external event without waiting a minute
+        # for the next monitoring heartbeat. The dialog can now appear safely.
+        page.keyboard.press('r')
         playwright.expect(dialog).to_be_visible()
+        playwright.expect(destination).to_have_attribute('aria-selected', 'true')
         playwright.expect(dialog).to_contain_text('Your rule')
         playwright.expect(dialog).to_contain_text('Condition:')
         playwright.expect(dialog).to_contain_text('Observed:')
