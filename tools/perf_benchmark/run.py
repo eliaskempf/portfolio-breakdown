@@ -22,6 +22,10 @@ from renderer import measure_view, wait
 
 def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False, company_accounts=False):
     trial.mkdir()
+    if scenario == 'correction':
+        from portfolio_app.performance.history_observations import load_observations
+        original, revision = load_observations(workspace)
+        holdings_before = (workspace / 'holdings.csv').read_bytes()
     if scenario == 'market-chart':
         markets = prepare_market_chart(workspace)
         (trial / 'market-chart.json').write_text(json.dumps(markets), encoding='utf-8')
@@ -89,6 +93,22 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
+    if scenario == 'correction':
+        corrected, changed = load_observations(workspace)
+        row = corrected.observations[-1]
+        previous = next((o for o in original.active if o.id == row.replaces), None)
+        backups = list((workspace / '.backups').glob('history-observations-*.json'))
+        saves = [event['ms'] for event in events if event['event'] == 'manual_save']
+        if (len(saves) != 1 or len(backups) != 1 or hashlib.sha256(backups[0].read_bytes()).hexdigest() != revision
+                or changed == revision or corrected.observations[:-1] != original.observations
+                or previous is None or row.key != previous.key or str(row.amount) != '237.12345'
+                or row.source != 'manual: invented' or row.listing != previous.listing
+                or row.calendar != previous.calendar or row.exchange_timezone != previous.exchange_timezone
+                or corrected.classifications != original.classifications or corrected.reviews != original.reviews
+                or (workspace / 'holdings.csv').read_bytes() != holdings_before):
+            raise AssertionError('Correction did not preserve the original history, provenance, holdings and backup')
+        report.update(save_ms=saves[0], observations=len(corrected.observations))
+        return report
     if scenario in {'cash-history', 'long-history'}:
         from dateutil.relativedelta import relativedelta
         settings = json.loads((workspace.parent / 'cash-history.json').read_bytes())
@@ -490,7 +510,11 @@ def check_exposure(report, expected, surface, profile):
 
 
 def check_comparison(report, expected, *, surface, name, profile, experiment):
-    if experiment == 'market-chart':
+    if experiment == 'correction':
+        if report['digest'] != expected.setdefault('corrected_chart', report['digest']):
+            raise AssertionError('The chart after the correction differed across binaries or renderers')
+        print(surface, name, 'correction save / click to settled ms', round(report['save_ms']), round(report['settled_ms']), flush=True)
+    elif experiment == 'market-chart':
         print(surface, name, 'market chart first and repeat paint ms',
               [round(a['paint_ms']) for a in report['actions']], flush=True)
     elif experiment == 'checklist':
@@ -543,7 +567,8 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                 with TemporaryDirectory(prefix=experiment + '-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
                     create_workspace(workspace, profile, today=as_of, checklist=experiment == 'checklist',
-                                     large_risk_matrix=experiment == 'risk' and profile == 'mixed-history')
+                                     large_risk_matrix=experiment == 'risk' and profile == 'mixed-history',
+                                     long_history=experiment == 'correction')
                     trial = Path(tmp) / 'trial'
                     identity = dict(variant=name, surface=surface, pair=pair)
                     print('Starting', experiment, surface, name, 'pair', pair + 1, flush=True)
@@ -574,7 +599,7 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection', 'checklist', 'market-chart'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection', 'checklist', 'market-chart', 'correction'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for a paired comparison')
     options = parser.parse_args()
@@ -584,7 +609,7 @@ if __name__ == '__main__':
             parser.error('The collection benchmark exercises the ETF look-through company grid')
         run_comparison(options.executable.resolve(), options.executable.resolve(), options.output.resolve(), surfaces,
                        options.pairs, options.profile, options.experiment)
-    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale', 'checklist', 'market-chart'}:
+    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale', 'checklist', 'market-chart', 'correction'}:
         if not options.reference:
             parser.error('A paired binary comparison requires --reference')
         if (options.experiment.startswith('risk') or options.experiment == 'market-chart') and options.profile == 'small':

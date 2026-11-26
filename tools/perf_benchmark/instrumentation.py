@@ -25,6 +25,26 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario == 'correction':
+        import streamlit as st
+        from portfolio_app.interface.views.history import history_data_ui
+        from portfolio_app.performance.personal_history_refresh import refresher
+
+        refresher.download = lambda directory, journal, scope, store, start, end, target: (store, ())
+        render = history_data_ui._save_form
+        def render_form(*args, **kwargs):
+            if st.session_state.get(kwargs['key'] + 'amount') == '237.12345':
+                (trial / 'amount-ready').touch()
+            return render(*args, **kwargs)
+        history_data_ui._save_form = render_form
+        save = history_data_ui.save_observations
+        def measured_save(*args, **kwargs):
+            start = time.perf_counter()
+            result = save(*args, **kwargs)
+            record('manual_save', ms=(time.perf_counter() - start) * 1000)
+            return result
+        history_data_ui.save_observations = measured_save
+        return
     if scenario in {'cash-history', 'long-history'}:
         from threading import local
         from portfolio_app.performance import history_view as views, personal_performance as performance
