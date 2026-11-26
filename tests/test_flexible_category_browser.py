@@ -1,4 +1,5 @@
 """Real-browser category navigation and planning with synthetic offline values."""
+import inspect
 import os
 import socket
 import subprocess
@@ -14,8 +15,42 @@ from test_flexible_category_ui import workspace
 playwright = pytest.importorskip('playwright.sync_api')
 
 
+def render_with_staggered_target_tabs(render_app, workspace):
+    """Let the test release the remaining tab labels after Overview is painted."""
+    from time import monotonic, sleep
+    from unittest.mock import patch
+
+    import streamlit as st
+    from streamlit.delta_generator import DeltaGenerator
+
+    gate = workspace / 'hold-target-tabs'
+    original = DeltaGenerator._block
+
+    def send_block(container, block_proto=None, *args, **kwargs):
+        block = original(container, block_proto, *args, **kwargs)
+        if (block_proto is not None and block_proto.tab.label == 'Overview'
+                and gate.exists() and st.session_state.get('main_tabs') == 'Rebalance'):
+            deadline = monotonic() + 15
+            while gate.exists():
+                if monotonic() >= deadline:
+                    raise RuntimeError('Browser did not release the synthetic target tabs')
+                sleep(.01)
+        return block
+
+    with patch.object(DeltaGenerator, '_block', send_block):
+        render_app(workspace, demo=True)
+
+
 @pytest.fixture
-def category_page(workspace, request):
+def category_app(request):
+    if getattr(request, 'param', None) == 'stagger-target-tabs':
+        return (inspect.getsource(render_with_staggered_target_tabs)
+                + '\nrender_with_staggered_target_tabs(render_app, Path(__file__).parent)\n')
+    return 'render_app(Path(__file__).parent, demo=True)\n'
+
+
+@pytest.fixture
+def category_page(workspace, request, category_app):
     if getattr(request, 'param', '') == 'mixed-exposure':
         import pandas as pd
         from test_mixed_exposure_targets import mixed
@@ -35,7 +70,7 @@ def category_page(workspace, request):
         rows.to_csv(workspace/'holdings.csv', index=False)
         (workspace/'allocation.yaml').write_text(allocation_content(Allocation((Bucket('sleeve','Example sleeve',target=1.),))))
     app = workspace/'app.py'
-    app.write_text('from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\nrender_app(Path(__file__).parent, demo=True)\n')
+    app.write_text('from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n' + category_app)
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0))
         port=sock.getsockname()[1]
@@ -235,7 +270,9 @@ def test_create_category_and_return_to_flat_view(category_page):
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
-@pytest.mark.parametrize('category_page',['mixed-exposure'],indirect=True)
+@pytest.mark.parametrize(('category_page', 'category_app'), [
+    pytest.param('mixed-exposure', 'stagger-target-tabs', id='mixed-exposure'),
+], indirect=True)
 def test_context_target_dialog_navigation_and_save(category_page):
     from portfolio_app.exposure.exposure_targets import load_exposure_targets
     from portfolio_app.portfolio.allocation import load_allocation
@@ -281,8 +318,18 @@ def test_context_target_dialog_navigation_and_save(category_page):
     assert load_exposure_targets(workspace,load_allocation(workspace/'allocation.yaml'))[0].multiple == 1.25
     page.get_by_role('button',name='Edit targets',exact=True).click()
     dialog.wait_for()
-    dialog.get_by_role('button',name='Manage targets',exact=True).click()
+    gate = workspace / 'hold-target-tabs'
+    gate.touch()
+    main_tabs = page.locator('.st-key-main_tabs').get_by_role('tablist').first
+    try:
+        dialog.get_by_role('button',name='Manage targets',exact=True).click()
+        playwright.expect(main_tabs.get_by_role('tab')).to_have_count(1)
+        playwright.expect(main_tabs.get_by_role('tab', name='Overview', exact=True)).to_be_visible()
+    finally:
+        gate.unlink()
     dialog.wait_for(state='hidden')
+    playwright.expect(main_tabs.get_by_role('tab', name='Rebalance', exact=True)).to_have_attribute('aria-selected', 'true')
+    playwright.expect(page.get_by_role('combobox', name='Target hierarchy', exact=True)).to_be_visible()
     choose(page,'Target hierarchy','Example sleeve')
     page.get_by_role('button',name='Edit targets',exact=True).click()
     canvas = dialog.get_by_test_id('stDataFrame').locator('canvas').first

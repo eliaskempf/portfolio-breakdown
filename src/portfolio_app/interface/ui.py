@@ -305,8 +305,20 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or broker_workspace else []) + ['Monitoring', 'Taxes']
     if st.session_state['main_tabs'] not in tab_names:
         st.session_state['main_tabs'] = 'Overview'
-    tabs = st.tabs(tab_names,
-        default='Overview', key='main_tabs', on_change='rerun')
+    selected_tab = st.session_state['main_tabs']
+    previous_tab, default_tab = st.session_state.get('main_tab_navigation', (selected_tab, 'Overview'))
+    if previous_tab != selected_tab:
+        # Streamlit 1.66 can consume a backend selection before its tab label
+        # arrives. Remount only for programmatic moves. Both defaults select
+        # the first tab but give the native widget different identities.
+        default_tab = None if default_tab == 'Overview' else 'Overview'
+        st.session_state['main_tabs'] = selected_tab
+    st.session_state['main_tab_navigation'] = (selected_tab, default_tab)
+
+    def remember_tab_click():
+        st.session_state['main_tab_navigation'] = (st.session_state['main_tabs'], default_tab)
+
+    tabs = st.tabs(tab_names, default=default_tab, key='main_tabs', on_change=remember_tab_click)
     overview, exposure, positions, rebalance = tabs[:4]
     if not overview.open:
         st.session_state.pop('import_complete', None)
