@@ -74,9 +74,9 @@ def create_acceptance_workspace(directory: Path):
 
 
 def smoke(command, evidence=None):
-    from playwright.sync_api import sync_playwright, expect
+    from playwright.sync_api import expect
     from browser_sync import StreamlitReruns
-    from package_smoke import wait_for_instance, settle_app
+    from package_smoke import browser_page, wait_for_instance, settle_app
     from portfolio_app.workspace.backup import inspect_backup
     from portfolio_app.workspace.workspace import inventory
 
@@ -140,14 +140,18 @@ def smoke(command, evidence=None):
             expect(dialog.locator('.js-plotly-plot:visible')).to_have_count(1)
             dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle_app(page)
             expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
-            dialog.get_by_role('button', name='Close', exact=True).first.click(); settle_app(page)
-            page.get_by_role('button', name='App menu', exact=True).click()
-            page.get_by_text('Preferences', exact=True).click()
-            sold = page.get_by_role('checkbox', name='Show sold positions', exact=True, include_hidden=True)
+            runs.click(page, dialog.get_by_role('button', name='Close', exact=True).first)
+            expect(dialog).not_to_be_visible()
+            preferences = menu_section(page, 'Preferences')
+            sold = preferences.get_by_role('checkbox', name='Show sold positions', exact=True, include_hidden=True)
             if not sold.is_checked():
-                page.get_by_text('Show sold positions', exact=True).click(); settle_app(page)
-            page.get_by_role('button', name='App menu', exact=True).click(); settle_app(page)
-            table.get_by_text('Invented closed holding', exact=True).click(); settle_app(page)
+                runs.click(page, preferences.get_by_text('Show sold positions', exact=True))
+            expect(sold).to_be_checked()
+            runs.click(page, page.get_by_role('button', name='App menu', exact=True))
+            expect(page.get_by_test_id('stPopoverBody')).not_to_be_visible()
+            closed = table.get_by_text('Invented closed holding', exact=True)
+            expect(closed).to_be_visible()
+            closed.click(); settle_app(page)
             dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle_app(page)
             expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_contain_text('26.00')
             dialog.get_by_role('button', name='Close', exact=True).first.click(); settle_app(page)
@@ -156,17 +160,22 @@ def smoke(command, evidence=None):
                 page.get_by_role('radio', name=name, exact=True).click(); settle_app(page)
             runs.click(page, page.get_by_role('tab', name='Overview', exact=True))
 
-        def settings(page, action):
+        def menu_section(page, name):
             # Each menu interaction triggers a Streamlit rerun. The popover
             # can display its old controls until the server finishes that run.
             trigger = page.get_by_role('button', name='App menu', exact=True)
             if trigger.get_attribute('aria-expanded') != 'true':
                 runs.click(page, trigger)
             menu = page.get_by_test_id('stPopoverBody')
-            heading = menu.get_by_text('Workspace', exact=True)
+            heading = menu.get_by_text(name, exact=True)
             section = heading.locator('xpath=ancestor::details[1]')
             if section.get_attribute('open') is None:
                 runs.click(page, heading)
+            expect(section).to_have_attribute('open', '')
+            return section
+
+        def settings(page, action):
+            section = menu_section(page, 'Workspace')
             runs.click(page, section.get_by_role('button', name=action, exact=True))
             dialog = page.get_by_role('dialog', name=action, exact=True)
             expect(dialog).to_be_visible()
@@ -177,10 +186,7 @@ def smoke(command, evidence=None):
                 child = subprocess.Popen(args, env=env, cwd=root, stdout=handle, stderr=handle,
                                          start_new_session=os.name != 'nt')
                 url = wait_for_instance(state, child)
-                with sync_playwright() as runner:
-                    browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),
-                                                      args=['--no-sandbox'])
-                    page = browser.new_page(viewport={'width': 1440, 'height': 1100})
+                with browser_page(evidence, 'history', viewport={'width': 1440, 'height': 1100}) as page:
                     page.set_default_timeout(30000)
                     runs = StreamlitReruns(page, settle=settle_app, timeout_ms=30000)
                     page.goto(url)
@@ -222,7 +228,6 @@ def smoke(command, evidence=None):
                         assert request_instance(workspace)['workspace']['directory'] == str(restored)
                     assert inventory(workspace) == before
                     assert (restored/'account-journal.json').read_bytes() == (workspace/'account-journal.json').read_bytes()
-                    browser.close()
                 stop()
                 if evidence is not None:
                     (evidence/'history-acceptance.json').write_text(json.dumps({
