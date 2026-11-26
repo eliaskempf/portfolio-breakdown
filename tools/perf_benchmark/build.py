@@ -2,7 +2,7 @@
 from pathlib import Path
 import subprocess
 import sys
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 
 def build(root, output):
@@ -19,8 +19,10 @@ def build(root, output):
             "pathex=[str(root / 'src')]", f"runtime_hooks=[{str(harness/'runtime_hook.py')!r}], pathex=[str(root / 'src'), {str(harness.parent)!r}]").replace(
             "hiddenimports=collect_submodules('portfolio_app')", "hiddenimports=['perf_benchmark.instrumentation', 'perf_benchmark.renderer'] + collect_submodules('portfolio_app')"))
     try:
-        subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--distpath', str(output),
-            '--workpath', str(output.parent / 'benchmark-build'), str(temp)], cwd=root, check=True)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix='benchmark-build-', dir=output.parent) as work:
+            subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--distpath', str(output),
+                '--workpath', work, str(temp)], cwd=root, check=True)
     finally:
         temp.unlink()
 
