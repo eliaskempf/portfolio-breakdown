@@ -19,6 +19,25 @@ from browser_support import settle
 playwright = pytest.importorskip('playwright.sync_api')
 
 
+def expect_monitoring_write(root, predicate, description):
+    deadline = time.monotonic() + 20
+    while not predicate(load_monitoring(root)[0]):
+        assert time.monotonic() < deadline, f'Timed out waiting for {description}'
+        time.sleep(.05)
+
+
+def acknowledge_alert(dialog, root):
+    pending = load_monitoring(root)[0]['events'][-1]
+    assert not pending['acknowledged']
+    dialog.get_by_role('button', name='Acknowledge alert', exact=True).click()
+    # A background rerun can temporarily remove the modal before the click is
+    # processed. Wait for this episode's durable write as well as its dismissal.
+    expect_monitoring_write(root, lambda doc: any(
+        event['id'] == pending['id'] and event['acknowledged'] for event in doc['events']),
+        'the alert acknowledgement')
+    playwright.expect(dialog).to_have_count(0)
+
+
 @pytest.fixture
 def monitoring_page(tmp_path):
     root=tmp_path/'synthetic'
@@ -72,9 +91,7 @@ def test_trigger_dialog_acknowledgment_and_account_rule_navigation(monitoring_pa
     # A first evaluation can finish after the initial render. Allow one monitoring heartbeat.
     playwright.expect(dialog).to_be_visible(timeout=75000)
     playwright.expect(dialog).to_contain_text('60.00%')
-    dialog.get_by_role('button',name='Acknowledge alert',exact=True).click()
-    playwright.expect(dialog).to_have_count(0)
-    assert load_monitoring(root)[0]['events'][0]['acknowledged']
+    acknowledge_alert(dialog, root)
     playwright.expect(page.get_by_role('button',name='Check all rules now',exact=True)).to_have_count(0)
     playwright.expect(page.get_by_role('button',name='View rule',exact=True)).to_have_count(0)
     page.get_by_role('tab',name='Monitoring',exact=True).click()
@@ -88,7 +105,8 @@ def test_trigger_dialog_acknowledgment_and_account_rule_navigation(monitoring_pa
     page.get_by_role('textbox',name='Maximum LTV (%)',exact=True).fill('70')
     page.get_by_role('button',name='Save account rule',exact=True).click()
     playwright.expect(page.get_by_role('button',name='Save account rule',exact=True)).to_have_count(0)
-    assert load_monitoring(root)[0]['rules'][0]['threshold']==70
+    expect_monitoring_write(root, lambda doc: doc['rules'][0]['threshold'] == 70,
+                            'the updated LTV threshold')
     page.get_by_role('tab',name='Futures',exact=True).click()
     page.get_by_role('button',name='Create account alert',exact=True).click()
     playwright.expect(page.get_by_role('combobox',name='Account metric',exact=True)).to_be_visible()
@@ -102,7 +120,9 @@ def test_trigger_dialog_acknowledgment_and_account_rule_navigation(monitoring_pa
     page.get_by_role('button',name='Save account rule',exact=True).click()
     playwright.expect(page.get_by_role('combobox',name='Rule details',exact=True)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
-    assert len(load_monitoring(root)[0]['rules'])==2
+    expect_monitoring_write(root, lambda doc: len(doc['rules']) == 2 and any(
+        rule['kind'] == 'coverage' and rule['threshold'] == 0 and rule['warning_band'] == 10
+        for rule in doc['rules']), 'the new headroom rule')
     page.reload()
     playwright.expect(page.get_by_role('tab',name='Monitoring',exact=True)).to_be_visible()
     playwright.expect(page.get_by_role('dialog',name='Monitoring alert')).to_have_count(0)
@@ -133,7 +153,8 @@ def test_indicator_browse_save_and_notification_destination(monitoring_page):
     threshold.press('Enter')
     page.get_by_role('button',name='Track rule',exact=True).click()
     playwright.expect(page.get_by_role('combobox',name='Rule details',exact=True)).to_be_visible()
-    assert any(r['kind']=='sma' for r in load_monitoring(root)[0]['rules'])
+    expect_monitoring_write(root, lambda doc: any(rule['kind'] == 'sma' for rule in doc['rules']),
+                            'the new SMA rule')
     bell = page.get_by_role('button',name=re.compile('Notifications'))
     icon = bell.get_by_test_id('stIconMaterial').filter(has_text='notifications')
     playwright.expect(icon).to_be_visible()
@@ -152,8 +173,7 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
     MonitoringService(root, demo=True).evaluate()
     page.goto(url)
     dialog=page.get_by_role('dialog',name='Monitoring alert')
-    dialog.get_by_role('button',name='Acknowledge alert',exact=True).click()
-    playwright.expect(dialog).to_have_count(0)
+    acknowledge_alert(dialog, root)
     # Let acknowledgment finish before injecting the next external alert;
     # otherwise its rerun can legitimately open that alert over the next click.
     settle(page)
@@ -188,8 +208,7 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
             return a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0
                 && Math.abs(a.top - b.top) < 3;
         }""")
-        dialog.get_by_role('button',name='Acknowledge alert',exact=True).click()
-        playwright.expect(dialog).to_have_count(0)
+        acknowledge_alert(dialog, root)
         settle(page)
         if tab!='Monitoring':
             playwright.expect(page.get_by_role('button',name='Check all rules now',exact=True)).to_have_count(0)
