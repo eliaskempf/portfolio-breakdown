@@ -17,6 +17,77 @@ def smoke_driver(monkeypatch):
     return importlib.import_module('package_smoke')
 
 
+@pytest.mark.parametrize('interruption', ['dismissal', 'departing-view-poll'])
+def test_position_dismissal_reaches_its_next_full_render(smoke_driver, interruption):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    from history_package_smoke import dismiss_position_and_navigate
+
+    events = []
+    page = SimpleNamespace(on=lambda *args: None)
+    runs = smoke_driver.StreamlitReruns(page, settle=lambda *args, **kwargs: None)
+    class Socket:
+        @contextmanager
+        def expect_event(self, event, *, predicate, timeout):
+            assert event == 'framesent'
+            self.predicate = predicate
+            self.receipt = SimpleNamespace(value=None)
+            yield self.receipt
+            assert self.receipt.value is not None
+        def wait_for_event(self, *args, **kwargs):
+            pytest.fail('The departed fragment has no further receipt')
+    runs.socket = Socket()
+
+    def send(scope, *, auto=False):
+        message = BackMsg()
+        message.rerun_script.fragment_id = scope
+        message.rerun_script.is_auto_rerun = auto
+        payload = message.SerializeToString()
+        runs._sent(payload)
+        if getattr(runs.socket, 'predicate', lambda _: False)(payload):
+            runs.socket.receipt.value = payload
+
+    def render(scope, status):
+        start = ForwardMsg()
+        start.new_session.fragment_ids_this_run.extend([scope] if scope else [])
+        runs._received(start.SerializeToString())
+        runs._received(ForwardMsg(script_finished=status).SerializeToString())
+
+    fragment_success = ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY
+    if interruption == 'departing-view-poll':
+        # The departing Transactions view sent two polls; only one ran.
+        send('live', auto=True)
+        send('departed', auto=True)
+        render('live', fragment_success)
+    else:
+        render('', ForwardMsg.FINISHED_SUCCESSFULLY)
+
+    def close():
+        events.append('close')
+        if interruption == 'dismissal':
+            # Dismissal's host returned EARLY twice before the other poll ran.
+            send('host')
+            send('live', auto=True)
+            for _ in range(2):
+                render('host', ForwardMsg.FINISHED_EARLY_FOR_RERUN)
+            render('live', fragment_success)
+        assert not runs.idle
+
+    def navigate(**kwargs):
+        events.append('navigate')
+        send('')
+        render('', ForwardMsg.FINISHED_SUCCESSFULLY)
+
+    dialog = SimpleNamespace(
+        get_by_role=lambda *args, **kwargs: SimpleNamespace(first=SimpleNamespace(click=close)),
+        wait_for=lambda *, state: events.append(state))
+    dismiss_position_and_navigate(page, dialog, runs, SimpleNamespace(click=navigate))
+    assert events == ['close', 'hidden', 'navigate']
+    assert runs.idle
+
+
 @pytest.mark.parametrize('installation,name', [
     ('wheel', 'portfolio-desktop.exe'), ('frozen', 'Portfolio Breakdown.exe'),
 ])

@@ -73,6 +73,14 @@ def create_acceptance_workspace(directory: Path):
             'portfolio_value': '33881.85', 'closed_position': 'smoke-closed'}
 
 
+def dismiss_position_and_navigate(page, dialog, runs, destination):
+    # Dismissal routes through the position host fragment. The disappearing
+    # view can leave a poll or an early fragment run without another finish.
+    dialog.get_by_role('button', name='Close', exact=True).first.click()
+    dialog.wait_for(state='hidden')
+    runs.click_full_rerun(page, destination)
+
+
 def smoke(command, evidence=None):
     from playwright.sync_api import expect
     from browser_sync import StreamlitReruns
@@ -140,8 +148,8 @@ def smoke(command, evidence=None):
             expect(dialog.locator('.js-plotly-plot:visible')).to_have_count(1)
             dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle_app(page)
             expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
-            runs.click(page, dialog.get_by_role('button', name='Close', exact=True).first)
-            expect(dialog).not_to_be_visible()
+            dismiss_position_and_navigate(page, dialog, runs,
+                                          page.get_by_role('button', name='App menu', exact=True))
             preferences = menu_section(page, 'Preferences')
             sold = preferences.get_by_role('checkbox', name='Show sold positions', exact=True, include_hidden=True)
             if not sold.is_checked():
@@ -154,8 +162,8 @@ def smoke(command, evidence=None):
             closed.click(); settle_app(page)
             dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle_app(page)
             expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_contain_text('26.00')
-            dialog.get_by_role('button', name='Close', exact=True).first.click(); settle_app(page)
-            page.get_by_role('tab', name='Futures', exact=True).click(); settle_app(page)
+            dismiss_position_and_navigate(page, dialog, runs,
+                                          page.get_by_role('tab', name='Futures', exact=True))
             for name in ('Cash & financing', 'Collateral', 'Marks & FX', 'Positions & transactions'):
                 page.get_by_role('radio', name=name, exact=True).click(); settle_app(page)
             runs.click(page, page.get_by_role('tab', name='Overview', exact=True))
