@@ -470,3 +470,24 @@ def test_shared_prefix_is_checked_against_encoded_fields_before_writing(tmp_path
         module.save_observations(tmp_path, update, revision)
     assert load_observations(tmp_path) == (previous, revision)
     assert not (tmp_path / '.backups').exists()
+
+
+def test_append_rechecks_future_date_when_the_local_day_changes(tmp_path, monkeypatch):
+    from datetime import date
+    import portfolio_app.ledger.security_history as history
+    import portfolio_app.performance.history_observations as module
+
+    class LocalDate(date):
+        today = classmethod(lambda cls: date(2024, 1, 2))
+
+    monkeypatch.setattr(history, 'date', LocalDate)
+    row = Observation('mark', 'value', 'synthetic', '2024-01-02', D(100), 'EUR')
+    module.save_observations(tmp_path, ObservationStore((row,)), None)
+    previous, revision = load_observations(tmp_path)
+    update = module.add_observation(previous, replace(row, id='another', date='2024-01-01'))
+
+    monkeypatch.setattr(LocalDate, 'today', classmethod(lambda cls: date(2024, 1, 1)))
+    with pytest.raises(DataError, match='future dated'):
+        module.save_observations(tmp_path, update, revision)
+    assert load_observations(tmp_path) == (previous, revision)
+    assert not (tmp_path / '.backups').exists()

@@ -215,7 +215,9 @@ def index_observations(store):
 def from_dict(raw, *, previous=()):
     rows = raw.get('observations', ())
     if previous:
-        validated = tuple(_saved_observation(row, cached) for row, cached in zip(rows, previous))
+        # The local calendar can move backwards between loading and saving.
+        validate_day = lru_cache(maxsize=4096)(day)
+        validated = tuple(_saved_observation(row, cached, validate_day) for row, cached in zip(rows, previous))
         observations = validated + tuple(Observation(**row) for row in rows[len(validated):])
     else:
         observations = tuple(Observation(**row) for row in rows)
@@ -313,11 +315,12 @@ def _observation_document(store):
         return output.getvalue()
 
 
-def _saved_observation(raw, cached):
+def _saved_observation(raw, cached, validate_day):
     # Compare against the actual JSON read back from the encoder. Only ordinary
     # immutable rows can be shared. Decimal bounds depend on the active context.
     if type(cached) is Observation and type(raw) is dict and _text_types.issuperset(map(type, raw.values())):
         if raw == (vars(cached) | {'amount': str(cached.amount)}):
+            validate_day(raw['date'])
             decimal(raw['amount'], 'Observation')
             return cached
     return Observation(**raw)
