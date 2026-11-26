@@ -513,6 +513,14 @@ def test_category_rows_keyboard_focus_and_target_confirmation(intro_page):
     playwright.expect(name).to_have_count(1)
     playwright.expect(name).to_have_value('')
     playwright.expect(name).to_be_focused()
+    # A remounted dialog can apply its default focus after the new row has
+    # already received focus. This is programmatic, unlike a user's Tab/click.
+    currency = dialog.get_by_role('combobox', name='Portfolio currency', exact=True)
+    currency.evaluate('input => input.focus()')
+    playwright.expect(name).to_be_focused()
+    currency.click()
+    playwright.expect(currency).to_be_focused()
+    page.keyboard.press('Escape')
     playwright.expect(dialog.get_by_role('button', name='Help for Category 1', exact=True)).to_have_count(1)
     playwright.expect(dialog.get_by_role('button', name='Help for Target 1 (%)', exact=True)).to_have_count(1)
     dialog.get_by_role('button', name='Help for Category 1', exact=True).hover()

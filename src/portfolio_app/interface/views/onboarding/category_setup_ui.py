@@ -79,16 +79,30 @@ def _focus_new(index):
         window.__categorySetupHelpObserver = observer;
       }
       const token = 'ROW_TOKEN';
+      if (window.__categorySetupFocus?.token === token) return;
+      window.__categorySetupFocus?.controller?.abort();
+      const controller = new AbortController();
+      window.__categorySetupFocus = {token, controller};
+      const events = {capture: true, signal: controller.signal};
+      // The dialog can focus its first control after the new row mounts.
+      // Restore the row only during automatic focus placement. An interaction
+      // gives the user control for the rest of this row, including future reruns.
+      for (const type of ['pointerdown', 'keydown', 'beforeinput']) {
+        document.addEventListener(type, () => controller.abort(), events);
+      }
+      document.addEventListener('focusin', event => {
+        if (event.target.closest('.st-key-onboarding_currency')) requestAnimationFrame(focus);
+      }, events);
       let attempts = 0;
       function focus() {
-        if (window.__categorySetupFocus === token) return;
+        if (controller.signal.aborted) return;
         const input = document.querySelector('.st-key-onboarding_new_name_INDEX input');
         const target = document.querySelector('.st-key-onboarding_new_target_INDEX input');
         // Streamlit can mount the two columns in different frames.
         if (input?.getClientRects().length && target?.getClientRects().length &&
             !input.disabled && !target.disabled) {
           input.focus();
-          if (document.activeElement === input) { window.__categorySetupFocus = token; return; }
+          if (document.activeElement === input) return;
         }
         if (++attempts < 40) setTimeout(focus, 50);
       }

@@ -94,18 +94,24 @@ def test_pencil_after_sort_and_filter_opens_exact_account_and_renames(position_p
 def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_page):
     page, _ = position_page
     table = page.get_by_role('table', name='Positions', exact=True)
+    editor = page.get_by_role('dialog')
     table.locator('tbody tr').first.focus()
     page.keyboard.press('ArrowDown')
     page.keyboard.press('Enter')
-    page.get_by_role('dialog').get_by_role('button', name='Edit position').click()
-    playwright.expect(page.get_by_role('dialog').get_by_role('textbox', name='Instrument name', exact=True)).to_be_visible()
-    page.get_by_text('More details', exact=True).click()
-    playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Second')
-    page.get_by_role('button', name='Cancel', exact=True).click()
-    table.wait_for()
+    editor.get_by_role('button', name='Edit position').click()
+    name = editor.get_by_role('textbox', name='Instrument name', exact=True)
+    playwright.expect(name).to_be_visible()
+    editor.get_by_text('More details', exact=True).click()
+    account = editor.get_by_role('textbox', name='Account / broker', exact=True)
+    playwright.expect(account).to_have_value('Second')
+    editor.get_by_role('button', name='Cancel', exact=True).click()
+    # The table stays mounted behind the editor during cancellation.
+    playwright.expect(editor).to_have_count(0)
+    playwright.expect(table).to_be_visible()
     table.get_by_role('button', name='Edit Other invented token · Third', exact=True).click()
-    page.get_by_text('More details', exact=True).click()
-    playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Third')
+    playwright.expect(name).to_have_value('Other invented token')
+    editor.get_by_text('More details', exact=True).click()
+    playwright.expect(account).to_have_value('Third')
     assert not page.page_errors()
 
 

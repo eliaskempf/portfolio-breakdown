@@ -2,7 +2,7 @@
 import json
 import yaml
 import pytest
-from browser_support import select_tab
+from browser_support import select_tab, settle
 
 from test_ux_browser import ux_page as ux_page, playwright
 
@@ -124,33 +124,41 @@ def test_assets_first_filters_breakdown_and_source_dialog(exposure_page):
 
 def test_themes_include_unclassified_and_chart_navigation_updates_table(exposure_page):
     page, directory = exposure_page
-    page.get_by_role('radio', name='Themes & sectors', exact=True).click()
     results = page.locator('.st-key-exposure_results')
-    chart = results.locator('.js-plotly-plot')
+    chart_selector = '.st-key-exposure_results .js-plotly-plot'
+    chart = page.locator(chart_selector)
+
+    def click_theme():
+        # Each drill replaces the plot. Its SVG can be visible before Streamlit
+        # has mounted the navigation listener on that particular chart.
+        settle(page)
+        page.wait_for_function(
+            'selector => !!document.querySelector(selector)?._ev?._events?.plotly_sunburstclick',
+            arg=chart_selector)
+        label = chart.locator('text[data-unformatted="Theme"]')
+        label.scroll_into_view_if_needed()
+        box = label.bounding_box()
+        page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+
+    page.get_by_role('radio', name='Themes & sectors', exact=True).click()
     chart.wait_for()
     assert 'Unclassified' in chart.evaluate('el => el.data[0].labels')
-    label = chart.locator('text.slicetext').filter(has_text='Theme').first
-    label.scroll_into_view_if_needed()
-    box = label.bounding_box()
-    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
-    playwright.expect(page.get_by_role('combobox', name='Detail view', exact=True)).to_have_value('Theme')
-    # The selector arrives before Plotly finishes replacing the previous view.
+    click_theme()
+    detail = page.get_by_role('combobox', name='Detail view', exact=True)
+    playwright.expect(detail).to_have_value('Theme')
     page.wait_for_function("document.querySelector('.st-key-exposure_results .js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Theme'")
     assert chart.evaluate('el => el.data[0].labels[0]') == 'Theme'
-    label = chart.locator('text.slicetext').filter(has_text='Theme').first
-    label.scroll_into_view_if_needed()
-    box = label.bounding_box()
-    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
-    playwright.expect(page.get_by_role('combobox', name='Detail view', exact=True)).to_have_value('All selected labels')
+    table = results.get_by_test_id('stDataFrame')
+    playwright.expect(table).to_contain_text('Invented Satellite')
+    click_theme()
+    playwright.expect(detail).to_have_value('All selected labels')
     page.wait_for_function("document.querySelector('.st-key-exposure_results .js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Selected labels'")
-    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
+    playwright.expect(table).to_contain_text('% of labels')
+    settle(page)
     page.get_by_role('combobox', name='Group by', exact=True).click()
     page.get_by_role('option', name='Labels', exact=True).click()
     results.locator('[class*="st-key-exposure_theme_chart_"] .js-plotly-plot').wait_for()
-    label = chart.locator('text.slicetext').filter(has_text='Theme').first
-    label.scroll_into_view_if_needed()
-    box = label.bounding_box()
-    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+    click_theme()
     playwright.expect(page.get_by_role('combobox', name='Hierarchy root', exact=True)).to_have_value('Theme')
     page.screenshot(path=str(directory / 'exposure-themes.png'))
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
