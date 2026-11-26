@@ -212,9 +212,15 @@ def index_observations(store):
     return store if isinstance(store, _ObservationIndex) else store.index
 
 
-def from_dict(raw):
+def from_dict(raw, *, previous=()):
+    rows = raw.get('observations', ())
+    if previous:
+        validated = tuple(_saved_observation(row, cached) for row, cached in zip(rows, previous))
+        observations = validated + tuple(Observation(**row) for row in rows[len(validated):])
+    else:
+        observations = tuple(Observation(**row) for row in rows)
     return ObservationStore(
-        tuple(Observation(**o) for o in raw.get('observations', ())),
+        observations,
         tuple(CoverageReview(**{**r, 'scope': HistoryScope(**r['scope'])}) for r in raw.get('reviews', ())),
         tuple(raw.get('classifications', ())), raw['version'])
 
@@ -223,7 +229,7 @@ _parsed_stores = OrderedDict()
 _parsed_stores_lock = Lock()
 
 
-def _decode_observations(content):
+def _decode_observations(content, *, previous=()):
     # JSON shares object keys, but each close otherwise owns new copies of its
     # subject, date, currency and provenance. Keep the pool local to this read.
     @lru_cache(maxsize=8192)
@@ -239,7 +245,8 @@ def _decode_observations(content):
                     row[name] = shared_text(value)
         return row
 
-    return from_dict(json.loads(content, object_hook=share_row_text))
+    raw = json.loads(content, object_hook=share_row_text)
+    return from_dict(raw, previous=previous) if previous else from_dict(raw)
 
 
 def _store_for_revision(revision, load):
@@ -273,6 +280,7 @@ def load_observations(directory):
 _observation_fields = tuple(field.name for field in fields(Observation))
 _observation_values = attrgetter(*_observation_fields)
 _scalar_field_types = frozenset({str, Decimal})
+_text_types = frozenset({str})
 
 
 def _observation_record(row):
@@ -305,9 +313,29 @@ def _observation_document(store):
         return output.getvalue()
 
 
+def _saved_observation(raw, cached):
+    # Compare against the actual JSON read back from the encoder. Only ordinary
+    # immutable rows can be shared. Decimal bounds depend on the active context.
+    if type(cached) is Observation and type(raw) is dict and _text_types.issuperset(map(type, raw.values())):
+        if raw == (vars(cached) | {'amount': str(cached.amount)}):
+            decimal(raw['amount'], 'Observation')
+            return cached
+    return Observation(**raw)
+
+
+def _validated_update(content, store, expected_revision):
+    with _parsed_stores_lock:
+        prior = _parsed_stores.get(expected_revision)
+    if (type(store) is ObservationStore and prior is not None and prior.observations
+            and len(store.observations) >= len(prior.observations)
+            and all(saved is current for saved, current in zip(prior.observations, store.observations))):
+        return _decode_observations(content, previous=prior.observations)
+    return _decode_observations(content)
+
+
 def save_observations(directory, store, expected_revision):
     content = _observation_document(store)
-    validated = _decode_observations(content)
+    validated = _validated_update(content, store, expected_revision)
     revision = sha256(content.encode('utf-8')).hexdigest()
     save_document(Path(directory) / FILE, content, expected_revision)
     # Publish only after the guarded write succeeds. Readers of a different

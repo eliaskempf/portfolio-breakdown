@@ -410,3 +410,63 @@ def test_indexed_boundary_lookup_only_inspects_the_requested_flow(monkeypatch):
     for i, row in enumerate(rows):
         assert lookup(index, 'value', 'scope', '2024-01-01', side='before', boundary=f'flow-{i}') is row
     assert len(checked) <= len(rows)
+
+
+def test_append_reuses_only_unchanged_immutable_persisted_rows(tmp_path, monkeypatch):
+    import portfolio_app.performance.history_observations as module
+
+    row = Observation('mark', 'value', 'synthetic', '2024-01-01', D('10.000'), 'EUR')
+    mutable = replace(row, id='legacy', date='2024-01-02', basis={'legacy': ['input']})
+    module.save_observations(tmp_path, ObservationStore((row, mutable)), None)
+    previous, revision = load_observations(tmp_path)
+    replacement = replace(row, id='adjusted', amount=D('12.3400'), replaces='mark')
+    update = module.add_observation(previous, replacement)
+    initialized = []
+    original = Observation.__post_init__
+    def record(self):
+        initialized.append(self.id)
+        return original(self)
+    monkeypatch.setattr(Observation, '__post_init__', record)
+    module.save_observations(tmp_path, update, revision)
+    saved, changed = load_observations(tmp_path)
+    assert initialized == ['legacy', 'adjusted']
+    assert saved == update and changed != revision
+    assert saved.observations[0] is previous.observations[0]
+    assert saved.observations[1].basis is not previous.observations[1].basis
+    assert saved.active[-1] is not replacement
+    assert saved.active[-1].amount.as_tuple() == D('12.3400').as_tuple()
+    previous.observations[1].basis['legacy'].clear()
+    assert saved.observations[1].basis == {'legacy': ['input']}
+
+
+def test_append_validates_persisted_amounts_under_the_saving_decimal_context(tmp_path):
+    from decimal import Inexact, localcontext
+    import portfolio_app.performance.history_observations as module
+
+    row = Observation('mark', 'price', 'synthetic', '2024-01-01', D('123.45'), 'EUR')
+    module.save_observations(tmp_path, ObservationStore((row,)), None)
+    previous, revision = load_observations(tmp_path)
+    update = module.add_observation(previous, replace(row, id='adjusted', amount=D(100), replaces='mark'))
+    with localcontext() as context:
+        context.prec = 2
+        context.traps[Inexact] = True
+        with pytest.raises(Inexact):
+            module.save_observations(tmp_path, update, revision)
+    assert load_observations(tmp_path) == (previous, revision)
+    assert not (tmp_path / '.backups').exists()
+
+
+def test_shared_prefix_is_checked_against_encoded_fields_before_writing(tmp_path, monkeypatch):
+    import portfolio_app.performance.history_observations as module
+
+    row = Observation('mark', 'price', 'synthetic', '2024-01-01', D(10), 'EUR')
+    module.save_observations(tmp_path, ObservationStore((row,)), None)
+    previous, revision = load_observations(tmp_path)
+    update = module.add_observation(previous, replace(row, id='adjusted', amount=D(12), replaces='mark'))
+    document = json.loads(module._observation_document(update))
+    document['observations'][0]['basis'] = 'incompatible'
+    monkeypatch.setattr(module, '_observation_document', lambda store: json.dumps(document))
+    with pytest.raises(DataError, match='units traded'):
+        module.save_observations(tmp_path, update, revision)
+    assert load_observations(tmp_path) == (previous, revision)
+    assert not (tmp_path / '.backups').exists()
