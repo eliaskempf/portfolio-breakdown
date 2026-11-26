@@ -36,11 +36,12 @@ coordinator.schedule = lambda *a, **kw: False
 parser = argparse.ArgumentParser()
 parser.add_argument('--data-dir', type=Path)
 parser.add_argument('--demo-dir', type=Path)
+parser.add_argument('--demo-seed', choices=('live', 'offline'))
 parser.add_argument('--skip-intro', action='store_true')
 parser.add_argument('--managed', action='store_true')
 args = parser.parse_args()
 chosen = selection(args.data_dir).directory
-render_app(args.data_dir, demo_dir=args.demo_dir, managed=args.managed,
+render_app(args.data_dir, demo_dir=args.demo_dir, demo_seed=args.demo_seed, managed=args.managed,
            price_service=PriceService(StaticProvider(chosen / 'demo_prices.json')))
 ''')
     supervisor = tmp_path / 'supervisor.py'
