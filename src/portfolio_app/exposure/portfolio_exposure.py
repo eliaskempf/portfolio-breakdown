@@ -129,6 +129,7 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
         kind = position.get('instrument_type', 'unknown')
         declared = position.get('exposure_kind', 'unknown')
         fund = matching_fund(position, funds)
+        declared_overnight = declared == 'non_equity' and is_overnight_fund(fund)
         factor = factors.get(pid)
         if kind == 'liability':
             capital[-1]['kind'] = 'liability'
@@ -170,7 +171,7 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
             else:
                 add(common, position['id'], position['name'], value, value * factor.factor, 'leveraged_fund',
                     'Approximate equity exposure; underlying constituents unresolved', factor.method, factor.as_of)
-        elif kind in {'cash', 'crypto', 'physical'} or (declared == 'non_equity' and not is_overnight_fund(fund)):
+        elif kind in {'cash', 'crypto', 'physical'} or (declared == 'non_equity' and not declared_overnight):
             add(common, position['id'], position['name'], value, 0., 'instrument', 'Funding' if kind == 'cash' else 'Non-equity', market=0. if kind == 'cash' else value)
         elif kind == 'equity' and fund is None:
             add(common, position.get('analysis_asset_id') or position['id'], position.get('analysis_asset_name') or position['name'], value, value, 'instrument')
@@ -199,10 +200,15 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
                     asset_id, name = f'etf-other:{fund.fund_id}', f'{fund.name} / Other'
                     method += f'; Fund-value exposure basis; unresolved constituent: {constituent["name"]}'
                     residual = True
+                # Expanding an explicitly non-equity overnight ETF preserves the
+                # market amount previously attributed to the unexpanded holding.
+                # An overnight benchmark alone does not establish that exposure.
+                market_by_value = ck in {'bond', 'non_equity', 'crypto', 'physical'} or (
+                    ck == 'overnight_rate' and declared_overnight)
                 add(common, asset_id, name, amount, exposure, 'etf_other' if residual else 'etf_constituent',
                     'Unresolved equity allocation; fund-value basis' if unresolved_allocation else 'Unresolved equity residual' if residual and ck == 'equity' else 'Unresolved equity fund' if nested_equity else 'Unknown composition' if not finite(exposure) else '',
                     method, str(fund.as_of),
-                    market=amount if ck in {'bond', 'non_equity', 'crypto', 'physical', 'overnight_rate'} else exposure)
+                    market=amount if market_by_value else exposure)
         elif declared == 'equity':
             add(common, position['id'], position['name'], value, value, 'instrument', 'Unresolved equity fund')
         else:

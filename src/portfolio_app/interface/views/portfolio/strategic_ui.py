@@ -116,7 +116,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         can_start_history_chart(history['journal'], history['scope']))
     default_view = 'Performance' if has_history else 'Allocation'
     measure = 'Capital allocation'
-    with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):
+    view_controls = st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls')
+    with view_controls:
         mode = st.segmented_control('Overview view', modes, help='Switch between allocation, performance and available portfolio analytics. Your choice is remembered for this portfolio.', default=selected_view or default_view, key='strategic_view', on_change=remember_view, selection_mode='single', required=True, label_visibility='collapsed')
     if mode != 'Performance' or not has_history:
         columns = st.columns([2, 1, 1] if exposure_result is not None and leverage_enabled else [2, 1])
@@ -162,8 +163,9 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         if source and (source.events or any(book.active for book in source.securities)
                        or (history and history['view'].useful)):
             from portfolio_app.interface.views.history.portfolio_snapshot_ui import open_date_view
-            st.button('View holdings on a date', key='historical_portfolio_open', type='tertiary',
-                      icon=':material/calendar_month:', on_click=open_date_view, args=(history['view'].all_end if history else None,))
+            view_controls.button('View holdings on a date', key='historical_portfolio_open', type='tertiary',
+                                 icon=':material/calendar_month:', on_click=open_date_view,
+                                 args=(history['view'].all_end if history else None,))
         if has_history:
             from portfolio_app.interface.views.history.history_ui import render_portfolio_history
             render_portfolio_history(data_dir,history,label='Category value' if bucket else 'Portfolio value',
