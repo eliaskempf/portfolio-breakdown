@@ -17,7 +17,7 @@ def test_background_completion_keeps_position_dialog_and_page_stable(tmp_path):
     app=tmp_path/'app.py'
     app.write_text('''
 from pathlib import Path
-import time
+from threading import Event
 import streamlit as st
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.interface.views.positions.position_ui import request_position, render_position_dialog
@@ -29,22 +29,25 @@ root=Path(__file__).parent
 st.session_state.runs=st.session_state.get('runs',0)+1
 st.html(f'<span id="page-runs">{st.session_state.runs}</span>')
 class InventedHistory:
-    def __init__(self): self.started=None
-    def pending(self,*args): return self.started is not None and time.monotonic()-self.started<2
+    def __init__(self): self.release=Event()
+    def pending(self,*args):
+        if not (root/'history-ready').exists():return True
+        self.release.set()
+        return coordinator.pending(root,'invented-refresh')
     def get(self,*args,**kwargs):
-        if self.started is None:self.started=time.monotonic()
         if self.pending():return HistoryResult()
         return HistoryResult(('2024-01-01','2024-01-02'),(10.,11.),'EUR','cached')
 @st.cache_resource
 def history():return InventedHistory()
 detail.history_for=lambda _:history()
-st.button('Open position',on_click=request_position,args=('position-0',))
-if st.session_state.get('position_edit_dialog'):
-    if not st.session_state.get('scheduled'):
-        coordinator.request(root,'invented-refresh',lambda:time.sleep(.5),channel='valuation')
-        st.session_state.scheduled=True
-    render_market_status(root,0,show_caption=False)
+if not st.session_state.get('scheduled'):
+    release = history().release
+    coordinator.request(root,'invented-refresh',lambda:release.wait(60),channel='valuation')
+    st.session_state.scheduled=True
+render_market_status(root,coordinator.channel_state(root,'valuation')[0])
 render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{},demo=False)
+# The opener exercises fragment navigation once its target is registered.
+st.button('Open position',on_click=request_position,args=('position-0',))
 ''')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
@@ -59,11 +62,13 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             browser=p.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),args=['--no-sandbox'])
             page=browser.new_page();page.set_default_timeout(10000)
             page.goto(f'http://127.0.0.1:{port}')
+            market_pending=page.get_by_text('Updating prices in the background',exact=False)
+            market_pending.wait_for()
             page.get_by_role('button',name='Open position',exact=True).click()
             dialog=page.get_by_role('dialog');dialog.wait_for()
             dialog.evaluate('el=>window.originalDialog=el')
             dialog.get_by_text('Updating market-price history in the background…',exact=True).wait_for()
-            page.wait_for_timeout(3000)
+            (tmp_path/'history-ready').touch()
             assert not page.get_by_test_id('stException').count(), page.get_by_test_id('stException').all_text_contents()
             dialog.get_by_test_id('stPlotlyChart').wait_for()
             dialog.get_by_test_id('stPlotlyChart').evaluate('el=>window.originalChart=el')
