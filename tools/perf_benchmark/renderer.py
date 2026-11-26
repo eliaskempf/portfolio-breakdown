@@ -152,13 +152,8 @@ def exercise_correction(evaluate, trial):
             option.click(); return true;"""))
     wait(lambda: read(button + """
         const input = d.querySelector('input[aria-label^="Price ("]');
-        if (!save || !visible(input) || running()) return false;
-        input.focus();
-        Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(input, '237.12345');
-        input.dispatchEvent(new w.Event('input',{bubbles:true}));
-        input.blur(); return true;
+        return !!save && visible(input) && input.value === '237.12345' && !running();
     """))
-    wait(lambda: (trial / 'amount-ready').is_file() and read('return !running();'))
     read(button + """
         if (!save) throw Error('Correction button disappeared');
         w.correctionStart = w.performance.now();

@@ -33,8 +33,10 @@ def observe_server(trial):
         refresher.download = lambda directory, journal, scope, store, start, end, target: (store, ())
         render = history_data_ui._save_form
         def render_form(*args, **kwargs):
-            if st.session_state.get(kwargs['key'] + 'amount') == '237.12345':
-                (trial / 'amount-ready').touch()
+            # The measured interaction starts at Save. Set up the same editable
+            # value before mounting the real widget on every rendering engine.
+            if kwargs['kind'] == 'price' and kwargs['key'].endswith('price_'):
+                st.session_state.setdefault(kwargs['key'] + 'amount', '237.12345')
             return render(*args, **kwargs)
         history_data_ui._save_form = render_form
         save = history_data_ui.save_observations
