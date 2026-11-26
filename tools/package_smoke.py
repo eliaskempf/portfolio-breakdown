@@ -51,6 +51,20 @@ def settle_app(page, *, timeout=None):
     expect(page.get_by_test_id('stException')).to_have_count(0, timeout=remaining())
 
 
+def expect_demo_allocation(page):
+    expect(page.get_by_role('radio', name='Allocation', exact=True)).to_be_checked(timeout=20000)
+    # Independently known ending value of the offline securities and savings.
+    value = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Portfolio value', exact=True))
+    expect(value).to_contain_text('93,184.35', timeout=20000)
+    expect(page.locator('.st-key-overview_allocation .js-plotly-plot')).to_be_visible()
+
+
+def expect_demo_performance(page):
+    expect(page.get_by_role('radio', name='Performance', exact=True)).to_be_checked()
+    expect(page.get_by_role('radio', name='1Y', exact=True)).to_be_checked()
+    expect(page.get_by_role('button', name='View holdings on a date', exact=True)).to_be_visible()
+
+
 def finish_startup_intro(page, runs):
     intro = page.locator('iframe[title*=portfolio_breakdown_intro]')
     expect(intro).to_be_visible()
@@ -414,7 +428,13 @@ def _smoke(command, evidence, installation):
                     runs.click(page, page.get_by_role('button', name='Explore demo', exact=True))
                     runs.click(page, page.get_by_role('button', name='Not now', exact=True))
                     page.locator('.js-plotly-plot').first.wait_for()
-                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35', timeout=20000)
+                    expect_demo_allocation(page)
+                    runs.click(page, page.get_by_role('radio', name='Performance', exact=True))
+                    expect_demo_performance(page)
+                    runs.click(page, page.get_by_role('button', name='View holdings on a date', exact=True))
+                    expect(page.locator('.st-key-historical_portfolio')).to_contain_text('Demo savings')
+                    runs.click(page, page.get_by_role('button', name='Back to Performance', exact=True))
+                    expect_demo_performance(page)
                     favicon = page.locator('link[rel="shortcut icon"]')
                     expect(favicon).to_have_attribute('href', re.compile(r'^data:image/svg\+xml;base64,'))
                     assert page.evaluate('''async href => {
@@ -444,12 +464,18 @@ def _smoke(command, evidence, installation):
                     expect(page.get_by_test_id('stException')).to_have_count(0)
                     runs.click(page, page.get_by_role('tab', name='Positions', exact=True))
                     table = page.get_by_role('table', name='Positions', exact=True)
-                    runs.click(page, table.get_by_role('button', name=re.compile('^Edit ')).first)
-                    runs.commit_text(page, page.get_by_role('textbox', name='Instrument name', exact=True),
-                                     'Synthetic packaged position')
-                    runs.click(page, page.get_by_role('button', name='Save position', exact=True))
-                    expect(page.get_by_role('dialog')).to_have_count(0)
-                    expect(table.get_by_text('Synthetic packaged position', exact=True).first).to_be_visible()
+                    runs.click(page, table.get_by_text('Demo savings', exact=True))
+                    dialog = page.get_by_role('dialog', name='Demo savings', exact=True)
+                    expect(dialog.get_by_role('table', name='Cash account statement')).to_contain_text('Interest')
+                    runs.click(page, dialog.get_by_role('button', name='Edit cash account', exact=True))
+                    editor = page.get_by_role('dialog')
+                    runs.commit_text(page, editor.get_by_role('textbox', name='Account name', exact=True), 'Renamed demo savings')
+                    runs.click(page, editor.get_by_role('button', name='Save cash account', exact=True))
+                    renamed = page.get_by_role('dialog', name='Renamed demo savings', exact=True)
+                    expect(renamed.get_by_role('table', name='Cash account statement')).to_contain_text('Interest')
+                    runs.click(page, renamed.get_by_role('button', name='Close', exact=True).last)
+                    expect(renamed).to_have_count(0)
+                    expect(table.get_by_text('Renamed demo savings', exact=True)).to_be_visible()
                     # Exercise the empty persistent workspace and a save with no
                     # provider ticker, so this check needs no market network.
                     page.get_by_role('combobox', name='Portfolio workspace', exact=True).click()
@@ -530,11 +556,13 @@ def _smoke(command, evidence, installation):
                 assert 'http://127.0.0.1:' in desktop.stdout
                 with browser_page(evidence, 'desktop-demo') as page:
                     page.goto(re.search(r'http://127\.0\.0\.1:\d+', desktop.stdout)[0])
-                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35', timeout=20000)
+                    expect_demo_allocation(page)
                     page.get_by_role('tab', name='Positions', exact=True).click()
                     page.get_by_role('table', name='Positions', exact=True).wait_for()
                     expect(page.get_by_role('table', name='Positions', exact=True)
-                           .get_by_text('Synthetic packaged position', exact=True)).to_have_count(0)
+                           .get_by_text('Renamed demo savings', exact=True)).to_have_count(0)
+                    expect(page.get_by_role('table', name='Positions', exact=True)
+                           .get_by_text('Demo savings', exact=True)).to_be_visible()
                     expect(page.get_by_test_id('stException')).to_have_count(0)
                 subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                check=True, capture_output=True, timeout=30)
@@ -549,7 +577,7 @@ def _smoke(command, evidence, installation):
                     gui_url = wait_for_instance(state, None)
                     with browser_page(evidence, 'windows-browser-entry') as page:
                         page.goto(gui_url)
-                        expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35', timeout=20000)
+                        expect_demo_allocation(page)
                         expect(page.get_by_test_id('stException')).to_have_count(0)
                     subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                    check=True, capture_output=True, timeout=30)

@@ -1,18 +1,18 @@
 # Your first portfolio {#first-portfolio}
 
-This walkthrough follows the app tour: understand an allocation, look inside
-funds, inspect positions, try a contribution plan, then explore Monitoring.
+Follow a portfolio through time, look inside its funds, trace transactions,
+and preview a contribution. The app tour also walks through Monitoring.
 Afterwards, switch to your own workspace, save a holding and make a backup. If you have not installed
 the app, start with [Install and run](install.md#install).
 
 ## Explore a temporary demo {#demo}
 
 Launch the installed app from your shortcut and choose **Explore demo** in the
-welcome dialog. No terminal, Python or uv is needed. For a guided example that
-also works without market-data access, choose **Take the tour** instead.
+welcome dialog. The app offers a guided tour after setup or demo entry. You can also
+start the offline tour from **App menu → Help → Take the tour**.
 
-The header should say **Demo portfolio**. Its holdings, quantities, buy-ins,
-and targets are deliberately invented. You can edit them;
+The header shows **Demo portfolio**. Its holdings, transactions, savings
+statement and targets are invented. You can edit them;
 they last for this server session and reset when the app restarts. They are
 separate from **My portfolio** and are not a starting copy of your own holdings.
 
@@ -47,24 +47,13 @@ You can then repeat these actions yourself:
 
 ### 1. Understand Overview
 
-1. Open **Overview → Allocation**. The offline demo starts at about €93,184,
-   with deliberately uneven current weights against its saved targets.
-2. Select **Equities** in **Category**, or click that chart segment. The chart,
-   table and value cards now describe that category. Its World and Emerging
-   Markets position targets are 70% and 30% **of Equities**. Click the chart
-   center or select **Portfolio** to return to the whole portfolio.
-3. Choose **Performance**. Compare **Return (%)** with **Gain**. These figures
-   use recorded costs of currently held positions and exclude dividends and
-   realized gains. Missing costs leave gaps rather than zero returns.
-4. Choose **Analytics**, then **Calculate risk**. The default uses three years
-   against a global equity ETF benchmark. Read coverage and exclusions beside
-   the result. It models today's allocation held constant, not your personal
-   historical return. Offline history is invented.
+1. The demo opens on **Overview → Allocation**. Choose **Performance**, then **1M**, **1Y** or **All**. Compare portfolio value with invested capital over 30 months of ownership. Gain includes recorded income and realized gains. Toggle the gain beside the value to see time-weighted return. Annualized return accounts for the timing and size of contributions.
+2. Choose **View holdings on a date** and pick a date two years ago. Inspect quantities and cash alongside the historical values. Move the date across a purchase or sale to see the units change. **Back to Performance** restores the chart.
+3. Choose **Allocation** and select **Equities** in **Category**, or click its chart segment. The World and Emerging Markets targets are 70% and 30% of Equities. Return to **Portfolio** to see the targets for Equities (60%), Money market (20%), Gold (10%), Crypto (5%) and Cash (5%).
+4. In **Analytics**, choose **Calculate risk**. The default compares today's allocation with three years of the MSCI ACWI Net Return index. Check the displayed benchmark and coverage, including any ETF fallback. Offline history is invented.
 
-The demo's top-level targets are Equities 60%, Money market 25%, Gold 10% and
-Crypto 5%. Live quotes move current weights, so do not expect live mode to match
-the offline figures exactly. See [categories](allocation.md#overview),
-[performance](performance.md#performance) and [risk](analytics.md#risk) for details.
+See [categories](allocation.md#overview), [past portfolio views](performance.md#past-portfolio)
+and [risk](analytics.md#risk) for calculation details.
 
 ### 2. Look inside funds in Exposure
 
@@ -89,17 +78,18 @@ read [Exposure and ETFs](exposure.md#look-through) before interpreting them.
 
 ### 3. Inspect positions
 
-Open **Positions** and select a row for details and available price history.
-Use its pencil to edit, or **Add position** to try a new holding. A demo edit
-changes only the temporary demo. **More actions** offers **Bulk add
-purchases**, **Update balances**, **Connect live prices** and **Accounts & futures**.
-The **Import** button opens transactions and works with existing holdings. Its **Holdings snapshot**
-option initializes an empty portfolio from a current holdings report.
+Open **Positions** and select the World ETF. In **History**, switch between
+**Holdings** for your investment and **Price** for the instrument's market
+history. Open **Transactions** to inspect a purchase or the partial sale and
+its fee. Correct an applied trade from its transaction row.
 
-A price chart is instrument history, not your return history. **Update balances**
-replaces current quantities; **Bulk add purchases** adds purchases or calculates
-the cost of shares already held. These are different actions. See
-[Positions and buy-ins](positions.md#positions).
+Open **Demo savings** to see the opening amount, deposit and paid interest
+with a running balance. Deposits add contributed capital and interest adds gain.
+The money-market ETF has its own price and holdings history.
+
+Use **Add position** to record a new holding or purchase. **Import** accepts
+transactions for an existing portfolio. **Holdings snapshot** initializes an
+empty portfolio. See [Positions and buy-ins](positions.md#positions).
 
 ### 4. Try targets and a contribution plan
 

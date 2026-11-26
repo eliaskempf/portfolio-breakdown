@@ -1,5 +1,31 @@
 # Release and upgrade notes {#releases}
 
+## Version 0.3.0 {#version-030}
+
+### Portfolio workflows and performance
+
+- **Overview → Performance → View holdings on a date** opens a read-only breakdown of dated positions and cash with historical values, recorded gain and time-weighted return. Coverage distinguishes missing ownership evidence from a missing quote. See [past portfolio views](performance.md#past-portfolio).
+- **Explore demo** opens on Allocation. Its Performance view includes 30 months of invented transactions and a savings account alongside the existing ETFs, gold and crypto. The [guided tour](getting-started.md#tour) uses an isolated offline example.
+- The **App menu** groups Preferences, Workspace and Help. Edit allocation targets beside their category, add or import positions from the list, and correct dated prices from the affected return. Flexible allocation groups direct holdings under a combined target with separate buy and sell priorities. See [allocation](allocation.md#overview).
+- Record [cash accounts](positions.md#cash-accounts), [physical assets](positions.md#physical-assets) and taxes paid on a sale. Cash statements distinguish contributions, transfers, fees and posted interest. [Monitoring](monitoring.md) can compare two moving averages.
+- Overview and Exposure share unchanged inputs. Long performance charts reuse dated valuations, and historical price corrections reuse validated observations. Changes to the underlying records or prices still update the affected results.
+
+### Upgrade from 0.2.1 {#upgrade-030}
+
+Make a complete [workspace backup](storage.md#backup), stop v0.2.1, and
+download v0.3.0 from the release page. On Windows, run Setup over the existing
+installation. On other platforms follow the [update instructions](install.md#update).
+Verify the version and selected workspace, then open Overview, Positions and any
+saved account or transaction history. Current-holdings portfolios remain usable
+with their existing records.
+
+Starting with v0.3.0, the Windows Setup installation can download and verify a
+later installer from **App menu → Help**. Portable Windows, Linux and macOS
+users can open the release page from the update notification. Keep the old
+application and backup for rollback. Restore the backup into a separate
+directory so later edits can be recovered. For older installations, also review
+the [v0.2.0 history precautions](#upgrade-020).
+
 ## Version 0.2.1 {#version-021}
 
 Version 0.2.1 adds Vorabpauschale estimates and reorganizes the Python source into

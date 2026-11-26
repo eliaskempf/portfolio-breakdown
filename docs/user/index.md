@@ -13,6 +13,8 @@ For an existing holdings report, use the [reviewed import](import.md#import).
 | --- | --- |
 | Set strategic categories and targets | [Allocation](allocation.md#categories) |
 | Record quantities and remaining buy-in costs | [Positions](positions.md#positions) |
+| Browse earlier holdings and their dated values | [Past portfolio views](performance.md#past-portfolio) |
+| Track savings and posted interest | [Cash accounts](positions.md#cash-accounts) |
 | Connect imported holdings to market quotes | [Live listings](import.md#live-listings) |
 | See direct and indirect holdings together | [Exposure and ETFs](exposure.md#look-through) |
 | Understand prices, gains and missing values | [Prices and performance](performance.md#prices) |
@@ -33,9 +35,8 @@ channel. **Development** follows ongoing work. **Candidate** and **release**
 copies refer to fixed source commits. Use the help linked by your installed
 version; a newer development guide may describe different controls.
 
-This guide covers version 0.2.1, including Vorabpauschale estimates, optional
-transaction history, personal performance, monitoring, and actual-account
-recording in EUR/USD/GBP.
+This guide covers version 0.3.0, including dated portfolio views, cash accounts,
+personal performance, monitoring, and Vorabpauschale estimates.
 The [release notes](releases.md) explain the changes and upgrade precautions.
 A package version alone may be shared by several candidates: the source commit
 distinguishes them.

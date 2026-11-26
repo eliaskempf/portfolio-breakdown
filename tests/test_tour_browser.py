@@ -78,7 +78,7 @@ def test_demo_tour_every_view_and_menu_replay(intro_page):
     for index in range(1, len(STEPS)):
         card.get_by_role('button', name='Next', exact=True).click()
         card = step(page, index)
-        if index == 2:
+        if STEPS[index].view == 'Allocation':
             playwright.expect(page.locator('.js-plotly-plot').first).to_be_visible()
             page.screenshot(path=str(directory / 'synthetic-allocation-tour.png'))
             click_chart_slice(page, 'Equities')
@@ -92,14 +92,30 @@ def test_demo_tour_every_view_and_menu_replay(intro_page):
             playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_count(1)
             playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('Portfolio')
             step(page, 2)
-        if index == 4:
+        if STEPS[index].interactive == '.st-key-tour_position_list':
+            savings = STEPS[index].view == 'Cash account'
+            rows = page.get_by_role('table', name='Positions', exact=True)
+            name = 'Demo savings' if savings else 'Xtrackers MSCI World'
+            rows.get_by_text(name, exact=True).click()
+            dialog = page.get_by_role('dialog', name=name, exact=True)
+            if savings:
+                playwright.expect(dialog.get_by_role('table', name='Cash account statement')).to_contain_text('Interest')
+            else:
+                dialog.get_by_role('radio', name='Transactions', exact=True).click()
+                playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_contain_text('Sell', ignore_case=True)
+            dialog.get_by_role('button', name='Close', exact=True).last.click()
+            playwright.expect(dialog).to_have_count(0)
+            step(page, index)
+        if STEPS[index].dated_portfolio:
+            playwright.expect(page.locator('.st-key-historical_portfolio')).to_contain_text('Portfolio on')
+        if STEPS[index].view == 'Analytics':
             playwright.expect(page.locator('.st-key-tour_risk')).to_contain_text('Annualized volatility')
-        if index in (11, 12):
-            expected = '.st-key-tour_category_targets' if index == 11 else '.st-key-tour_position_targets'
-            other = '.st-key-tour_position_targets' if index == 11 else '.st-key-tour_category_targets'
+        if STEPS[index].view == 'Targets':
+            expected = '.st-key-tour_category_targets' if not STEPS[index].target_scope else '.st-key-tour_position_targets'
+            other = '.st-key-tour_position_targets' if not STEPS[index].target_scope else '.st-key-tour_category_targets'
             targets = page.locator('#portfolio-tour-mask [data-tour-target]').get_attribute('data-tour-target')
             assert expected in targets and other not in targets
-            playwright.expect(card).to_contain_text('60%' if index == 11 else '70%')
+            playwright.expect(card).to_contain_text('60%' if not STEPS[index].target_scope else '70%')
     card.get_by_role('button', name='Finish', exact=True).click()
     playwright.expect(card).to_have_count(0)
     playwright.expect(page.locator('.portfolio-tour-overlay')).to_have_count(0)
@@ -183,15 +199,25 @@ def test_app_menu_chevron_keeps_sections_open(intro_page):
     page.emulate_media(reduced_motion='reduce')
     page.goto(url)
     page.get_by_role('button', name='Explore demo', exact=True).click()
-    page.get_by_role('button', name='Not now', exact=True).click()
+    welcome = page.get_by_role('dialog', name='Welcome to Breakdown!', exact=True)
+    welcome.get_by_role('button', name='Not now', exact=True).click()
+    playwright.expect(welcome).to_be_hidden()
     settle(page)
-    # Click the actual icon position: changing expand_more to expand_less must
-    # not detach the event target and dismiss the menu as an outside click.
-    icon = page.get_by_role('button', name='App menu', exact=True).get_by_test_id('stIconMaterial')
-    bounds = icon.bounding_box()
-    page.mouse.click(bounds['x'] + bounds['width']/2, bounds['y'] + bounds['height']/2)
-    playwright.expect(page.get_by_text('Help', exact=True)).to_be_visible()
-    open_app_menu(page, 'Help')
+    # Target the chevron within its button. A raw mouse coordinate can be
+    # intercepted by the welcome backdrop while its exit animation finishes.
+    trigger = page.get_by_role('button', name='App menu', exact=True)
+    icon = trigger.get_by_test_id('stIconMaterial')
+    position = icon.evaluate("""icon => {
+        const button = icon.closest('button');
+        const origin = button.getBoundingClientRect();
+        const rect = icon.getBoundingClientRect();
+        return {x: rect.left + rect.width / 2 - origin.left - button.clientLeft,
+                y: rect.top + rect.height / 2 - origin.top - button.clientTop};
+    }""")
+    trigger.click(position=position)
+    playwright.expect(trigger).to_have_attribute('aria-expanded', 'true')
+    help_heading = page.get_by_test_id('stPopoverBody').get_by_text('Help', exact=True)
+    help_heading.click()
     playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_visible()
     page.keyboard.press('Escape')
     playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_hidden()

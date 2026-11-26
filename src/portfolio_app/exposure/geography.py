@@ -10,6 +10,7 @@ from functools import lru_cache
 
 import pandas as pd
 
+from portfolio_app.funds.constituents import is_overnight_fund
 from portfolio_app.portfolio.physical_assets import METALS
 from portfolio_app.exposure.aggregation import classify_exposures
 from portfolio_app.exposure.countries import COUNTRIES
@@ -91,11 +92,7 @@ def resolve_geography(holdings: pd.DataFrame, funds: list[FundSnapshot],
         asset = _text(row.get('analysis_asset_id')) or row['id']
         records[asset].append((row, 'Instrument metadata'))
         fund = matching_fund(row, funds)
-        if (fund is not None and fund.breakdown_basis == 'economic'
-                and fund.asset_class == 'money_market' and not fund.constituents.empty
-                and 'instrument_type' in fund.constituents
-                and fund.constituents.instrument_type.eq('overnight_rate').all()
-                and abs(fund.constituents.weight.sum() - 1.) <= 1e-12):
+        if is_overnight_fund(fund):
             records[asset].append(({'instrument_type': 'overnight_rate'},
                                    f'{fund.name} · {fund.as_of} · Economic exposure'))
     resolve = constituent_resolver(holdings)

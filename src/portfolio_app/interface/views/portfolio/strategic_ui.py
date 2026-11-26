@@ -27,11 +27,12 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     from portfolio_app.workspace.display_preferences import load_preferences, save_overview_view
     from portfolio_app.portfolio.holdings import DataError
     modes = ['Allocation', 'Performance', *(['Analytics'] if analytics else [])]
-    if data_dir is not None and 'strategic_view' not in st.session_state:
+    selected_view = st.session_state.get('strategic_view')
+    if data_dir is not None and not selected_view:
         try:
             saved_view = load_preferences(data_dir).overview_view
             if saved_view in modes:
-                st.session_state['strategic_view'] = saved_view
+                selected_view = saved_view
         except DataError as exc:
             st.caption(str(exc))
     def remember_view():
@@ -40,6 +41,18 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 save_overview_view(data_dir, st.session_state['strategic_view'])
             except (DataError, OSError) as exc:
                 st.warning(str(exc))
+    if (data_dir is not None and st.session_state.get('strategic_view') == 'Performance'
+            and st.session_state.get('strategic_historical_open')):
+        from portfolio_app.interface.views.history.portfolio_snapshot_ui import render_date_view
+        from portfolio_app.portfolio.positions import read_snapshot
+        from portfolio_app.ledger.account_journal import load_journal
+        if history_holdings is None:
+            history_holdings = read_snapshot(data_dir / 'holdings.csv').holdings
+        if journal is None:
+            journal, _ = load_journal(data_dir)
+        render_date_view(data_dir, config, history_holdings, valued, journal, observation_snapshot,
+                         journal_revision=input_revisions[1] if input_revisions else None)
+        return
     if 'unrealized_gain_reporting' not in valued:
         valued = position_performance(valued)
     from portfolio_app.studies.futures import funded_strategy_positions
@@ -94,8 +107,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             history = prepare_portfolio_history(data_dir, history_holdings, journal=journal, observation_snapshot=observation_snapshot,
                 journal_revision=input_revisions[1] if input_revisions else None,
                 config=config,bucket=bucket,displayed=valued, current_valued=current_valued if current_valued is not None else valued,
-                include_points=st.session_state.get('strategic_view', 'Performance') == 'Performance',
-                annualized=st.session_state.get('strategic_view', 'Performance') == 'Performance')
+                include_points=selected_view in (None, 'Performance'),
+                annualized=selected_view in (None, 'Performance'))
         except (DataError,ValueError,OSError) as exc:
             st.caption(str(exc))
     from portfolio_app.performance.history_scope import can_start_history_chart
@@ -104,7 +117,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     default_view = 'Performance' if has_history else 'Allocation'
     measure = 'Capital allocation'
     with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):
-        mode = st.segmented_control('Overview view', modes, help='Switch between allocation, performance and available portfolio analytics. Your choice is remembered for this portfolio.', default=st.session_state.get('strategic_view', default_view), key='strategic_view', on_change=remember_view, selection_mode='single', required=True, label_visibility='collapsed')
+        mode = st.segmented_control('Overview view', modes, help='Switch between allocation, performance and available portfolio analytics. Your choice is remembered for this portfolio.', default=selected_view or default_view, key='strategic_view', on_change=remember_view, selection_mode='single', required=True, label_visibility='collapsed')
     if mode != 'Performance' or not has_history:
         columns = st.columns([2, 1, 1] if exposure_result is not None and leverage_enabled else [2, 1])
         first, share = columns[:2]
@@ -143,6 +156,14 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         analytics(selected.loc[selected.position_id.ne('future:overlay')], scope, scoped_future, bool(bucket))
         return
     if mode == 'Performance':
+        # The statement always covers the portfolio, including when the selected
+        # category has no dated records of its own.
+        source = history['journal'] if history else journal
+        if source and (source.events or any(book.active for book in source.securities)
+                       or (history and history['view'].useful)):
+            from portfolio_app.interface.views.history.portfolio_snapshot_ui import open_date_view
+            st.button('View holdings on a date', key='historical_portfolio_open', type='tertiary',
+                      icon=':material/calendar_month:', on_click=open_date_view, args=(history['view'].all_end if history else None,))
         if has_history:
             from portfolio_app.interface.views.history.history_ui import render_portfolio_history
             render_portfolio_history(data_dir,history,label='Category value' if bucket else 'Portfolio value',

@@ -398,34 +398,59 @@ jobs:
         name: unaccepted-linux-native-x64
         path: dist/desktop-experiment/candidate
     - run: uv run playwright install --with-deps chromium
-    - name: Install Linux artifact and test native binary
-      if: runner.os == 'Linux'
+    - name: Install pinned previous Linux release
+      env:
+        PREVIOUS_VERSION: '0.2.1'
+        PREVIOUS_DEB_SHA256: c2620fdb6caeee173c21187ef80e2d81300ec671bf28f5d780c4a4476683104a
       run: |
-        sudo apt-get install -y ./dist/desktop-experiment/candidate/*.deb
-        xvfb-run -a uv run python tools/desktop_session.py x11 /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/installed-native"
-        uv run python - <<'PY'
-        import json, os, sys
+        package=portfolio-breakdown-experimental
+        previous="${package}_${PREVIOUS_VERSION}_amd64.deb"
+        cd "$RUNNER_TEMP"
+        curl --fail --location --silent --show-error --output "$previous" "https://github.com/eliaskempf/portfolio-breakdown/releases/download/v$PREVIOUS_VERSION/$previous"
+        echo "$PREVIOUS_DEB_SHA256  $previous" | sha256sum --check
+        sudo apt-get install -y "./$previous"
+        test "$(dpkg-query -W -f='${db:Status-Status} ${Version}' "$package")" = "installed $PREVIOUS_VERSION"
+    - name: Install Linux artifact and test native binary
+      run: |
+        package=portfolio-breakdown-experimental
+        installed=/opt/$package/portfolio-window
+        candidate_version=$(uv run python -c 'from portfolio_app.settings import app_version; print(app_version())')
+        candidate="./dist/desktop-experiment/candidate/${package}_${candidate_version}_amd64.deb"
+        dpkg --compare-versions "$(dpkg-query -W -f='${Version}' "$package")" lt "$candidate_version"
+        test "$(dpkg-deb -f "$candidate" Package)" = "$package"
+        test "$(dpkg-deb -f "$candidate" Version)" = "$candidate_version"
+
+        workspace_inventory() {
+          uv run python - "$RUNNER_TEMP/upgrade-workspace" "$@" <<'PY'
+        import json, sys
         from pathlib import Path
         sys.path.insert(0, 'tools')
-        from history_package_smoke import create_acceptance_workspace
         from release import workspace_hashes
-        root = Path(os.environ['RUNNER_TEMP'])
-        workspace = root / 'upgrade-workspace'
-        create_acceptance_workspace(workspace)
-        (root / 'preserved-workspace.json').write_text(json.dumps(workspace_hashes(workspace), sort_keys=True))
+        workspace = Path(sys.argv[1])
+        if sys.argv[2:] == ['create']:
+            from history_package_smoke import create_acceptance_workspace
+            create_acceptance_workspace(workspace)
+        print(json.dumps(workspace_hashes(workspace), sort_keys=True))
         PY
-        sudo apt-get install --reinstall -y ./dist/desktop-experiment/candidate/*.deb
-        sudo apt-get remove -y portfolio-breakdown-experimental
-        uv run python - <<'PY'
-        import json, os, sys
-        from pathlib import Path
-        sys.path.insert(0, 'tools')
-        from release import workspace_hashes
-        root = Path(os.environ['RUNNER_TEMP'])
-        assert workspace_hashes(root / 'upgrade-workspace') == json.loads((root / 'preserved-workspace.json').read_text()), 'Reinstall/removal changed the complete synthetic history workspace'
-        print('Linux reinstall/removal preserved every synthetic workspace file, including history/account/import evidence.')
-        PY
-        test ! -e /opt/portfolio-breakdown-experimental/portfolio-window
+        }
+
+        export PORTFOLIO_STATE_DIR="$RUNNER_TEMP/upgrade-state"
+        before="$RUNNER_TEMP/preserved-workspace.json"
+        workspace_inventory create > "$before"
+        "$installed" --browser --foreground --data-dir "$RUNNER_TEMP/upgrade-workspace" --backup-to "$RUNNER_TEMP/baseline-backup"
+        sudo apt-get install -y "$candidate"
+        test "$(dpkg-query -W -f='${db:Status-Status} ${Version}' "$package")" = "installed $candidate_version"
+        test "$("$installed" --browser --foreground --version)" = "$candidate_version"
+        "$installed" --browser --foreground --data-dir "$RUNNER_TEMP/upgrade-workspace" --backup-to "$RUNNER_TEMP/upgraded-backup"
+        workspace_inventory | diff "$before" -
+        xvfb-run -a uv run python tools/desktop_session.py x11 "$installed" --output "$RUNNER_TEMP/installed-native"
+        sudo apt-get install --reinstall -y "$candidate"
+        workspace_inventory | diff "$before" -
+        sudo apt-get remove -y "$package"
+        workspace_inventory | diff "$before" -
+        test ! -e "$installed"
+        test ! -e "/usr/bin/$package"
+        test ! -e "/usr/share/applications/$package.desktop"
     - run: uv run python tools/release_evidence.py record --directory dist/desktop-experiment/candidate --stage native --evidence
         dist/acceptance
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

@@ -105,7 +105,14 @@ def render_bank_form(directory, snapshot, config, valued, *, account=None):
         selected = st.session_state.get('position_edit_selected')
         _clear_editor()
         st.session_state['onboarding_step'] = 'done'
-        if account:
+        if account and candidate.name != account.name and selected:
+            # The native window title is set outside the form fragment. Reopen
+            # the saved account through the same validated route as a row click.
+            from portfolio_app.interface.views.positions.position_list import list_context
+            path = directory / 'holdings.csv'
+            st.session_state['position_edit_open_request'] = {
+                'action': 'details', 'id': selected, 'context': list_context(path), 'revision': revision(path)}
+        elif account:
             from portfolio_app.interface.views.positions.position_ui import request_position
             request_position(selected, local=False)
         else:

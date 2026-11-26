@@ -4,7 +4,6 @@ from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 
-from portfolio_app.demo_data.demo import create_demo_data
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.runtime.launcher import (choose_port, open_existing, run_server, start_desktop,
                                     stop_instance, workspace_lease, presentation_workspace, Presentation)
@@ -102,14 +101,15 @@ def main(*, presentation: Presentation | None = None) -> None:
                 presentation.prepare()
             port = choose_port(args.port)
             with TemporaryDirectory(prefix='portfolio-demo-') as temporary:
-                demo_dir = create_demo_data(Path(temporary), live=not args.offline_demo)
+                demo_dir = Path(temporary) / 'portfolio'
                 prefix = [sys.executable, '--internal-streamlit'] if getattr(sys, 'frozen', False) else [sys.executable, '-m', 'streamlit']
                 command = [*prefix, 'run', str(package_path('ui.py')), *theme_options(), *streamlit_args,
                            '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',
                            '--browser.gatherUsageStats=false']
                 if getattr(sys, 'frozen', False):
                     command += ['--server.fileWatcherType=none', '--global.developmentMode=false']
-                command += ['--', '--managed', '--data-dir', str(directory), '--demo-dir', str(demo_dir)]
+                command += ['--', '--managed', '--data-dir', str(directory), '--demo-dir', str(demo_dir),
+                            '--demo-seed', 'offline' if args.offline_demo else 'live']
                 if args.ignore_workspace_selection:
                     command.append('--ignore-workspace-selection')
                 if args.skip_intro:

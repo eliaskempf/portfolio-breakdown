@@ -11,7 +11,7 @@ import pandas as pd
 from portfolio_app.portfolio.allocation import Allocation
 from portfolio_app.funds.etf import constituent_records, constituent_resolver, fund_breakdown, matching_fund
 from portfolio_app.studies.futures import CONTRACTS, require_eur_reporting
-from portfolio_app.funds.constituents import NON_EQUITY_KINDS, fund_kind, interpret_constituent
+from portfolio_app.funds.constituents import NON_EQUITY_KINDS, fund_kind, interpret_constituent, is_overnight_fund
 
 
 @dataclass(frozen=True)
@@ -170,7 +170,7 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
             else:
                 add(common, position['id'], position['name'], value, value * factor.factor, 'leveraged_fund',
                     'Approximate equity exposure; underlying constituents unresolved', factor.method, factor.as_of)
-        elif kind in {'cash', 'crypto', 'physical'} or declared == 'non_equity':
+        elif kind in {'cash', 'crypto', 'physical'} or (declared == 'non_equity' and not is_overnight_fund(fund)):
             add(common, position['id'], position['name'], value, 0., 'instrument', 'Funding' if kind == 'cash' else 'Non-equity', market=0. if kind == 'cash' else value)
         elif kind == 'equity' and fund is None:
             add(common, position.get('analysis_asset_id') or position['id'], position.get('analysis_asset_name') or position['name'], value, value, 'instrument')
@@ -202,7 +202,7 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
                 add(common, asset_id, name, amount, exposure, 'etf_other' if residual else 'etf_constituent',
                     'Unresolved equity allocation; fund-value basis' if unresolved_allocation else 'Unresolved equity residual' if residual and ck == 'equity' else 'Unresolved equity fund' if nested_equity else 'Unknown composition' if not finite(exposure) else '',
                     method, str(fund.as_of),
-                    market=amount if ck in {'bond', 'non_equity', 'crypto', 'physical'} else exposure)
+                    market=amount if ck in {'bond', 'non_equity', 'crypto', 'physical', 'overnight_rate'} else exposure)
         elif declared == 'equity':
             add(common, position['id'], position['name'], value, value, 'instrument', 'Unresolved equity fund')
         else:

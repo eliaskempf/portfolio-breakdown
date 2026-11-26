@@ -9,7 +9,7 @@ A local portfolio-tracking and analysis app for understanding what you own,
 which companies your ETFs actually expose you to, and whether your money is
 allocated as planned. All portfolio data is stored locally on your computer.
 
-![Overview with total value, allocation sunburst and category targets, using an invented demo portfolio](docs/assets/demo-overview.png)
+![Overview with portfolio value, allocation and category targets for an invented portfolio including savings](docs/assets/demo-overview.png)
 
 <small>*Demo portfolio with synthetic holdings.*</small>
 
@@ -19,6 +19,8 @@ This app is designed to help you understand your current holdings, analyze
 the underlying exposure of your ETFs, and inform rebalancing decisions. Its
 key features are:
 - Track stocks, ETFs, crypto, and physical assets in EUR, USD, or GBP using public market quotes or manually entered prices.
+- Track savings, checking and term-deposit balances, including dated interest and transfers.
+- Browse historical holdings, cash, gain and time-weighted return on a selected date.
 - Group assets into categories and optionally define target allocations (e.g., 60% equities / 40% bonds).
 - Set targets for individual assets within categories (e.g., 70% MSCI World / 30% MSCI EM within equities).
 - Break down supported ETFs into their underlying holdings, combining direct and indirect exposure (e.g., NVIDIA shares held directly and through an MSCI World ETF).
@@ -77,14 +79,13 @@ The [user guide](docs/user/index.md) covers imports, calculations, backups, trou
 and other features. Installed versions also include offline documentation, accessible through
 **App menu → Help → User guide**.
 
-## Version 0.2.1
+## Version 0.3.0
 
-Version 0.2.1 adds **Taxes → Vorabpauschale**, with annual estimates, a labelled
-current-year forecast and reviewable fund inputs. It also organizes the source
-into responsibility-based Python packages while retaining launch commands and
-existing portfolio behavior. Read the [release and upgrade notes](docs/user/releases.md)
-before updating, and the [package move map](docs/user/package-layout.md) when
-transferring source changes from the old layout.
+Explore 30 months of demo holdings and trades, inspect a savings statement, or
+choose **Overview → Performance → View holdings on a date** to see an earlier
+portfolio. This release also updates category and position workflows, improves
+responsiveness on long histories, and adds verified updates for installed Windows
+users. See the [release and upgrade notes](docs/user/releases.md#version-030).
 
 ## Disclaimer
 

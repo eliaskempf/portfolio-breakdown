@@ -76,7 +76,7 @@ def _dismiss_welcome() -> None:
 
 
 def _start() -> None:
-    from portfolio_app.demo_data.demo import create_demo_data
+    from portfolio_app.demo_data.public_demo import create_public_demo
     # Retain removed state without assigning widget values on return. Session
     # state distinguishes widget state (including read-only button triggers)
     # from durable values, so snapshot the restorable view inputs explicitly.
@@ -84,7 +84,7 @@ def _start() -> None:
     st.session_state['tour_return'] = capture_view()
     owner = TemporaryDirectory(prefix='portfolio-guided-demo-')
     st.session_state['tour_directory'] = owner
-    create_demo_data(Path(owner.name))
+    create_public_demo(Path(owner.name) / 'portfolio')
     clear_view()
     st.session_state.pop('tour_welcome', None)
     st.session_state.update(active_portfolio='Demo portfolio', show_sold_positions=False)
@@ -94,12 +94,16 @@ def _start() -> None:
 def demo_directory() -> Path | None:
     # Temporary roots may use a Windows short name or a symlink. Background
     # requests and UI completion polling must share one workspace identity.
-    return Path(st.session_state['tour_directory'].name).resolve() if active() else None
+    return (Path(st.session_state['tour_directory'].name) / 'portfolio').resolve() if active() else None
 
 
 def _move(index: int) -> None:
     step = STEPS[index]
     st.session_state.update(tour_step=index, main_tabs=step.tab)
+    st.session_state['strategic_historical_open'] = step.dated_portfolio
+    if step.dated_portfolio:
+        from datetime import date, timedelta
+        st.session_state['strategic_historical_date'] = (date.today() - timedelta(days=730)).isoformat()
     if step.tab == 'Overview':
         st.session_state.update(strategic_category='', strategic_view=step.view or 'Allocation')
     elif step.tab == 'Exposure':
@@ -135,7 +139,7 @@ def _end() -> None:
 def render_tour(*, empty: bool = False) -> None:
     if notice := st.session_state.pop('tour_notice', None):
         st.caption(notice)
-    if st.session_state.get('position_edit_dialog'):
+    if st.session_state.get('position_edit_dialog') and not active():
         return
     if st.session_state.get('tour_welcome'):
         @st.dialog('Welcome to Breakdown!', on_dismiss=_dismiss_welcome)

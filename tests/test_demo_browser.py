@@ -1,16 +1,31 @@
 """The shipped offline demo's headline exposure features, in a real browser."""
+import pytest
+
 from test_intro_browser import intro_page as intro_page, intro_server as intro_server, playwright
 from browser_support import select_tab, settle
 
 
+@pytest.mark.parametrize('intro_server', ['public-demo'], indirect=True)
 def test_public_demo_breakdown_sectors_geography_and_rebalance(intro_page):
-    page, url, _ = intro_page
+    page, url, root = intro_page
     page.emulate_media(reduced_motion='reduce')
     page.goto(url)
-    page.get_by_role('button', name='Explore demo', exact=True).click()
+    explore = page.get_by_role('button', name='Explore demo', exact=True)
+    playwright.expect(explore).to_be_visible()
+    assert not (root / 'demo').exists()
+    explore.click()
     page.get_by_role('button', name='Not now', exact=True).click()
     playwright.expect(page.get_by_test_id('stMetric').filter(
-        has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35')
+        has=page.get_by_text('Portfolio value', exact=True))).to_contain_text('93,184.35')
+    allocation = page.get_by_role('radio', name='Allocation', exact=True)
+    performance = page.get_by_role('radio', name='Performance', exact=True)
+    playwright.expect(allocation).to_be_checked()
+    playwright.expect(page.get_by_text('Incomplete gain history', exact=True)).to_have_count(0)
+    playwright.expect(page.locator('.st-key-overview_allocation .js-plotly-plot').first).to_be_visible()
+    performance.click()
+    playwright.expect(performance).to_be_checked()
+    playwright.expect(page.get_by_text('Annualized return', exact=True).first).to_be_visible()
+    playwright.expect(page.locator('.js-plotly-plot').first).to_be_visible()
     select_tab(page, 'Exposure')
     table = page.get_by_role('table', name='Exposure assets', exact=True)
     playwright.expect(table).to_contain_text('Nvidia')
@@ -53,5 +68,23 @@ def test_public_demo_breakdown_sectors_geography_and_rebalance(intro_page):
     playwright.expect(chart).to_contain_text('Money market')
     page.get_by_text('Break down ETFs', exact=True).click()
     playwright.expect(chart).to_contain_text('Germany')
+    select_tab(page, 'Positions')
+    positions = page.get_by_role('table', name='Positions', exact=True)
+    positions.locator('tr[data-position-id="demo-world"] td').first.click()
+    details = page.get_by_role('dialog')
+    playwright.expect(details.get_by_role('radio', name='Holdings', exact=True)).to_be_checked()
+    playwright.expect(details.locator('.js-plotly-plot').first).to_be_visible()
+    details.get_by_role('radio', name='Transactions', exact=True).click()
+    playwright.expect(details.locator('tr[data-transaction-id="world-sale"]')).to_be_visible()
+    page.keyboard.press('Escape')
+    playwright.expect(details).to_have_count(0)
+    positions.locator('tr[data-position-id="account-cash:demo-savings:EUR"] td').first.click()
+    statement = details.get_by_role('table', name='Cash account statement')
+    for label in ('Deposit', 'Withdrawal', 'Interest'):
+        playwright.expect(statement).to_contain_text(label)
+    page.keyboard.press('Escape')
+    playwright.expect(details).to_have_count(0)
+    select_tab(page, 'Overview')
+    playwright.expect(performance).to_be_checked()
     select_tab(page, 'Rebalance')
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

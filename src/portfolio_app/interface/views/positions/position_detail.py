@@ -141,7 +141,7 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
             return
         from portfolio_app.interface.views.history.market_history_ui import render_market_history
         synthetic_prices = demo and not (data_dir / '.market-history-demo').exists()
-        service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if synthetic_prices else history_for(data_dir)
+        service = HistoryService(DemoHistoryProvider(data_dir), data_dir / '.cache' / 'history') if synthetic_prices else history_for(data_dir)
         render_market_history(row.ticker, data_dir, key=f'position_edit_history_{row.position_id}_',
             demo=synthetic_prices, manual=pd.notna(row.get('manual_price', float('nan'))), service=service,
             native_currency=row.get('quote_currency'), heading='',

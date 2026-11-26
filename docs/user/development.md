@@ -541,9 +541,9 @@ development requirements. These notes contain no working portfolio data.
   base does not suppress an otherwise supported portfolio beta contribution.
   The benchmark remains selected even for non-equity categories. Subset and
   contribution metrics use the same sample, which can differ across categories.
-- Ordinary holdings use asset-normalized beta. Version 0.2.0 also supports
-  [actual-account leverage](futures.md) in EUR/USD/GBP, with a separate net-equity
-  denominator. Asset-normalized beta must not be presented as levered equity beta;
+- Ordinary holdings use asset-normalized beta.
+  [Actual-account leverage](futures.md) uses a separate net-equity denominator
+  in EUR, USD and GBP. Asset-normalized beta must not be presented as levered equity beta;
   legacy sandbox risk remains EUR-only.
 - Actual futures risk uses signed notional with compatible contract-currency
   histories and converts native changes at dated FX. It must not apply the FX

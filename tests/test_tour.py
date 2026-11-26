@@ -1,5 +1,6 @@
 """Tour lifecycle uses synthetic workspaces, never the user's working data."""
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,7 @@ def test_full_tour_demo_is_isolated_populated_and_returns_to_original(tmp_path):
     assert app.session_state['tour_welcome']
     assert 'tour_step' not in app.session_state.to_dict()
     start(app)
-    temporary = Path(app.session_state['tour_directory'].name)
+    temporary = Path(app.session_state['tour_directory'].name) / 'portfolio'
     assert temporary != demo and (temporary / '.synthetic-demo').exists()
     assert app.button(key='tour_back').disabled
     click(app, 'Next')
@@ -53,12 +54,14 @@ def test_full_tour_demo_is_isolated_populated_and_returns_to_original(tmp_path):
     for index in range(1, len(STEPS)):
         click(app, 'Next')
         assert_step(app, index)
-        if index == 4:
+        if STEPS[index].view == 'Analytics':
             assert by_label(app.metric, 'Annualized volatility').value != '—'
-        if index == 5:
-            assert not by_label(app.toggle, 'Break down ETFs').value
-        if index == 6:
-            assert by_label(app.toggle, 'Break down ETFs').value
+        if STEPS[index].view == 'Assets':
+            assert by_label(app.toggle, 'Break down ETFs').value == STEPS[index].lookthrough
+        if STEPS[index].view == 'Performance' and not STEPS[index].dated_portfolio:
+            assert all(b.label != 'Load prices and FX' for b in app.button)
+        if STEPS[index].dated_portfolio:
+            assert by_label(app.date_input, 'Portfolio date').value.year < date.today().year
         if STEPS[index].calculate_plan:
             assert app.session_state['portfolio_contribution_result'][1]
     click(app, 'Finish')
@@ -97,7 +100,7 @@ def test_manual_invitation_waits_for_setup_and_returns_to_manual(tmp_path, route
     before = tree_bytes(personal)
     start(app)
     assert app.session_state['active_portfolio'] == 'Demo portfolio'
-    demo_value = by_label(app.metric, 'Current value').value
+    demo_value = by_label(app.metric, 'Portfolio value').value
     assert demo_value.startswith('€')
     assert float(demo_value.removeprefix('€').replace(',', '')) > 0
     click(app, 'Skip tour')
@@ -131,7 +134,7 @@ def test_replay_restores_view_filters_drafts_and_closes_menu(tmp_path, view):
     assert_step(app, 0)
     assert not app.session_state.to_dict().get('app_menu')
     click(app, 'Skip to Exposure →')
-    assert_step(app, 5)
+    assert_step(app, next(i for i, step in enumerate(STEPS) if step.tab == 'Exposure'))
     click(app, 'Skip tour')
     for key, value in expected.items():
         assert app.session_state[key] == value
@@ -252,7 +255,7 @@ def test_monitoring_tour_saves_acknowledges_and_restores_original_draft(tmp_path
     by_label(app.number_input, 'Distance from SMA trigger (%)').set_value(-7.).run()
     before = tree_bytes(original)
     click(app, 'Take the tour')
-    temporary = Path(app.session_state['tour_directory'].name)
+    temporary = Path(app.session_state['tour_directory'].name) / 'portfolio'
     first = next(i for i, s in enumerate(STEPS) if s.tab == 'Monitoring')
     for _ in range(first):
         click(app, 'Next')
@@ -300,7 +303,7 @@ def test_tour_monitoring_completion_uses_canonical_workspace(tmp_path, monkeypat
     # Windows short names and symlinked temp roots, without requiring symlinks.
     (tmp_path / 'parent').mkdir()
     actual = tmp_path / 'invented-tour'
-    actual.mkdir()
+    (actual / 'portfolio').mkdir(parents=True)
     alias = tmp_path / 'parent' / '..' / actual.name
     owner = SimpleNamespace(name=str(alias))
     monkeypatch.setattr(tour, 'st', SimpleNamespace(session_state={

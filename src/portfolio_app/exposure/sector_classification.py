@@ -1,6 +1,7 @@
 """Distinguish assets without a business sector from missing sector metadata."""
 from collections import defaultdict
 
+from portfolio_app.funds.constituents import is_overnight_fund
 from portfolio_app.exposure.taxonomy import copy_classifications
 from portfolio_app.funds.etf import add_provider_classifications, matching_fund, resolved_constituents
 from portfolio_app.portfolio.physical_assets import METALS
@@ -34,10 +35,7 @@ def sector_classifications(classifications, holdings, funds, *, include_provider
         asset = asset if isinstance(asset, str) and asset else row['id']
         observe(asset, row)
         fund = matching_fund(row, funds)
-        if (fund is not None and fund.breakdown_basis == 'economic' and fund.asset_class == 'money_market'
-                and not fund.constituents.empty and 'instrument_type' in fund.constituents
-                and fund.constituents.instrument_type.eq('overnight_rate').all()
-                and abs(fund.constituents.weight.sum() - 1.) <= 1e-12):
+        if is_overnight_fund(fund):
             candidates[asset].add('Money market')
     for asset, row in resolved_constituents(funds, holdings):
         if include_provider:

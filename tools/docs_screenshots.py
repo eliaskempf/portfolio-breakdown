@@ -10,7 +10,7 @@ from urllib.request import urlopen
 
 from playwright.sync_api import expect, sync_playwright
 
-from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.demo_data.public_demo import create_public_demo
 from portfolio_app.settings import theme_options
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +21,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix='portfolio-docs-synthetic-') as temporary:
         work = Path(temporary)
-        create_demo_data(work / 'demo', live=False)
+        create_public_demo(work / 'demo', live=False)
         app = work / 'app.py'
         app.write_text('''from pathlib import Path
 from portfolio_app.interface.ui import render_app
@@ -58,7 +58,7 @@ render_app(directory, demo=True,
             finally:
                 process.terminate()
                 process.wait(timeout=15)
-    print(f'Review the three crops in {output} before copying them to docs/user/assets.')
+    print(f'Review the synthetic Overview screenshot and three guide crops in {output}.')
 
 
 def capture(url: str, output: Path):
@@ -88,7 +88,11 @@ def capture(url: str, output: Path):
 
             page.goto(url)
             expect(page.get_by_role('tab', name='Overview', exact=True)).to_be_visible()
+            expect(page.get_by_role('radio', name='Allocation', exact=True)).to_be_checked()
+            expect(page.locator('.st-key-overview_allocation .js-plotly-plot')).to_be_visible()
             idle()
+            page.screenshot(path=str(output / 'demo-overview.png'), animations='disabled',
+                            clip={'x': 0, 'y': 0, 'width': 1440, 'height': 1100})
             page.get_by_role('tab', name='Exposure', exact=True).click()
             table = page.get_by_role('table', name='Exposure assets', exact=True)
             expect(table).to_contain_text('Nvidia')

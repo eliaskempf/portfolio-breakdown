@@ -63,14 +63,25 @@ class YahooHistoryProvider:
 
 class DemoHistoryProvider:
     """Deterministic invented prices; never fetches or substitutes live data."""
+    def __init__(self, directory=None):
+        self.directory = directory
+
     def history(self, ticker, period):
+        count = {"1mo": 30, "6mo": 180, "1y": 365, "5y": 1825, "max": 2200}[period]
+        if self.directory is not None and (self.directory / '.public-demo').is_file():
+            from portfolio_app.performance.history_observations import active_observations, load_observations
+            store, _ = load_observations(self.directory)
+            rows = sorted((o for o in active_observations(store) if o.listing == ticker), key=lambda o: o.date)[-count:]
+            if not rows:
+                return HistoryResult(note='No invented history for this listing')
+            return HistoryResult(tuple(o.date for o in rows), tuple(float(o.amount) for o in rows),
+                                 rows[-1].target or rows[-1].currency, 'fresh', note='Invented demo history')
         if ticker.endswith('EUR=X'):
             rate = {'USD': .9, 'GBP': 1.2}.get(ticker[:-5])
             if rate is None:
                 return HistoryResult(note='No synthetic FX history')
-            dates = pd.date_range(end="2026-09-01", periods={"1mo": 30, "6mo": 180, "1y": 365, "5y": 1825, "max": 2200}[period])
+            dates = pd.date_range(end="2026-09-01", periods=count)
             return replace(normalize_history(pd.DataFrame({'Close': rate}, index=dates), 'EUR'), note='Synthetic demo FX history')
-        count = {"1mo": 30, "6mo": 180, "1y": 365, "5y": 1825, "max": 2200}[period]
         dates = pd.date_range(end="2026-09-01", periods=count)
         frame = pd.DataFrame({"Close": [80 + i * .03 + 3 * math.sin(i / 12) for i in range(count)]}, index=dates)
         return replace(normalize_history(frame, "EUR"), note="Synthetic demo price history")

@@ -9,7 +9,7 @@ from portfolio_app.settings import app_version, icon_path
 from portfolio_app.interface.shared.view_state import reset_workspace
 
 
-def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool, launcher_directory: Path | None = None):
+def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool, demo_seed: str | None = None, launcher_directory: Path | None = None):
     """Workspace selection and global actions; no persistent portfolio writes."""
     from portfolio_app.interface.views.onboarding.tour import active, demo_directory
     default_index = int(demo)
@@ -33,6 +33,9 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool, launcher_di
                 demo = workspace == 'Demo portfolio'
                 if demo and not touring:
                     data_dir = demo_dir
+                    if demo_seed and not (data_dir / '.public-demo').is_file():
+                        from portfolio_app.demo_data.public_demo import create_public_demo
+                        create_public_demo(data_dir, live=demo_seed == 'live')
                 context = (str(data_dir.resolve()), demo)
                 if not touring and st.session_state.get('portfolio_workspace_context') != context:
                     from portfolio_app.interface.views.onboarding.tour import workspace_changed

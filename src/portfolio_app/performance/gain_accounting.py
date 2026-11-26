@@ -240,9 +240,10 @@ def _calculate_gain(calculation, scope, end, target, *, estimate_notes, member_c
                         return capital, value-capital
                     count = len(scope.positions)+len(scope.accounts)
                     reasons = list(estimate_notes)
-                    if calculation._get(('gain_opening', scope.positions), lambda: any(
-                            e.kind == 'opening' and e.quantity for identity in scope.positions
-                            for e in calculation._events.get(identity, ()))):
+                    first_nonzero_opening = calculation._get(('first_gain_opening', scope.positions), lambda: min(
+                        (e.date for identity in scope.positions for e in calculation._events.get(identity, ())
+                         if e.kind == 'opening' and e.quantity), default=None))
+                    if first_nonzero_opening is not None and first_nonzero_opening <= end:
                         reasons.append('Earlier realized gains and income before opening snapshots are unknown')
                     return GainSummary(value-capital, value, capital, count, count, tuple(reasons), end, target)
     rows = {} if summary_rows is None else summary_rows.set_index('position_id').to_dict('index')

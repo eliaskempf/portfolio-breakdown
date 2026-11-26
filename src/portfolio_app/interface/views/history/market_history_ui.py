@@ -32,7 +32,7 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
     if not compact and heading:
         st.markdown(f'**{heading}**')
     if service is None:
-        service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if demo else history_for(data_dir)
+        service = HistoryService(DemoHistoryProvider(data_dir), data_dir / '.cache' / 'history') if demo else history_for(data_dir)
     def quote(symbol, period, **options):
         if isinstance(service, BackgroundHistory):
             return service.snapshot(symbol, period, **options)

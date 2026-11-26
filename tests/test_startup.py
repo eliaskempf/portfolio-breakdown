@@ -27,10 +27,19 @@ def test_each_launch_gets_editable_fresh_demo_and_preserves_personal_data(tmp_pa
         assert Path(command[command.index("--data-dir") + 1]) == personal
         demo = Path(command[command.index("--demo-dir") + 1])
         launched.append(demo)
+        # The launcher offers an empty path; the first explicit demo selection
+        # seeds it using the requested mode. Personal startup incurs no seed I/O.
+        assert not demo.exists()
+        mode = command[command.index("--demo-seed") + 1]
+        assert mode == 'live'
+        from portfolio_app.demo_data.public_demo import create_public_demo
+        create_public_demo(demo, live=mode == 'live')
         snapshot = read_snapshot(demo / "holdings.csv")
+        assert snapshot.holdings.iloc[0]["position_id"] == "demo-world"
         assert snapshot.holdings.iloc[0]["shares"] == 450
-        save_position(demo / "holdings.csv", {"shares": "99"}, expected_revision=snapshot.revision, position_id="position-0")
-        assert load_holdings(demo / "holdings.csv").iloc[0]["shares"] == 99
+        save_position(demo / "holdings.csv", {"short_name": "Invented demo edit"},
+                      expected_revision=snapshot.revision, position_id="demo-world")
+        assert load_holdings(demo / "holdings.csv").iloc[0]["short_name"] == "Invented demo edit"
         return 0
 
     monkeypatch.chdir(tmp_path)

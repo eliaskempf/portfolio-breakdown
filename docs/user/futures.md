@@ -1,8 +1,7 @@
 # Futures and leverage {#futures-and-leverage-development}
 
-Version 0.2.0 supports manually recorded futures and account balances in the
-normal portfolio workspace. EUR, USD and GBP are supported as account,
-contract-settlement and reporting currencies. No broker connection or order execution is involved.
+Record futures trades and account balances in your portfolio workspace. You can
+use EUR, USD or GBP for account balances, contract settlement and reporting. No broker connection or order execution is involved.
 Futures transactions are entered manually; transaction CSV imports are deferred.
 
 ## Add an actual futures position

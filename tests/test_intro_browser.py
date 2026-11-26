@@ -22,21 +22,23 @@ playwright = pytest.importorskip('playwright.sync_api')
 
 @pytest.fixture
 def intro_server(tmp_path_factory, request):
-    start_in_demo = getattr(request, 'param', False)
+    public_demo = getattr(request, 'param', None) == 'public-demo'
+    start_in_demo = getattr(request, 'param', False) is True
     directory = tmp_path_factory.mktemp('synthetic-intro')
-    create_demo_data(directory / 'demo')
-    fixture_path = directory / 'demo' / 'demo_prices.json'
-    fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
-    fixture['prices']['spot:gold:USD:troy_oz'] = dict(price=2000., currency='USD', observed_at='2026-01-05T00:00:00Z')
-    fixture['fx']['USD'] = dict(price=.8, currency='EUR', observed_at='2026-01-05T00:00:00Z')
-    fixture_path.write_text(json.dumps(fixture), encoding='utf-8')
+    if not public_demo:
+        create_demo_data(directory / 'demo')
+        fixture_path = directory / 'demo' / 'demo_prices.json'
+        fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
+        fixture['prices']['spot:gold:USD:troy_oz'] = dict(price=2000., currency='USD', observed_at='2026-01-05T00:00:00Z')
+        fixture['fx']['USD'] = dict(price=.8, currency='EUR', observed_at='2026-01-05T00:00:00Z')
+        fixture_path.write_text(json.dumps(fixture), encoding='utf-8')
     app = directory / 'app.py'
     app.write_text(f'''
 from pathlib import Path
 from portfolio_app.interface.ui import render_app
 from portfolio_app.market.prices import PriceService, StaticProvider
-render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'demo', demo={start_in_demo}, intro={not start_in_demo},
-           price_service=PriceService(StaticProvider(Path(__file__).parent / 'demo' / 'demo_prices.json')))
+render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'demo', demo={start_in_demo}, demo_seed={"offline" if public_demo else None!r}, intro={not start_in_demo},
+           price_service=None if {public_demo} else PriceService(StaticProvider(Path(__file__).parent / 'demo' / 'demo_prices.json')))
 ''', encoding='utf-8')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))

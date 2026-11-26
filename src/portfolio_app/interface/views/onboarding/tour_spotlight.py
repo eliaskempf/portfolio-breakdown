@@ -131,6 +131,8 @@ export default function({parentElement, data, setTriggerValue}) {
   svg.addEventListener('touchstart', touchStart, {passive:true});
   svg.addEventListener('touchmove', touchMove, {passive:false});
   const keyboard = event => {
+    // The position detail owns keyboard navigation until it closes.
+    if (document.querySelector('[data-testid="stDialog"] [role="dialog"]')) return;
     if (event.key === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation();
       setTriggerValue('exit', {step:data.step});

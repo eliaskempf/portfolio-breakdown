@@ -46,17 +46,15 @@ def demo_guide(*, offline=True):
     with st.container():
         st.markdown('**Try the demo**')
         st.markdown(
-            '1. **Overview:** compare the 60% equity, 25% money market, 10% gold and 5% crypto targets '
-            'with the deliberately uneven holdings. Select Equities to explore its 70/30 World/EM split.\n'
-            '2. **Exposure:** toggle **Break down ETFs** to see the two equity funds turn into example '
-            'constituents and residual Other exposure.\n'
-            '3. **Positions:** inspect the made-up buy-ins and their gains and losses.\n'
-            '4. **Rebalance:** calculate a plan against the saved targets, or try allocating new money.'
+            '1. In **Overview → Performance**, change the period or choose **View holdings on a date**.\n'
+            '2. In **Positions**, open the World ETF to inspect its trades, or **Demo savings** to see deposits and interest.\n'
+            '3. In **Exposure**, toggle **Break down ETFs** to see the underlying holdings.\n'
+            '4. In **Rebalance**, preview how a contribution changes your allocation.'
         )
+        st.caption('Holdings and transactions are invented. ' + (
+            'Prices, history and ETF weights are also invented in the offline example.' if offline else
+            'Prices come from market providers and ETF weights from issuers. Missing observations appear as coverage gaps.'))
 
-        st.caption('Offline example: prices, history and partial ETF weights are invented.' if offline else
-                   'Prices and history come from market providers; ETF weights come from issuer downloads. '
-                   'Buy-ins are invented, not historical transactions. Missing downloads are shown explicitly.')
 
 
 def _first_position():

@@ -131,13 +131,17 @@ not a pending manual task.
 - [ ] On changed screens, check actions with an empty selection, an eligible item and an open draft.
       Submit directly after typing the last required value. Cancel a consequential action,
       revisit its source and verify the saved object and available buttons.
-- [ ] Demo targets (60/25/10/5), equity 70/30 split, mixed gains/losses, both
+- [ ] Demo targets for equity, money market, gold, crypto and savings, the equity 70/30 split, both
       equity ETF issuer breakdowns, real price history and rebalancing work with
       live public data. Retry/missing-data states are honest; quantities initialize
       once and survive refreshes. Explicit --offline-demo works without network.
-      Demo changes never affect the persistent workspace and reset on restart.
+      Open 1M, 1Y and All in Performance, a holding’s purchases and sale, and
+      the savings statement with interest. Demo changes reset on restart.
+- [ ] Choose a past portfolio date on either side of a trade. Compare holdings,
+      cash and historical value to independently calculated balances. Check
+      the gain and TWR interval, missing quote coverage and Back to Performance.
 - [ ] Demo, all main tabs/modes, dialogs, charts and lists work.
-- [ ] Optional tour invitation, Not now and Help replay work. All 15 steps,
+- [ ] Optional tour invitation, Not now and Help replay work. All tour steps,
       chart interaction, chapter navigation and light/dark spotlights work in
       the Windows native window and browser fallback. Finish, Skip tour
       and Escape restore the original workspace/view without changing holdings
@@ -286,7 +290,9 @@ is a disclosed limitation, not a requirement for later manual testing.
 - [ ] Record native Linux manifest, installer checksum and successful build/X11/Wayland jobs.
 - [ ] Hosted Ubuntu 22.04/24.04 checks verify installed X11/Wayland rendering, file dialogs,
       exact download bytes, focus/restore, repeated launch and complete shutdown.
-      Upgrade/removal preserves the synthetic workspace.
+      The Ubuntu 22.04 job installs the checksum-pinned previous stable package,
+      reads the synthetic history workspace with both versions and checks its
+      full file inventory after upgrade, same-version reinstall and removal.
 - [ ] Hosted Apple Silicon macOS checks verify the exact final DMG's native workflows and
       document ad-hoc signing, Gatekeeper rejection and any unverified interactive
       approval/download-quarantine behavior. No paid signing/notarization is

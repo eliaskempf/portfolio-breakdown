@@ -14,6 +14,7 @@ class TourStep:
     interactive: str = ''
     detached_anchors: tuple[str, ...] = ()
     target_scope: str = ''
+    dated_portfolio: bool = False
 
     @property
     def highlight_groups(self) -> tuple[tuple[str, ...], ...]:
@@ -22,17 +23,20 @@ class TourStep:
 
 STEPS = (
     TourStep('Overview', 'Explore your portfolio',
-        'Overview shows what you hold and its allocation. Exposure reveals the companies and regions underneath. Positions manages your holdings. Rebalance plans changes toward your targets. Monitoring tracks conditions you choose.',
+        'Start in Overview to see your holdings, allocation and performance. Exposure looks inside funds. Positions opens your records. Rebalance, Monitoring and Taxes have their own tabs.',
         ('.st-key-main_tabs > div > [role="tablist"]',)),
     TourStep('Overview', 'Choose the portfolio you want to examine',
-        'Category focuses the overview on your whole portfolio or a subset. Current value and Portfolio share follow that selection.',
+        'Choose Portfolio or a category. The allocation, current value and portfolio share follow that choice.',
         ('.st-key-tour_overview_scope',)),
     TourStep('Overview', 'See where your money is allocated',
         'The sunburst and table show the same allocation. Try clicking a chart category to explore it, then click the center to go back. The table follows your selection and compares current weights with targets.',
         ('.st-key-strategic_view', '.st-key-overview_allocation'), 'Allocation', interactive='.st-key-overview_allocation .js-plotly-plot'),
-    TourStep('Overview', 'Compare gains and losses',
-        'Performance compares current values with recorded buy-in costs. Switch between percentage return and euro gain. This excludes dividends and realized gains.',
-        ('.st-key-strategic_view', '.st-key-tour_performance'), 'Performance'),
+    TourStep('Overview', 'Read your personal performance',
+        'Try a different period. Gain includes recorded interest, income and realized gains. Click the gain beside Portfolio value to see time-weighted return. Annualized return accounts for the timing of contributions.',
+        ('.st-key-tour_history_period',), 'Performance', interactive='.st-key-tour_history_period'),
+    TourStep('Overview', 'See what you owned on a date',
+        'From Performance, choose View holdings on a date. This portfolio shows recorded holdings and cash at historical closing values. The date and coverage tell you which figures you can compare.',
+        ('.st-key-historical_portfolio',), 'Performance', dated_portfolio=True),
     TourStep('Overview', 'Understand risk and diversification',
         'Calculate risk estimates volatility, sensitivity to a benchmark, and correlation. We have calculated this example using synthetic history. It describes today’s allocation, not your personal historical return.',
         ('.st-key-strategic_view', '.st-key-tour_risk_controls', '.st-key-tour_risk_metrics'), 'Analytics'),
@@ -48,17 +52,17 @@ STEPS = (
     TourStep('Exposure', 'See your geographic exposure',
         'Compare regions or countries, then choose an area to explore its detail. Unknown geography remains explicit rather than being assigned to a country.',
         ('.st-key-exposure_view', '.st-key-tour_geography'), 'Geography'),
-    TourStep('Positions', 'Add and manage your holdings',
-        'Add position creates a holding. Select a row to inspect a position and its price history; use its pencil to edit quantities, buy-ins, and other details.',
-        ('.st-key-tour_add_position', '.st-key-tour_position_list')),
-    TourStep('Positions', 'Keep your portfolio up to date',
-        'Import transactions or holdings here. More actions includes Bulk add purchases and Update balances.',
-        ('.st-key-position_list_actions',)),
+    TourStep('Positions', 'Trace a holding to its trades',
+        'Open the World ETF row. History → Holdings shows your investment over time and Price shows the instrument. Open Transactions to inspect the purchases and sale, then close the detail to continue.',
+        ('.st-key-tour_position_list',), 'Transactions', interactive='.st-key-tour_position_list'),
+    TourStep('Positions', 'Follow interest into the cash balance',
+        'Open Demo savings to inspect its statement. Deposits increase contributions. Posted interest increases gain. Close the account to return to the tour.',
+        ('.st-key-tour_position_list',), 'Cash account', interactive='.st-key-tour_position_list'),
     TourStep('Rebalance', 'Set category targets',
         'Choose Portfolio to review its category targets. Equities has a 60% target in this demo.',
         ('.st-key-rebalance_tabs [role="tablist"]', '.st-key-tour_category_targets'), 'Targets'),
     TourStep('Rebalance', 'Set targets within a category',
-        'Equities targets 70% World ETF and 30% Emerging Markets ETF. Edit targets opens the same editor as Overview.',
+        'Equities targets 70% World ETF and 30% Emerging Markets ETF. Choose Edit targets here or beside the allocation in Overview.',
         ('.st-key-tour_position_targets',), 'Targets', target_scope='equity'),
     TourStep('Rebalance', 'Plan how to invest new money',
         'Choose a planning scope and contribution, then Calculate plan. Options control eligible positions and purchase rules. This demo uses a €500 contribution.',

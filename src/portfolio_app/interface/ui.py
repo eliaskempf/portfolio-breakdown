@@ -31,7 +31,7 @@ from portfolio_app.application import (historical_for, load_leverage_context, pr
     prepare_exposure, select_price_service, valuation_requests)
 
 
-def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False, managed: bool = False) -> None:
+def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, demo_seed: str | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False, managed: bool = False) -> None:
     from portfolio_app.settings import ensure_app_theme
     ensure_app_theme()
     st.session_state['position_dialog_host_ready'] = False
@@ -68,7 +68,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel, workspace_panel, notifications_slot = app_header(
-        data_dir, demo_dir, demo=demo, launcher_directory=persistent_data_dir if managed else None)
+        data_dir, demo_dir, demo=demo, demo_seed=demo_seed, launcher_directory=persistent_data_dir if managed else None)
     launcher_directory = persistent_data_dir if managed and not demo else None
     from portfolio_app.interface.shared.overview_navigation import render_panel, ViewSources
     from portfolio_app.interface.views.onboarding.tour import active as tour_active
@@ -147,8 +147,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     elif demo and (data_dir / '.history-demo').exists():
         st.caption('History demo · All holdings, transactions and prices are invented · Edits stay in this playground')
     elif demo and not demo_pending:
-        st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
-                   "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
+        st.caption("Offline demo · Invented holdings, transactions and market data · Resets on restart" if offline_demo else
+                   "Demo · Invented holdings and transactions · Public market data · Resets on restart")
     from portfolio_app.interface.views.exposure.portfolio_exposure_ui import render_exposure_targets, render_leverage_editor
     # Fragment comparisons must start before the reads that produced the displayed values.
     dialog_baseline = position_dialog_sources(data_dir)
@@ -524,11 +524,12 @@ def main():
     parser.add_argument("--data-dir", type=Path, default=Path.cwd() / "data" / "portfolio")
     parser.add_argument("--demo-dir", type=Path)
     parser.add_argument("--demo", action="store_true")
+    parser.add_argument("--demo-seed", choices=("offline", "live"), help=argparse.SUPPRESS)
     parser.add_argument("--ignore-workspace-selection", action="store_true")
     parser.add_argument("--skip-intro", action="store_true")
     parser.add_argument("--managed", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir, intro=not args.skip_intro, ignore_selection=args.ignore_workspace_selection, managed=args.managed)
+    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir, demo_seed=args.demo_seed, intro=not args.skip_intro, ignore_selection=args.ignore_workspace_selection, managed=args.managed)
 
 
 if __name__ == "__main__":

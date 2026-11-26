@@ -26,6 +26,7 @@ CSS = '''
 .portfolio-tour-overlay {position:fixed;inset:0;width:100vw;height:100dvh;z-index:1000000;pointer-events:none;}
 .portfolio-tour-accent p {color:#fff!important;}
 .portfolio-tour-accent {box-shadow:inset 0 -3px #637beb!important;background:#5265ce!important;color:#fff!important;border-radius:5px;}
+body:has([data-testid="stDialog"] [role="dialog"]) :is(.st-key-app_tour, .portfolio-tour-overlay) {visibility:hidden;}
 body:has(.st-key-app_tour) .stMainBlockContainer {padding-bottom:420px;}
 @media(max-width:700px) {
     .st-key-app_tour {width:calc(100vw - 24px)!important;padding:14px!important;max-height:calc(100dvh - 140px);border-radius:12px!important;}

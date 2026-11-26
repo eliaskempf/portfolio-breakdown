@@ -871,11 +871,7 @@ def _replace_balance(directory, journal, revision, snapshot, book, row, key):
         st.caption(str(exc))
 
 
-def prepare_portfolio_history(directory, holdings, *, config, journal=None, journal_revision=None, observation_snapshot=None, bucket='', displayed=None, current_valued=None, include_points=True, annualized=True):
-    """Read once before choosing the initial Overview tab; no UI side effects."""
-    from portfolio_app.interface.shared.currency_display import reporting_currency
-    if journal is None:
-        journal, _ = load_journal(directory)
+def portfolio_history_scope(directory, holdings, config, journal, bucket, displayed):
     from portfolio_app.performance.history_scope import category_history_scope
     scope = category_history_scope(journal, holdings, config, bucket, displayed=displayed)
     unresolved = list(scope.unresolved)
@@ -888,7 +884,15 @@ def prepare_portfolio_history(directory, holdings, *, config, journal=None, jour
             unresolved.append('Adopt legacy liabilities into dated account records before calculating whole-portfolio history')
         if sandbox and not journal.has_broker_workspace:
             unresolved.append('Legacy futures simulations are not actual transaction history')
-    scope = replace(scope, unresolved=tuple(unresolved))
+    return replace(scope, unresolved=tuple(unresolved))
+
+
+def prepare_portfolio_history(directory, holdings, *, config, journal=None, journal_revision=None, observation_snapshot=None, bucket='', displayed=None, current_valued=None, include_points=True, annualized=True):
+    """Read once before choosing the initial Overview tab; no UI side effects."""
+    from portfolio_app.interface.shared.currency_display import reporting_currency
+    if journal is None:
+        journal, _ = load_journal(directory)
+    scope = portfolio_history_scope(directory, holdings, config, journal, bucket, displayed)
     if not scope.positions and not scope.accounts and not scope.unresolved:
         return None
     key = _key(directory, scope.key)
@@ -1052,7 +1056,9 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     observations, revision = (prepared['observations'],prepared['revision']) if prepared else load_observations(directory)
     # Reserve the summary above the controls, while reading the widget first.
     summary = st.container()
-    period = st.segmented_control('Period', PERIODS, default=st.session_state.get(key+'period') or '1Y',
+    period_area = (st.container(key='tour_history_period')
+                   if label == 'Portfolio value' and 'tour_step' in st.session_state else st)
+    period = period_area.segmented_control('Period', PERIODS, default=st.session_state.get(key+'period') or '1Y',
         required=True, key=key+'period', label_visibility='collapsed') or '1Y'
     view = prepared['view'] if prepared else prepared_history_view(directory,journal,scope,observations,revision,period,target=target)
     start,end,result = view.start,view.end,view.result
@@ -1174,7 +1180,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     with sections['market_refresh_status']:
         if automatic:
             render_status()
-        else:
+        elif not (directory / '.public-demo').is_file():
             _load_market_observations(directory, journal, scope, observations, revision, view.all_start, view.today, target, key)
     notes = []
     if view.all_end != view.today:

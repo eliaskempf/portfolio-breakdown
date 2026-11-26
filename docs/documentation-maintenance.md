@@ -62,9 +62,9 @@ To refresh them after reviewing the affected behavior, install the locked browse
 group and Chromium, then run `uv run python tools/docs_screenshots.py`. The script
 starts and stops its own isolated app using newly generated offline demo data and
 temporary state. It accepts no personal workspace. `PORTFOLIO_TEST_CHROMIUM` can
-select an existing Chromium executable. Review the three PNGs in the ignored
+select an existing Chromium executable. Review the README Overview screenshot and three guide crops in the ignored
 `dist/docs-screenshots/` output, including legibility, synthetic provenance and
-metadata, before copying only those reviewed images to `docs/user/assets/`.
+metadata, before copying the Overview to `docs/assets/demo-overview.png` and the three reviewed guide images to `docs/user/assets/`.
 Keep capture logs and session evidence outside tracked documentation. Rebuild the
 guide, inspect dark/light and mobile layouts, and run package/privacy checks after
 replacing a crop. Images are bundled with each frozen documentation version.

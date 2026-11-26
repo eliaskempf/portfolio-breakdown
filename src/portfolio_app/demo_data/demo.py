@@ -3,7 +3,7 @@ import csv
 import json
 from hashlib import sha256
 import math
-from tempfile import NamedTemporaryFile
+from io import StringIO
 from pathlib import Path
 
 import yaml
@@ -29,6 +29,14 @@ def _write_csv(path, columns, rows):
         writer = csv.writer(handle)
         writer.writerow(columns)
         writer.writerows(rows)
+
+
+def csv_content(columns, rows):
+    output = StringIO(newline='')
+    writer = csv.DictWriter(output, fieldnames=columns)
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue()
 
 
 def create_demo_data(directory: Path, *, live: bool = False) -> Path:
@@ -168,9 +176,9 @@ def initialize_live_demo(directory: Path, valued) -> bool:
     No network access here. Never mix synthetic prices into the live cache and
     never change quantities again when prices move or the workspace is revisited.
     """
-    from portfolio_app.workspace.locking import write_lock
+    from portfolio_app.workspace.storage import revision, save_document
     from portfolio_app.workspace.workspace_lock import workspace_lock
-    with workspace_lock(directory), write_lock(directory / '.holdings.csv.lock'):
+    with workspace_lock(directory):
         if not live_demo_pending(directory):
             return False
         prices = {row.id: row.current_price * row.fx_to_reporting for row in valued.itertuples()}
@@ -180,19 +188,21 @@ def initialize_live_demo(directory: Path, valued) -> bool:
         with path.open(encoding='utf-8', newline='') as handle:
             reader = csv.DictReader(handle)
             columns, rows = reader.fieldnames, list(reader)
+        public = directory / '.public-demo'
         for row in rows:
             value, cost_ratio = LIVE_EXAMPLES[row['id']]
+            if public.exists() and row['id'] == 'money-market':
+                from portfolio_app.demo_data.public_demo import SAVINGS
+                value -= SAVINGS
             price = prices[row['id']]
             row['shares'] = str(round(value / price, 6))
             row['acquisition_price'] = str(round(price * cost_ratio, 4))
             row['acquisition_currency'] = valued.reporting_currency.iloc[0]
-        with NamedTemporaryFile(mode='w', encoding='utf-8', newline='', dir=directory, delete=False) as handle:
-            temporary = Path(handle.name)
-            writer = csv.DictWriter(handle, fieldnames=columns)
-            writer.writeheader()
-            writer.writerows(rows)
-        try:
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        content = csv_content(columns, rows)
+        if public.exists():
+            from datetime import date
+            from portfolio_app.demo_data.public_demo import publish_history
+            publish_history(directory, content, date.fromisoformat(public.read_text(encoding='ascii')))
+        else:
+            save_document(path, content, revision(path))
         return True

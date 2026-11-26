@@ -139,7 +139,7 @@ closes its server and opens Windows Setup. Complete the wizard and
 reopen your workspace. If a download fails verification, you can retry it or
 open **View release**. Portable builds and other platforms use the release page.
 
-Read the [version 0.2.1 release and upgrade notes](releases.md#upgrade-021)
+Read the [version 0.3.0 release and upgrade notes](releases.md#upgrade-030)
 before updating an existing workspace. When upgrading from 0.1.0, also review
 the [transaction-history and account upgrade notes](releases.md#upgrade-020).
 

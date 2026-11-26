@@ -204,7 +204,7 @@ def test_valid_but_different_native_documentation_is_rejected(api):
     assert api.mutations == [] and api.uploaded == {}
 
 
-def test_linux_workflow_contract():
+def test_linux_workflow_contract(monkeypatch):
     workflow = yaml.load((ROOT / '.github/workflows/desktop-experiment.yml').read_text(), Loader=yaml.BaseLoader)
     build = workflow['jobs']['build-linux-x64']
     assert any(s.get('with', {}).get('name') == 'unaccepted-linux-native-x64' for s in build['steps'])
@@ -215,7 +215,13 @@ def test_linux_workflow_contract():
     assert 'if' not in upload
     assert upload['with']['overwrite'] == 'true'
     assert upload['with']['retention-days'] == '30'
-    assert steps.index(upload) > next(i for i, step in enumerate(steps) if step.get('name') == 'Install Linux artifact and test native binary')
+    baseline = next(step for step in steps if step.get('name') == 'Install pinned previous Linux release')
+    monkeypatch.syspath_prepend(str(ROOT / 'tools'))
+    from windows_upgrade import BASELINE_VERSION
+    assert baseline['env']['PREVIOUS_VERSION'] == BASELINE_VERSION
+    assert len(bytes.fromhex(baseline['env']['PREVIOUS_DEB_SHA256'])) == 32
+    upgrade = next(step for step in steps if step.get('name') == 'Install Linux artifact and test native binary')
+    assert steps.index(baseline) < steps.index(upgrade) < steps.index(upload)
     compatibility = workflow['jobs']['linux-compatibility']
     assert compatibility['name'] == 'linux-compatibility-${{ matrix.backend }}'
     assert compatibility['strategy']['matrix']['backend'] == ['x11', 'wayland']

@@ -14,6 +14,13 @@ def text(value) -> str:
     return value if isinstance(value, str) else ''
 
 
+def is_overnight_fund(fund) -> bool:
+    return (fund is not None and fund.breakdown_basis == 'economic' and fund.asset_class == 'money_market'
+            and not fund.constituents.empty and 'instrument_type' in fund.constituents
+            and fund.constituents.instrument_type.eq('overnight_rate').all()
+            and abs(fund.constituents.weight.sum() - 1.) <= 1e-12)
+
+
 def fund_kind(fund, *, equity_declared=False) -> str:
     return ('equity' if fund.equity_fund or equity_declared else 'non_equity'
             if fund.asset_class in {'fixed_income', 'money_market'} else 'unknown')

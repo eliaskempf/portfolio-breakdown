@@ -16,17 +16,16 @@ remember a different active folder for the same shortcut (see below).
 For a custom launch directory, see [advanced launch options](install.md#commands).
 
 The workspace contains `holdings.csv` (including saved purchase/cost records),
-optional `portfolio.yaml` currency settings, `display-preferences.json` calendar
-preferences, `classifications.yaml`, strategic
-`allocation.yaml`, ETF snapshots under `etfs/`, private overrides, `.cache` and
+optional `portfolio.yaml` currency settings, `display-preferences.json` for
+the first day of the week and your selected Overview and Allocation views,
+`classifications.yaml`, strategic `allocation.yaml`, ETF snapshots under `etfs/`, private overrides, `.cache` and
 per-document `.backups`. Keep the whole directory private. App-managed saves
 validate data, check file revisions and back up previous files before atomic
 replacement. Those backups do not protect against loss of the entire drive.
 
 ### History, futures and account records {#futures-and-account-records-development}
 
-Version 0.2.0 also keeps these private documents in the same
-workspace:
+The app keeps the following records alongside your holdings when you use the corresponding features.
 
 | Document | Contents |
 | --- | --- |
@@ -226,5 +225,5 @@ records, observations, coverage reviews and closed positions are included. A
 failed first activation may leave stable position keys, but never a partially
 applied trade or duplicate cash posting.
 
-See the [version 0.2.1 upgrade notes](releases.md#upgrade-021) before updating or
+See the [version 0.3.0 upgrade notes](releases.md#upgrade-030) before updating or
 downgrading an installation.

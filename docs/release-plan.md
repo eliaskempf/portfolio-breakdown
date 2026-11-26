@@ -33,7 +33,9 @@ checks the appropriate console-free launcher in each package type. With
 `--evidence DIRECTORY`, top-level failures and synthetic process logs are retained
 alongside browser diagnostics, including failures outside a browser context.
 Update the package version and its local lock entry together without implicitly
-upgrading dependencies. Review [release and upgrade notes](user/releases.md)
+upgrading dependencies. Update the previous stable Setup and portable ZIP hashes
+in `tools/windows_upgrade.py` and the prior Debian package version and hash in
+`desktop-experiment.yml` against the published release assets. Review [release and upgrade notes](user/releases.md)
 against the implemented workflows and data compatibility. Link the matching
 version's notes in the release description; generated publication text alone
 contains provenance and platform caveats, not the product changes.

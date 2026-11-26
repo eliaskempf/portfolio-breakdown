@@ -125,6 +125,24 @@ Manual/unsupported instruments can have no chart. Normal demo mode uses public
 history; explicit offline demo history is invented. The separate
 [risk calculation](analytics.md#risk) uses adjusted prices and historical FX.
 
+## Past portfolio views {#past-portfolio}
+
+In **Overview → Performance**, choose **View holdings on a date** and set
+**Portfolio date**. The view covers the whole portfolio at the end of that day.
+A holding sold since then can appear alongside cash held at the time. The value
+uses historical closing prices and exchange rates in your reporting currency.
+An eligible prior close from a closed session retains its observation date.
+
+Read the quantity and valuation coverage separately. A known holding can have
+an unavailable value when a price or exchange rate is missing. A supplied
+whole-portfolio value can also have an incomplete breakdown. Open the coverage
+details to see what the records support.
+
+Recorded gain and cumulative time-weighted return end on the selected date.
+Each uses its own evidence requirements. A correction to an earlier transaction
+can revise the figures for that day. **Back to Performance** restores the
+previous chart range and category.
+
 ## Personal history {#personal-history}
 
 CSV, PDF and manually entered transactions use the same history and controls.
@@ -152,8 +170,9 @@ show the price chart directly, without the selector. The Holdings / Price select
 remembers your explicit choice for each position during the session. Without applied history,
 Holdings offers a route to add and review transactions. The other position tabs
 stay in the same order. Overview remembers your selected view for each portfolio,
-including after a browser refresh or app restart. With no saved choice it opens
-**Performance** when useful history exists, otherwise **Allocation**.
+including after a browser refresh or app restart. A personal portfolio with no saved choice opens
+**Performance** when useful history exists, otherwise **Allocation**. The public demo
+starts on **Allocation**. Choose **Performance** to explore its recorded history.
 Allocation's percentage gain uses full-history TWR; when unavailable, its tooltip
 explains the missing evidence. Position details share one row above the chart selector: **Position value** with
 personal gain, **Invested capital**, and **Annualized return**. Switching chart type,

@@ -45,9 +45,8 @@ Cash in the reporting currency has zero FX returns; foreign cash uses historical
 history are excluded. Covered weights are renormalized; missing valuations prevent
 claiming whole-portfolio coverage. Funds use their own histories, not expanded
 constituents. Category risk still uses the selected benchmark, even for non-equity
-categories. Version 0.2.0 also supports [actual-account leverage](futures.md)
-in EUR/USD/GBP with net-equity denominators, as described below. The separate
-legacy simulation remains EUR-only.
+categories. [Actual-account leverage](futures.md) uses net equity as its denominator
+in EUR, USD and GBP. The separate legacy simulation remains EUR-only.
 
 Integrated account risk also shows a **covered-holdings estimate** when some
 histories are missing or too short. Covered positions retain their weights against
