@@ -246,7 +246,7 @@ def test_update_control_validates_before_stopping(tmp_path, monkeypatch):
         result = request_instance(tmp_path, 'update', payload={'tag': 'invalid'})
         assert result['error'] == 'Invalid release' and not stopped.is_set()
         result = request_instance(tmp_path, 'update', payload={'tag': 'v0.2.0'})
-        assert not result['error'] and stopped.is_set()
+        assert not result['error'] and stopped.wait(timeout=2)
 
 
 @pytest.mark.parametrize('native', [False, True])

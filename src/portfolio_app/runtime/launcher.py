@@ -107,6 +107,8 @@ def ready(url: str) -> bool:
 @contextmanager
 def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool, focus: Callable[[], None] | None = None, activation=None, update=None):
     token = secrets.token_urlsafe(32)
+    # Reject new work once shutdown is accepted, while its reply is in flight.
+    shutdown_accepted = threading.Event()
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -125,14 +127,12 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
             if (self.command, self.path) not in actions:
                 self.send_error(404)
                 return
-            if self.path == '/stop':
-                stopped.set()
             if self.path == '/focus':
                 focus()
             error = ''
             if self.path == '/update':
                 try:
-                    if stopped.is_set():
+                    if stopped.is_set() or shutdown_accepted.is_set():
                         raise DataError('The application is already stopping.')
                     length = int(self.headers.get('Content-Length', '0'))
                     if not 0 < length <= 256:
@@ -141,14 +141,13 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
                     if not isinstance(raw, dict) or set(raw) != {'tag'}:
                         raise DataError('Invalid update request.')
                     update(raw['tag'])
-                    stopped.set()
                 except DataError as exc:
                     error = str(exc)
                 except (HTTPException, OSError, ValueError, TypeError):
                     error = 'Could not verify the update. Retry or use View release.'
             if self.path == '/activate':
                 try:
-                    if stopped.is_set():
+                    if stopped.is_set() or shutdown_accepted.is_set():
                         raise DataError('The application is stopping. Relaunch before switching.')
                     length = int(self.headers.get('Content-Length', '0'))
                     if not 0 < length <= 4 * 1024**2:
@@ -159,7 +158,19 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
                     activation.activate(Path(raw['directory']), raw['generation'], raw['digests'])
                 except (DataError, OSError, ValueError, KeyError, TypeError) as exc:
                     error = str(exc) or 'Invalid activation request.'
-            result = dict(instance=token, url=url, ready=ready(url), demo=demo,
+            shutting_down = self.path == '/stop' or (self.path == '/update' and not error)
+            if shutting_down:
+                shutdown_accepted.set()
+            try:
+                self.reply(error, shutting_down)
+            finally:
+                # The supervisor can exit as soon as this is set, even if the
+                # daemon request thread has not returned. Also stop on disconnect.
+                if shutting_down:
+                    stopped.set()
+
+        def reply(self, error, shutting_down):
+            result = dict(instance=token, url=url, ready=not shutting_down and ready(url), demo=demo,
                           presentation='window' if focus is not None else 'browser')
             if activation is not None:
                 result.update(workspace=activation.status(), error=error)

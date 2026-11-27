@@ -1,3 +1,4 @@
+from http.server import BaseHTTPRequestHandler
 import json
 from pathlib import Path
 import socket
@@ -51,10 +52,35 @@ def test_control_is_authenticated_and_does_not_trust_stale_pids(tmp_path):
         assert error.value.code == 403
         assert not stopped.is_set()
         assert request_instance(tmp_path, 'stop')
-        assert stopped.is_set()
+        assert stopped.wait(timeout=2)
     assert request_instance(tmp_path) is None
     path.write_text(json.dumps(dict(control_port=1, token='invented', pid=123)))
     assert request_instance(tmp_path, 'stop') is None
+
+
+@pytest.mark.parametrize('action', ['stop', 'update'])
+@pytest.mark.parametrize('disconnect', [False, True])
+def test_shutdown_waits_for_control_reply(tmp_path, monkeypatch, action, disconnect):
+    stopped = threading.Event()
+    observed = []
+    send_headers = BaseHTTPRequestHandler.end_headers
+
+    def check_response(handler):
+        observed.append(stopped.is_set())
+        if disconnect:
+            raise BrokenPipeError('Synthetic caller disconnected before the reply')
+        send_headers(handler)
+
+    monkeypatch.setattr(BaseHTTPRequestHandler, 'end_headers', check_response)
+    with instance(tmp_path, 'http://127.0.0.1:1', stopped, demo=True, update=lambda tag: None):
+        payload = {'tag': 'v0.3.0'} if action == 'update' else None
+        reply = request_instance(tmp_path, action, payload=payload)
+        if disconnect:
+            assert reply is None
+        else:
+            assert reply and reply['demo']
+        assert stopped.wait(timeout=2)
+        assert observed == [False]
 
 
 def test_repeated_launch_refuses_silent_mode_switch(tmp_path, monkeypatch):
