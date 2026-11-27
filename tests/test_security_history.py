@@ -1,6 +1,7 @@
 """Invented securities, accounts and amounts; never read working portfolio data."""
 from dataclasses import replace
 from decimal import Decimal as D
+from math import inf, nextafter
 import pytest
 
 from portfolio_app.ledger.account_journal import Account, Event, Journal, replay, journal_from_dict, journal_to_dict
@@ -86,6 +87,32 @@ def test_materialization_preserves_source_and_rejects_external_change():
     rows.loc[0, 'shares'] = 11
     with pytest.raises(DataError, match='outside History'):
         effective_holdings(rows, (b,))
+
+
+@pytest.mark.parametrize('direction', [0.0, inf])
+def test_history_snapshot_price_accepts_only_one_float_step(direction):
+    # Use a power of two so the step below the price differs from the step above it.
+    rows = parse_holdings('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,8,EUR\n')
+    adjacent = nextafter(8.0, direction)
+    original = book(opening())
+    compatible = replace(original, source_summary=('10', str(adjacent), 'EUR'))
+    assert effective_holdings(rows, (compatible,)).iloc[0].acquisition_price == 8
+
+    changed = replace(original, source_summary=('10', str(nextafter(adjacent, direction)), 'EUR'))
+    with pytest.raises(DataError, match='outside History'):
+        effective_holdings(rows, (changed,))
+
+
+@pytest.mark.parametrize(('price', 'saved'), [
+    ('', ('10', '0', 'EUR')),
+    ('0', ('10', '', 'EUR')),
+    ('8', (str(nextafter(10.0, inf)), '8', 'EUR')),
+    ('8', ('10', '8', 'USD')),
+])
+def test_history_snapshot_preserves_missing_prices_quantities_and_currency(price, saved):
+    rows = parse_holdings(f'id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,{price},EUR\n')
+    with pytest.raises(DataError, match='outside History'):
+        effective_holdings(rows, (replace(book(opening()), source_summary=saved),))
 
 
 def test_split_preserves_total_cost_and_oversale_rejected():

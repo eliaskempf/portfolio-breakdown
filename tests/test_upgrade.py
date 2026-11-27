@@ -6,13 +6,13 @@ import json
 
 import pandas as pd
 
-from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
 from portfolio_app.workspace.backup import commit_restore, create_backup, inspect_backup
 from portfolio_app.ledger.history_commands import correct_transaction, save_history
 from portfolio_app.performance.history_observations import Observation, ObservationStore, save_observations
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.portfolio.purchases import read_purchase_history
-from portfolio_app.ledger.security_history import effective_holdings, replay_securities
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent, effective_holdings, replay_securities
 from portfolio_app.workspace.workspace import inventory, validate_workspace
 
 
@@ -64,6 +64,21 @@ def test_legacy_holdings_and_purchase_batches_are_not_implicitly_activated(tmp_p
     assert inventory(destination) == inventory(source) == before
     assert not (destination / 'account-journal.json').exists()
     pd.testing.assert_frame_equal(read_snapshot(destination / 'holdings.csv').holdings, snapshot.holdings)
+
+
+def test_upgrade_accepts_legacy_price_snapshot_without_rewriting_evidence(tmp_path):
+    # Invented CSV decimal parsed as 12.01 in pandas 3.0 and 12.010000000000002 in 3.1.
+    (tmp_path / 'holdings.csv').write_text(
+        'id,name,position_key,shares,acquisition_price,acquisition_currency,manual_price,manual_price_currency,manual_price_date,quantity_unit\n'
+        'invented,Invented units,invented-position,2,12.0100000000000009,EUR,15,EUR,2025-01-01,units\n')
+    opening = SecurityEvent('opening', 'opening', '2025-01-01', quantity=Decimal('2'),
+                            amount=Decimal('24.02'), currency='EUR')
+    book = SecurityBook('invented-position', 'invented', ('2', '12.01', 'EUR'),
+                        records=(opening,), active_ids=(opening.id,))
+    save_journal(tmp_path, Journal(version=5, securities=(book,)), None)
+    before = inventory(tmp_path)
+    validate_workspace(tmp_path)
+    assert inventory(tmp_path) == before
 
 
 def test_version_five_corrected_imports_closed_positions_and_observations_roundtrip(tmp_path):

@@ -730,7 +730,7 @@ def validate_books(books, accounts):
 
 def effective_holdings(holdings, books):
     """Materialize managed balances without writing competing CSV summaries."""
-    from portfolio_app.performance.cost_basis import fingerprint, same_summary, encode_components, component
+    from portfolio_app.performance.cost_basis import matches_history_snapshot, encode_components, component
     result = holdings.copy(deep=True)
     if 'acquisition_currency' not in result:
         result['acquisition_currency'] = ''
@@ -747,7 +747,7 @@ def effective_holdings(holdings, books):
         row = result.loc[index]
         if not book.active:
             continue
-        if row.id != book.instrument_id or not same_summary(fingerprint(row), book.source_summary):
+        if row.id != book.instrument_id or not matches_history_snapshot(row, book.source_summary):
             raise DataError('A history-linked holding changed outside History. Restore its source snapshot before continuing.')
         state = states[book.position_id]
         costs = state.costs or (component(0, 0, ''),)

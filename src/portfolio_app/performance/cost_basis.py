@@ -42,6 +42,23 @@ def same_summary(a, b):
     return all((_summary_number(x) == _summary_number(y) if i < 2 else x == y) for i, (x, y) in enumerate(zip(a, b)))
 
 
+def matches_history_snapshot(row, saved):
+    quantity, price, currency = fingerprint(row)
+    saved_quantity, saved_price, saved_currency = saved
+    if currency != saved_currency or _summary_number(quantity) != _summary_number(saved_quantity):
+        return False
+    if price == saved_price:
+        return True
+    # Parsers in different releases can round the same CSV price to adjacent floats.
+    # Compare their binary64 representations directly, without parsing through pandas again.
+    current, previous = decimal(price), decimal(saved_price)
+    if current is None or previous is None:
+        return False
+    current_float, previous_float = float(current), float(previous)
+    return (math.isfinite(current_float) and math.isfinite(previous_float)
+            and math.nextafter(current_float, previous_float) == previous_float)
+
+
 def component(shares, amount, currency, day='', conversions=None):
     return dict(shares=str(shares), amount='' if amount is None else str(amount), currency=currency or '',
                 date=day or '', conversions=conversions or {})
