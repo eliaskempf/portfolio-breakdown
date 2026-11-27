@@ -1,4 +1,7 @@
 """Rendered planning and target editing with invented, offline inputs."""
+import time
+
+import pytest
 from test_ux_browser import ux_page as _ux_page, playwright
 
 ux_page = _ux_page
@@ -49,6 +52,7 @@ def test_plan_controls_results_and_narrow_layout(ux_page):
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
+@pytest.mark.parametrize('ux_page', ['delayed_category_draft'], indirect=True)
 def test_target_grid_add_discard_and_keyboard_edit(ux_page):
     page, directory = ux_page
     page.get_by_role('tab', name='Rebalance', exact=True).click()
@@ -64,12 +68,20 @@ def test_target_grid_add_discard_and_keyboard_edit(ux_page):
     page.screenshot(path=str(directory / 'rebalance-targets.png'), full_page=True)
     page.get_by_role('button', name='Add category', exact=True).click()
     page.get_by_role('textbox', name='Category name', exact=True).fill('Invented future category')
+    (directory / 'delay-category').touch()
     page.get_by_role('button', name='Add to draft', exact=True).click()
-    playwright.expect(page.get_by_role('button',name='Save categories',exact=True)).to_be_visible()
+    # Submit Save while the add render is still pending, as a fast second click can.
+    deadline = time.monotonic() + 10
+    while not (directory / 'category-render-started').exists():
+        assert time.monotonic() < deadline, 'The category editor did not start its rerun'
+        time.sleep(.02)
     page.keyboard.press('Escape')
-    settle(page)
     assert 'Invented future category' not in (directory / 'allocation.yaml').read_text()
-    page.get_by_role('button', name='Save categories', exact=True).click()
+    try:
+        page.get_by_role('button', name='Save categories', exact=True).click()
+        playwright.expect(page.get_by_text('Categories saved.', exact=True)).to_be_visible()
+    finally:
+        (directory / 'release-category-render').touch()
     playwright.expect(page.get_by_text('100% assigned · 1 missing',exact=True)).to_be_visible()
     settle(page)
     assert 'Invented future category' in (directory / 'allocation.yaml').read_text()

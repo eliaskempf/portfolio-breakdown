@@ -97,23 +97,32 @@ def _bucket_editor(config, key, holdings=None, *, migration=False):
     frame['Target (% of parent)'] = pd.to_numeric(frame['Target (% of parent)'])
     drafts = st.session_state.setdefault('targets_drafts', {})
     draft = drafts.setdefault(key, {'rows': frame, 'generation': 0})
+    def add_to_draft():
+        # Record the submitted form before a following Save can interrupt the render.
+        name = st.session_state[key + '_add_name'].strip()
+        if not name:
+            draft['add_error'] = 'Enter a category name.'
+            return
+        parent = st.session_state[key + '_add_parent']
+        row = {'ID': uuid4().hex, 'Name': name, 'Parent': labels.get(parent, 'Portfolio'),
+               'Target (% of parent)': st.session_state[key + '_add_target'],
+               'Protect from selling': st.session_state[key + '_add_protected']}
+        draft['rows'] = pd.concat([draft['rows'], pd.DataFrame([row])], ignore_index=True)
+        draft['generation'] += 1
+
     add, delete, _ = st.columns([1, 1, 3])
     with add.popover('Add category', help='Add a category to the draft hierarchy; save to make it persistent.', width='stretch'):
         with st.form(key + '_add'):
-            name = st.text_input('Category name', help='Display name for this category in charts and target editors.')
-            parent = st.selectbox('Parent category', ['', *labels], format_func=lambda v: labels.get(v, 'Portfolio'),
-                                  help='Save a new category before selecting it as a parent.')
-            target = st.number_input('Target (% of parent)', help='Desired share of the parent category; top-level categories use the whole portfolio.', min_value=0., max_value=100., value=None)
-            protected = st.toggle('Protect from selling', help='Prevent sell suggestions when rebalancing this category or its descendants.')
-            if st.form_submit_button('Add to draft'):
-                if not name.strip():
-                    st.error('Enter a category name.')
-                else:
-                    row = {'ID': uuid4().hex, 'Name': name.strip(), 'Parent': labels.get(parent, 'Portfolio'),
-                           'Target (% of parent)': target, 'Protect from selling': protected}
-                    draft['rows'] = pd.concat([draft['rows'], pd.DataFrame([row])], ignore_index=True)
-                    draft['generation'] += 1
-                    st.rerun()
+            st.text_input('Category name', help='Display name for this category in charts and target editors.', key=key + '_add_name')
+            st.selectbox('Parent category', ['', *labels], format_func=lambda v: labels.get(v, 'Portfolio'),
+                         help='Save a new category before selecting it as a parent.', key=key + '_add_parent')
+            st.number_input('Target (% of parent)', help='Desired share of the parent category; top-level categories use the whole portfolio.',
+                            min_value=0., max_value=100., value=None, key=key + '_add_target')
+            st.toggle('Protect from selling', help='Prevent sell suggestions when rebalancing this category or its descendants.',
+                      key=key + '_add_protected')
+            st.form_submit_button('Add to draft', on_click=add_to_draft)
+            if error := draft.pop('add_error', None):
+                st.error(error)
     with delete.popover('Delete categories', help='Choose categories to remove from the draft hierarchy.', width='stretch'):
         names = dict(zip(draft['rows'].ID, draft['rows'].Name))
         selected = st.multiselect('Categories to delete', list(names), help='Select the categories to remove; review the remaining hierarchy before saving.', format_func=lambda v: labels.get(v, names[v]),

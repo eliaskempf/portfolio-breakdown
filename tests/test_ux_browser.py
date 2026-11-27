@@ -393,6 +393,25 @@ if not hasattr(position_ui, '_original_remember_draft'):
             time.sleep(.7)
     position_ui._remember_draft = slow_remember
 '''
+    if getattr(request, 'param', '') == 'delayed_category_draft':
+        setup = """from pathlib import Path
+import time
+import streamlit as st
+from portfolio_app.interface.views.portfolio import allocation_ui
+if not hasattr(allocation_ui, '_original_bucket_editor'):
+    allocation_ui._original_bucket_editor = allocation_ui._bucket_editor
+    def delayed_editor(*args, **kwargs):
+        root = Path(__file__).parent
+        started = root / 'category-render-started'
+        if (root / 'delay-category').exists() and not started.exists():
+            started.touch()
+            deadline = time.monotonic() + 10
+            while not (root / 'release-category-render').exists() and time.monotonic() < deadline:
+                st.session_state.get('main_tabs')  # Let a new request interrupt this render.
+                time.sleep(.02)
+        return allocation_ui._original_bucket_editor(*args, **kwargs)
+    allocation_ui._bucket_editor = delayed_editor
+"""
     app.write_text(setup + 'from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
                    'render_app(Path(__file__).parent, demo=True)\n')
     with socket.socket() as sock:
