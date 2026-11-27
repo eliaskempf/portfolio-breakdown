@@ -47,7 +47,7 @@ def demo_guide(*, offline=True):
         st.markdown('**Try the demo**')
         st.markdown(
             '1. In **Overview → Performance**, change the period or choose **View holdings on a date**.\n'
-            '2. In **Positions**, open the World ETF to inspect its trades, or **Demo savings** to see deposits and interest.\n'
+            '2. In **Positions**, open the World ETF to inspect its trades, or **Emergency fund** to see deposits and interest.\n'
             '3. In **Exposure**, toggle **Break down ETFs** to see the underlying holdings.\n'
             '4. In **Rebalance**, preview how a contribution changes your allocation.'
         )

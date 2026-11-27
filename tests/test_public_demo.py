@@ -31,6 +31,7 @@ def test_offline_demo_reconciles_security_and_savings_history(tmp_path):
     assert len(journal.securities) == 6
     cash = replay(journal).cash['demo-savings', 'EUR']
     assert cash == 4400 + 550 - 50 + 100
+    assert journal.accounts[0].name == 'Emergency fund'
     assert journal.accounts[0].cash_type == 'Savings'
     config = load_allocation(directory / 'allocation.yaml', snapshot.holdings)
     assert {b.id: b.target for b in config.buckets} == {

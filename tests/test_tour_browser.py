@@ -95,7 +95,7 @@ def test_demo_tour_every_view_and_menu_replay(intro_page):
         if STEPS[index].interactive == '.st-key-tour_position_list':
             savings = STEPS[index].view == 'Cash account'
             rows = page.get_by_role('table', name='Positions', exact=True)
-            name = 'Demo savings' if savings else 'Xtrackers MSCI World'
+            name = 'Emergency fund' if savings else 'Xtrackers MSCI World'
             rows.get_by_text(name, exact=True).click()
             dialog = page.get_by_role('dialog', name=name, exact=True)
             if savings:
