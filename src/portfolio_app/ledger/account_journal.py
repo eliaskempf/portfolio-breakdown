@@ -814,6 +814,8 @@ def journal_to_dict(journal):
     if journal.version < 6:
         result.pop('kept_imports')
     for book in result['securities']:
+        if not book['source_exact']:
+            book.pop('source_exact')
         for event in book['records']:
             for field in ('order_domain', 'order_time'):
                 if not event[field]:

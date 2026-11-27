@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from portfolio_app.ledger.account_journal import load_journal, save_journal, replay
 from portfolio_app.portfolio.actual_portfolio import freeze_position_keys
-from portfolio_app.performance.cost_basis import fingerprint
+from portfolio_app.performance.cost_basis import stored_snapshot
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.ledger.security_history import (
@@ -25,9 +25,12 @@ def replace_book(journal, book):
 
 def book_for(journal, row):
     existing = next((b for b in journal.securities if b.position_id == row['position_id']), None)
+    if existing and existing.active:
+        return existing
+    summary, exact = stored_snapshot(row)
     if existing:
-        return existing if existing.active else replace(existing, source_summary=tuple(fingerprint(row)))
-    return SecurityBook(row['position_id'], row['id'], tuple(fingerprint(row)))
+        return replace(existing, source_summary=tuple(summary), source_exact=exact)
+    return SecurityBook(row['position_id'], row['id'], tuple(summary), source_exact=exact)
 
 
 def preview_activation(journal, book, selected_ids, row, *, target='EUR', historical=None, other_changes=()):
@@ -125,7 +128,7 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
             if previous:
                 if candidate.records[:len(previous.records)] != previous.records:
                     raise DataError('Retain original evidence; append corrections instead of overwriting records.')
-                if previous.active and (candidate.source_summary, candidate.instrument_id, candidate.account_id) != (previous.source_summary, previous.instrument_id, previous.account_id):
+                if previous.active and (candidate.source_summary, candidate.source_exact, candidate.instrument_id, candidate.account_id) != (previous.source_summary, previous.source_exact, previous.instrument_id, previous.account_id):
                     raise DataError('History identity and active cash binding cannot change.')
             if not activate:
                 candidate = replace(candidate, active_ids=previous.active_ids if previous else (),

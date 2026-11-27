@@ -83,7 +83,7 @@ def create_history_demo(directory: Path, *, end: date | None = None, market_pric
     # ordinary source fingerprint guard intact when history becomes authoritative.
     frame = snapshot.holdings
     states = replay_securities(journal.securities).positions
-    from portfolio_app.performance.cost_basis import resolve_cost, fingerprint
+    from portfolio_app.performance.cost_basis import resolve_cost, stored_snapshot
     for index,row in frame.iterrows():
         state = states[row.position_id]
         frame.at[index,'acquisition_price'] = resolve_cost(list(state.costs),'EUR').amount/float(state.quantity)
@@ -91,7 +91,11 @@ def create_history_demo(directory: Path, *, end: date | None = None, market_pric
     columns = ['position_key','id','name','ticker','shares','acquisition_price','acquisition_currency','account','bucket_id','within_bucket_target','instrument_type','exposure_kind']
     frame[columns].to_csv(directory/'holdings.csv',index=False)
     rows = read_snapshot(directory/'holdings.csv').holdings.set_index('position_id')
-    journal = replace(journal, securities=tuple(replace(b,source_summary=tuple(fingerprint(rows.loc[b.position_id]))) for b in books))
+    prepared = []
+    for book in books:
+        summary, exact = stored_snapshot(rows.loc[book.position_id])
+        prepared.append(replace(book, source_summary=tuple(summary), source_exact=exact))
+    journal = replace(journal, securities=tuple(prepared))
     save_journal(directory,journal,None)
     observations = []
     for b in books:

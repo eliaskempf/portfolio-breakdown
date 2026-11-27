@@ -125,7 +125,9 @@ def save_trade(directory: Path, event: SecurityEvent, *, expected_holdings_revis
         matching = holdings.loc[holdings.position_id.eq(position_id)]
         if len(matching) != 1:
             raise DataError('The selected position no longer exists. Reopen the form.')
-        opening_row = matching.iloc[0].to_dict()
+        from portfolio_app.portfolio.csv_summary import CostRow, source_for
+        holding = matching.iloc[0]
+        opening_row = CostRow(holding.to_dict(), source_for(holding))
         exact = raw.loc[raw.position_key.eq(position_id)].iloc[0]
         for column in ('shares', 'acquisition_price'):
             if column in exact:

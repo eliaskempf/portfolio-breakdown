@@ -238,9 +238,12 @@ class SecurityBook:
     reviews: tuple[HistoryReview, ...] = ()
     cash_from: str = ''
     custody_id: str = ''
+    source_exact: bool = False
 
     def __post_init__(self):
         identifier(self.position_id); identifier(self.instrument_id)
+        if type(self.source_exact) is not bool:
+            raise DataError('Invalid holding fingerprint source.')
         object.__setattr__(self, 'source_summary', tuple(self.source_summary))
         if len(self.source_summary) != 3 or any(not isinstance(x, str) for x in self.source_summary):
             raise DataError('History requires the original holding fingerprint.')
@@ -730,11 +733,12 @@ def validate_books(books, accounts):
 
 def effective_holdings(holdings, books):
     """Materialize managed balances without writing competing CSV summaries."""
-    from portfolio_app.performance.cost_basis import matches_history_snapshot, encode_components, component
+    from portfolio_app.performance.cost_basis import matches_snapshot, encode_components, component
     result = holdings.copy(deep=True)
     if 'acquisition_currency' not in result:
         result['acquisition_currency'] = ''
     states = replay_securities(books).positions
+    projected = set()
     for book in books:
         matches = result.index[result.position_id == book.position_id]
         if not len(matches) and (not book.active or not states[book.position_id].quantity):
@@ -747,7 +751,7 @@ def effective_holdings(holdings, books):
         row = result.loc[index]
         if not book.active:
             continue
-        if row.id != book.instrument_id or not matches_history_snapshot(row, book.source_summary):
+        if row.id != book.instrument_id or not matches_snapshot(row, book.source_summary, history=True, source_exact=book.source_exact):
             raise DataError('A history-linked holding changed outside History. Restore its source snapshot before continuing.')
         state = states[book.position_id]
         costs = state.costs or (component(0, 0, ''),)
@@ -758,7 +762,12 @@ def effective_holdings(holdings, books):
             'acquisition_currency': next(iter(currencies)) if known else ''}
         for key, value in values.items():
             result.at[index, key] = value
-        result.at[index, 'cost_basis_details'] = encode_components(list(costs), {**row.to_dict(), **values})
+        result.at[index, 'cost_basis_details'] = encode_components(list(costs), values)
+        projected.add(book.position_id)
+    from portfolio_app.portfolio.csv_summary import ATTRIBUTE, CsvSummaries
+    if projected and isinstance(result.attrs.get(ATTRIBUTE), CsvSummaries):
+        # These rows now carry ledger quantities and freshly encoded costs.
+        result.attrs[ATTRIBUTE] = result.attrs[ATTRIBUTE].without(projected)
     return result
 
 
@@ -905,6 +914,8 @@ def security_history_fingerprint(journal, position_id):
     for book in sorted(journal.securities, key=lambda b: b.position_id):
         if book.position_id in members:
             raw = asdict(book)
+            if not book.source_exact:
+                raw.pop('source_exact')
             raw.pop('reviews', None)
             # Keep existing PDF/manual review hashes stable when CSV-only fields
             # have their backward-compatible defaults. Actual new evidence binds

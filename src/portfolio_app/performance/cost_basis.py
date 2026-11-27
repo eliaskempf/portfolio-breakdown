@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 import json
 import math
 
-import pandas as pd
+from portfolio_app.portfolio.csv_summary import source_for
 
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.market.fx import valid_currency, current_rate
@@ -27,36 +27,74 @@ def decimal(value):
 
 
 def fingerprint(row):
-    return [str(decimal(row.get(k))) if decimal(row.get(k)) is not None else '' for k in ('shares', 'acquisition_price')] + [row.get('acquisition_currency') or '']
-
-
-def _summary_number(value):
-    number = decimal(value)
-    # Match the holdings parser's numeric representation. A CSV decimal
-    # can round when parsed; this alone must not invalidate saved costs.
-    # Original decimal strings in cost records remain untouched.
-    return pd.to_numeric(str(number), errors='coerce') if number is not None else None
+    numbers = (decimal(row.get(key)) for key in ('shares', 'acquisition_price'))
+    currency = row.get('acquisition_currency')
+    return [str(value) if value is not None else '' for value in numbers] + [currency.strip().upper() if isinstance(currency, str) else '']
 
 
 def same_summary(a, b):
-    return all((_summary_number(x) == _summary_number(y) if i < 2 else x == y) for i, (x, y) in enumerate(zip(a, b)))
-
-
-def matches_history_snapshot(row, saved):
-    quantity, price, currency = fingerprint(row)
-    saved_quantity, saved_price, saved_currency = saved
-    if currency != saved_currency or _summary_number(quantity) != _summary_number(saved_quantity):
+    """Exact decimal equality, including large integers and the absence of a price."""
+    if len(a) != 3 or len(b) != 3 or a[2] != b[2]:
         return False
-    if price == saved_price:
+    for left, right in zip(a[:2], b[:2]):
+        if left in ('', None) or right in ('', None):
+            if left not in ('', None) or right not in ('', None):
+                return False
+        elif (number := decimal(left)) is None or number != decimal(right):
+            return False
+    return True
+
+
+def _live_source(row, live):
+    source = source_for(row)
+    if source is None:
+        return None
+    # A purchase form works on exact text; analytical rows carry floats. An
+    # in-memory edit from one numeric interpretation to another isn't evidence.
+    if isinstance(row.get('shares'), str) and isinstance(row.get('acquisition_price', ''), str):
+        raw = (row['shares'].strip(), row.get('acquisition_price', '').strip(), live[2])
+        return source if raw == source.tokens or same_summary(raw, source.tokens) else None
+    return source if same_summary(live, source.parsed) else None
+
+
+def stored_snapshot(row, *, csv_values=False):
+    """Mark only exact CSV decimals we can prove, or values about to be written verbatim."""
+    live = fingerprint(row)
+    source = _live_source(row, live)
+    if source is not None:
+        quantity, price, currency = source.tokens
+    elif csv_values:
+        quantity, price, currency = row.get('shares'), row.get('acquisition_price'), live[2]
+    else:
+        return live, False
+    shares = decimal(quantity)
+    unit_price = decimal(price)
+    if shares is None or (price not in ('', None) and unit_price is None):
+        # The shipped readers also accept certain non-Decimal spellings. The
+        # loader's actual numeric values remain valid unmarked evidence.
+        if source is not None:
+            quantity, price, currency = source.parsed
+            live = fingerprint(dict(shares=quantity, acquisition_price=price, acquisition_currency=currency))
+        return live, False
+    return [str(shares), str(unit_price) if unit_price is not None else '', currency], True
+
+
+def matches_snapshot(row, saved, *, history=False, source_exact=False):
+    live = fingerprint(row)
+    source = _live_source(row, live)
+    if source_exact:
+        # A plain detached float cannot prove the original decimal, even when
+        # its string representation happens to equal the stored exact number.
+        return source is not None and same_summary(source.tokens, saved)
+    if source is None:
+        # A detached row can prove direct equality. Superseded source metadata
+        # cannot validate a different live row, even if an older parser would.
+        return (not history or source_for(row) is None) and same_summary(live, saved)
+    if same_summary(live, saved) or same_summary(source.tokens, saved):
         return True
-    # Parsers in different releases can round the same CSV price to adjacent floats.
-    # Compare their binary64 representations directly, without parsing through pandas again.
-    current, previous = decimal(price), decimal(saved_price)
-    if current is None or previous is None:
-        return False
-    current_float, previous_float = float(current), float(previous)
-    return (math.isfinite(current_float) and math.isfinite(previous_float)
-            and math.nextafter(current_float, previous_float) == previous_float)
+    # Old records contain only the numerical tuple produced by the old parser.
+    # Distinct source spellings that produced that same tuple are indistinguishable.
+    return any(same_summary(candidate, saved) for candidate in source.parser_snapshots)
 
 
 def component(shares, amount, currency, day='', conversions=None):
@@ -104,16 +142,20 @@ def validate_components(parts):
                 raise DataError('Exchange rate must be finite and positive.')
 
 
-def encode_components(parts, row):
+def encode_components(parts, row, *, csv_values=False):
     validate_components(parts)
-    return json.dumps(dict(version=1, summary=fingerprint(row), components=parts), separators=(',', ':'), allow_nan=False)
+    summary, exact = stored_snapshot(row, csv_values=csv_values)
+    document = dict(version=1, summary=summary, components=parts)
+    if exact:
+        document['source_exact'] = True
+    return json.dumps(document, separators=(',', ':'), allow_nan=False)
 
 
 def read_details(value):
     """Decode and validate a fresh, caller-owned cost document."""
     try:
         raw = json.loads(value)
-        if not isinstance(raw, dict) or raw.get('version') != 1 or len(raw.get('summary', [])) != 3:
+        if not isinstance(raw, dict) or raw.get('version') != 1 or len(raw.get('summary', [])) != 3 or type(raw.get('source_exact', False)) is not bool:
             raise ValueError
         validate_components(raw.get('components'))
         quantity = decimal(raw['summary'][0])
@@ -129,7 +171,7 @@ def active_components(row):
     value = row.get(FIELD, '')
     if isinstance(value, str) and value:
         raw = read_details(value)
-        if same_summary(raw['summary'], fingerprint(row)):
+        if matches_snapshot(row, raw['summary'], source_exact=raw.get('source_exact', False)):
             return raw['components']
         # External balance/cost edit: the summary supersedes old purchase evidence.
         return [aggregate_component(row)]
@@ -162,8 +204,8 @@ def _legacy_components(row):
                                        batch['currency'], purchase['date']))
             previous = fingerprint(dict(shares=batch.get('result_shares'), acquisition_price=batch.get('result_average'),
                                         acquisition_currency=batch['currency'] if batch.get('result_average') else ''))
-        if (previous is not None and same_summary(previous, fingerprint(row))
-                and _summary_number(sum(decimal(p['shares']) for p in parts)) == _summary_number(row['shares'])):
+        if (previous is not None and matches_snapshot(row, previous)
+                and sum(decimal(p['shares']) for p in parts) == decimal(previous[0])):
             return parts
     except (DataError, KeyError, TypeError):
         pass

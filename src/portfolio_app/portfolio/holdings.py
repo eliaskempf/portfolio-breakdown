@@ -102,6 +102,8 @@ def parse_holdings(content: str) -> pd.DataFrame:
     for column in ("id", "name"):
         if frame[column].eq("").any():
             raise DataError(f"Every holding needs a nonempty {column}.")
+    from portfolio_app.portfolio.csv_summary import ATTRIBUTE, CsvSummaries, CsvSummary
+    tokens, integers = {}, {}
     for column in ("shares", "acquisition_price"):
         original = frame[column]
         numeric = pd.to_numeric(original, errors="coerce")
@@ -111,6 +113,8 @@ def parse_holdings(content: str) -> pd.DataFrame:
         if invalid.any():
             rows = ", ".join(str(i + 2) for i in frame.index[invalid])
             raise DataError(f"{column} must be a finite nonnegative number (CSV rows {rows}).")
+        tokens[column] = original.tolist()
+        integers[column] = pd.api.types.is_integer_dtype(numeric.dtype)
         frame[column] = numeric.astype(float)
     if 'cost_basis_details' in frame:
         from portfolio_app.performance.cost_basis import read_details
@@ -128,6 +132,13 @@ def parse_holdings(content: str) -> pd.DataFrame:
     else:
         keys = [f"position-{i}" for i in range(len(frame))]
     frame.insert(0, "position_id", keys)
+    currencies = frame['acquisition_currency'] if 'acquisition_currency' in frame else [''] * len(frame)
+    frame.attrs[ATTRIBUTE] = CsvSummaries(
+        (key, CsvSummary(instrument, (shares, price, currency), (quantity, average if price else None, currency),
+                         integers['shares'], integers['acquisition_price']))
+        for key, instrument, shares, price, currency, quantity, average in zip(
+            keys, frame.id, tokens['shares'], tokens['acquisition_price'], currencies, frame.shares, frame.acquisition_price)
+    )
     return frame
 
 

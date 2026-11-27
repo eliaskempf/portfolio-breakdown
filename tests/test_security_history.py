@@ -90,15 +90,9 @@ def test_materialization_preserves_source_and_rejects_external_change():
 
 
 @pytest.mark.parametrize('direction', [0.0, inf])
-def test_history_snapshot_price_accepts_only_one_float_step(direction):
-    # Use a power of two so the step below the price differs from the step above it.
+def test_history_snapshot_rejects_a_real_one_step_edit(direction):
     rows = parse_holdings('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,8,EUR\n')
-    adjacent = nextafter(8.0, direction)
-    original = book(opening())
-    compatible = replace(original, source_summary=('10', str(adjacent), 'EUR'))
-    assert effective_holdings(rows, (compatible,)).iloc[0].acquisition_price == 8
-
-    changed = replace(original, source_summary=('10', str(nextafter(adjacent, direction)), 'EUR'))
+    changed = replace(book(opening()), source_summary=('10', str(nextafter(8.0, direction)), 'EUR'))
     with pytest.raises(DataError, match='outside History'):
         effective_holdings(rows, (changed,))
 

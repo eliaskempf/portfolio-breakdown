@@ -19,6 +19,12 @@ Verify the version and selected workspace, then open Overview, Positions and any
 saved account or transaction history. Current-holdings portfolios remain usable
 with their existing records.
 
+An upgrade preserves active History and dated purchase costs, including saved
+exchange rates, when releases round the same CSV quantity or acquisition price
+differently. Opening the workspace preserves the original CSV and journal.
+Older snapshots stored rounded numbers, so they cannot distinguish between
+decimal values that rounded to the same saved number.
+
 Starting with v0.3.0, the Windows Setup installation can download and verify a
 later installer from **App menu → Help**. Portable Windows, Linux and macOS
 users can open the release page from the update notification. Keep the old

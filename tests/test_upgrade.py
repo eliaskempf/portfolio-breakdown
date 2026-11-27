@@ -5,8 +5,11 @@ from decimal import Decimal
 import json
 
 import pandas as pd
+import pytest
 
 from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
+from portfolio_app.performance.cost_basis import active_components, resolve_cost
+from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.workspace.backup import commit_restore, create_backup, inspect_backup
 from portfolio_app.ledger.history_commands import correct_transaction, save_history
 from portfolio_app.performance.history_observations import Observation, ObservationStore, save_observations
@@ -66,19 +69,56 @@ def test_legacy_holdings_and_purchase_batches_are_not_implicitly_activated(tmp_p
     pd.testing.assert_frame_equal(read_snapshot(destination / 'holdings.csv').holdings, snapshot.holdings)
 
 
-def test_upgrade_accepts_legacy_price_snapshot_without_rewriting_evidence(tmp_path):
-    # Invented CSV decimal parsed as 12.01 in pandas 3.0 and 12.010000000000002 in 3.1.
-    (tmp_path / 'holdings.csv').write_text(
+@pytest.mark.parametrize(('quantity', 'price', 'saved_quantity', 'saved_price'), [
+    # Actual fingerprints from the parsers shipped in v0.2.1 and used during v0.3.0 development.
+    ('2', '12.0100000000000009', '2', '12.01'),
+    ('0.30000000000000004', '0.34567890123456789', '0.3', '0.3456789012345678'),
+    ('0.30000000000000004', '0.01234567890123456789', '0.3', '0.0123456789012345'),
+    ('0.30000000000000004', '0.01234567890123456789', '0.30000000000000004', '0.012345678901234568'),
+    ('2', '2388.0313341626393', '2', '2388.0313341626393'),
+])
+def test_upgrade_reads_history_fingerprint_from_unchanged_csv(tmp_path, quantity, price, saved_quantity, saved_price):
+    path = tmp_path / 'holdings.csv'
+    path.write_text(
         'id,name,position_key,shares,acquisition_price,acquisition_currency,manual_price,manual_price_currency,manual_price_date,quantity_unit\n'
-        'invented,Invented units,invented-position,2,12.0100000000000009,EUR,15,EUR,2025-01-01,units\n')
-    opening = SecurityEvent('opening', 'opening', '2025-01-01', quantity=Decimal('2'),
-                            amount=Decimal('24.02'), currency='EUR')
-    book = SecurityBook('invented-position', 'invented', ('2', '12.01', 'EUR'),
+        f'invented,Invented units,invented-position,{quantity},{price},EUR,15,EUR,2025-01-01,units\n')
+    opening = SecurityEvent('opening', 'opening', '2025-01-01', quantity=Decimal(saved_quantity),
+                            amount=Decimal(saved_quantity) * Decimal(saved_price), currency='EUR')
+    book = SecurityBook('invented-position', 'invented', (saved_quantity, saved_price, 'EUR'),
                         records=(opening,), active_ids=(opening.id,))
     save_journal(tmp_path, Journal(version=5, securities=(book,)), None)
     before = inventory(tmp_path)
     validate_workspace(tmp_path)
     assert inventory(tmp_path) == before
+    path.write_text(path.read_text().replace(f',{price},EUR', ',17.25,EUR'))
+    with pytest.raises(DataError, match='outside History'):
+        validate_workspace(tmp_path)
+
+
+@pytest.mark.parametrize('saved_price', ['12.01', '12.010000000000002'])
+def test_upgrade_and_restore_preserve_dated_costs_and_supplied_fx(tmp_path, saved_price):
+    source = tmp_path / 'invented-costs'
+    source.mkdir()
+    path = source / 'holdings.csv'
+    parts = [
+        dict(shares='1', amount='12', currency='USD', date='2025-01-01',
+             conversions={'EUR': dict(amount='10', method='supplied_cost')}),
+        dict(shares='1', amount='12.02', currency='USD', date='2025-02-01',
+             conversions={'EUR': dict(amount='11', method='supplied_cost')}),
+    ]
+    details = json.dumps(dict(version=1, summary=['2', saved_price, 'USD'], components=parts))
+    with path.open('w', newline='', encoding='utf-8') as handle:
+        writer = csv.writer(handle)
+        writer.writerow(['id', 'name', 'shares', 'acquisition_price', 'acquisition_currency', 'cost_basis_details'])
+        writer.writerow(['invented', 'Invented dated costs', '2', '12.0100000000000009', 'USD', details])
+    before = inventory(source)
+    restored = restore(source, tmp_path / 'restored-invented-costs')
+    for directory in [source, restored]:
+        row = read_snapshot(directory / 'holdings.csv').holdings.iloc[0]
+        recovered = active_components(row)
+        assert recovered == parts
+        assert resolve_cost(recovered, 'EUR').exact_amount == Decimal('21')
+        assert inventory(directory) == before
 
 
 def test_version_five_corrected_imports_closed_positions_and_observations_roundtrip(tmp_path):

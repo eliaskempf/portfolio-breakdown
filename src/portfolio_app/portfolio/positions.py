@@ -164,10 +164,10 @@ def position_content(content, fields, *, position_id=None, validate=None):
     # A changed balance/cost is a replacement, not an inferred disposal.
     from portfolio_app.performance.cost_basis import FIELD, encode_components, aggregate_component, fingerprint, same_summary
     if position_id is not None and FIELD not in values:
-        before = current.loc[index].to_dict()
+        before = raw.loc[index].to_dict()
         after = {**before, **values}
         if not same_summary(fingerprint(before), fingerprint(after)):
-            values[FIELD] = encode_components([aggregate_component(after)], after)
+            values[FIELD] = encode_components([aggregate_component(after)], after, csv_values=True)
     for column in values:
         if column not in raw:
             raw[column] = ""

@@ -14,7 +14,7 @@ from tempfile import TemporaryDirectory
 def create_acceptance_workspace(directory: Path):
     """Create an isolated, offline history fixture, never a user's workspace."""
     from portfolio_app.demo_data.demo_history import create_history_demo
-    from portfolio_app.ledger.account_journal import load_journal, replay
+    from portfolio_app.ledger.account_journal import load_journal, replay, save_journal
     from portfolio_app.ledger.history_commands import correct_transaction, save_history
     from portfolio_app.performance.history_observations import load_observations, save_observations, Observation
     from portfolio_app.portfolio.positions import read_snapshot
@@ -26,13 +26,23 @@ def create_acceptance_workspace(directory: Path):
     create_history_demo(directory, end=today)
     path = directory / 'holdings.csv'
     import pandas as pd
-    frame = pd.read_csv(path, keep_default_na=False)
+    frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+    # This workspace is opened by v0.2.1 before the candidate. Keep the old
+    # journal format and exercise a real parser difference with invented text.
+    frame.loc[frame.position_key == 'demo-world', 'acquisition_price'] = '85.52261818181817999'
     frame['ticker'] = ''  # Installed acceptance needs no market-data network.
     frame['manual_price'] = [140, 52]
     frame['manual_price_currency'] = 'EUR'
     frame['manual_price_date'] = today.isoformat()
     frame['quantity_unit'] = 'units'
     frame.to_csv(path, index=False)
+    # Fixed fingerprints produced by the released v0.2.1 x64 parser.
+    legacy = {'demo-world': ('110.0', '85.52261818181819', 'EUR'),
+              'demo-cash-fund': ('140.0', '50.285714285714285', 'EUR')}
+    journal, revision = load_journal(directory)
+    books = tuple(replace(book, source_summary=legacy[book.position_id], source_exact=False)
+                  for book in journal.securities)
+    save_journal(directory, replace(journal, securities=books), revision)
     preferences = directory / '.cache' / 'etf-refresh' / 'preferences.json'
     preferences.parent.mkdir(parents=True, exist_ok=True)
     preferences.write_text(json.dumps({'enabled': False, 'minimum_age_days': 1}))

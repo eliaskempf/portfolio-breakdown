@@ -62,15 +62,16 @@ def patch_holdings(path: Path, changes: Mapping[str, Mapping], *, expected_revis
         if set(fields) & {'position_key', 'position_id', 'id'}:
             raise DataError('Position identity cannot be edited.')
         index = current.index[current.position_id == key][0]
+        before = raw.loc[index].to_dict()
         for column, value in fields.items():
             if column not in raw:
                 raw[column] = ''
             raw.at[index, column] = '' if value is None or pd.isna(value) else str(value).strip()
         from portfolio_app.performance.cost_basis import FIELD, encode_components, aggregate_component, fingerprint, same_summary
-        if not same_summary(fingerprint(current.loc[index]), fingerprint(raw.loc[index])):
+        if not same_summary(fingerprint(before), fingerprint(raw.loc[index])):
             if FIELD not in raw:
                 raw[FIELD] = ''
-            raw.at[index, FIELD] = encode_components([aggregate_component(raw.loc[index])], raw.loc[index])
+            raw.at[index, FIELD] = encode_components([aggregate_component(raw.loc[index])], raw.loc[index], csv_values=True)
         if replacement:
             price, currency = raw.at[index, 'acquisition_price'], raw.at[index, 'acquisition_currency'] if 'acquisition_currency' in raw else ''
             if price and not currency:

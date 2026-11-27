@@ -512,7 +512,8 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
             st.caption('Quantity and cost come from history. Use Replace balance for a new snapshot; categories and targets remain editable in Rebalance.')
             render_position_history(path.parent, current.loc[current.position_id == position_id].iloc[0])
             return
-        row = row.to_dict()
+        from portfolio_app.portfolio.csv_summary import CostRow, source_for
+        row = CostRow(row.to_dict(), source_for(row))
         identity = row["id"]
         raw = read_opening(path, snapshot.revision, position_id)
         row.update({key: raw.get(key, "") for key in ("shares", "acquisition_price")})
@@ -777,7 +778,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                     reporting_currency=reporting_currency(), historical=historical, components=parts,
                     validate=lambda frame: validate_fund_listings(frame, funds))
             else:
-                values[FIELD] = encode_components(parts, values)
+                values[FIELD] = encode_components(parts, values, csv_values=True)
                 asset_id = save_position(
                     path, values, expected_revision=st.session_state['position_edit_revision'], position_id=position_id,
                     validate=lambda frame: validate_fund_listings(frame, funds),

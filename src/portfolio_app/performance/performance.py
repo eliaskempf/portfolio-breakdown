@@ -5,6 +5,7 @@ from decimal import getcontext
 import math
 import pandas as pd
 
+from portfolio_app.portfolio.csv_summary import cost_records, source_for
 from portfolio_app.performance.cost_basis import FIELD, active_components, fingerprint, resolve_cost
 
 
@@ -33,10 +34,11 @@ class ValuationCostCache:
         # An external summary edit can supersede the saved document. Neither
         # the converted amount nor a market/FX response belongs in this cache.
         previous = self._positions.get(identity)
-        if previous is not None and previous[0] == document and previous[1] == fingerprint(row):
-            return previous[2]
+        signature = (document, fingerprint(row), source_for(row))
+        if previous is not None and previous[0] == signature:
+            return previous[1]
         parts = active_components(row)
-        self._positions[identity] = document, fingerprint(row), parts
+        self._positions[identity] = signature, parts
         return parts
 
 
@@ -54,7 +56,7 @@ def cash_balance_only(positions, *, cost_cache=None):
     result = pd.Series(False, index=positions.index)
     if cash.any():
         components = cost_cache._reader() if cost_cache is not None else active_components
-        result.loc[cash] = [_no_recorded_cost(components(row)) for row in positions.loc[cash].to_dict('records')]
+        result.loc[cash] = [_no_recorded_cost(components(row)) for row in cost_records(positions.loc[cash])]
     return result
 
 
@@ -67,7 +69,7 @@ def cash_performance_note(currency, reporting_currency):
 def position_performance(valued, fx_to_reporting=None, *, reporting_currency='EUR', historical=None, cost_cache=None):
     rates = fx_to_reporting or {}
     marks = []
-    rows = valued.to_dict('records')
+    rows = cost_records(valued)
     # Validate cash evidence before any historical FX requests, including closed balances.
     components = cost_cache._reader() if cost_cache is not None else active_components
     cash_parts = {i: components(row) for i, row in enumerate(rows) if row.get('instrument_type') == 'cash'}

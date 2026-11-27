@@ -127,7 +127,11 @@ def read_opening(path: Path, revision: str | None, position_id: str | None) -> d
     if len(matches) != 1:
         raise DataError("The selected position no longer exists. Reload the position form.")
     raw = pd.read_csv(StringIO(text), dtype=str, keep_default_na=False)
-    return {key: value.strip() for key, value in raw.iloc[int(matches[0])].items()}
+    from portfolio_app.portfolio.csv_summary import CostRow, source_for
+    row = {key: value.strip() for key, value in raw.iloc[int(matches[0])].items()}
+    if "acquisition_currency" in row:
+        row["acquisition_currency"] = row["acquisition_currency"].upper()
+    return CostRow(row, source_for(frame.loc[matches[0]]))
 
 
 def read_purchase_history(value: str) -> list[dict]:
@@ -241,7 +245,7 @@ def save_purchase_batch(
     from portfolio_app.performance.cost_basis import FIELD, encode_components, freeze_historical
     parts = components if components is not None else purchase_components(purchases, currency, opening, mode=mode, reporting_currency=reporting_currency)
     parts = freeze_historical(parts, reporting_currency, historical)
-    values[FIELD] = encode_components(parts, values)
+    values[FIELD] = encode_components(parts, values, csv_values=True)
     return save_position(path, values, expected_revision=expected_revision, position_id=position_id, validate=validate)
 
 
