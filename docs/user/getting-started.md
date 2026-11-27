@@ -83,7 +83,7 @@ Open **Positions** and select the World ETF. In **History**, switch between
 history. Open **Transactions** to inspect a purchase or the partial sale and
 its fee. Correct an applied trade from its transaction row.
 
-Open **Demo savings** to see the opening amount, deposit and paid interest
+Open **Emergency fund** to see the opening amount, deposit and paid interest
 with a running balance. Deposits add contributed capital and interest adds gain.
 The money-market ETF has its own price and holdings history.
 

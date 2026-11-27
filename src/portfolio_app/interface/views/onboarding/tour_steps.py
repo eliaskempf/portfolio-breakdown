@@ -56,7 +56,7 @@ STEPS = (
         'Open the World ETF row. History → Holdings shows your investment over time and Price shows the instrument. Open Transactions to inspect the purchases and sale, then close the detail to continue.',
         ('.st-key-tour_position_list',), 'Transactions', interactive='.st-key-tour_position_list'),
     TourStep('Positions', 'Follow interest into the cash balance',
-        'Open Demo savings to inspect its statement. Deposits increase contributions. Posted interest increases gain. Close the account to return to the tour.',
+        'Open Emergency fund to inspect its statement. Deposits increase contributions. Posted interest increases gain. Close the account to return to the tour.',
         ('.st-key-tour_position_list',), 'Cash account', interactive='.st-key-tour_position_list'),
     TourStep('Rebalance', 'Set category targets',
         'Choose Portfolio to review its category targets. Equities has a 60% target in this demo.',

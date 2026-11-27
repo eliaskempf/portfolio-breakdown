@@ -9,9 +9,9 @@ A local portfolio-tracking and analysis app for understanding what you own,
 which companies your ETFs actually expose you to, and whether your money is
 allocated as planned. All portfolio data is stored locally on your computer.
 
-![Overview with portfolio value, allocation and category targets for an invented portfolio including savings](docs/assets/demo-overview.png)
+![Demo allocation chart and table comparing each category’s share of the portfolio with its target](docs/assets/demo-overview.png)
 
-<small>*Demo portfolio with synthetic holdings.*</small>
+*Allocation view of the offline demo portfolio. Holdings and prices are synthetic.*
 
 ## What this app can do
 
@@ -19,37 +19,35 @@ This app is designed to help you understand your current holdings, analyze
 the underlying exposure of your ETFs, and inform rebalancing decisions. Its
 key features are:
 - Track stocks, ETFs, crypto, and physical assets in EUR, USD, or GBP using public market quotes or manually entered prices.
-- Track savings, checking and term-deposit balances, including dated interest and transfers.
-- Browse historical holdings, cash, gain and time-weighted return on a selected date.
-- Group assets into categories and optionally define target allocations (e.g., 60% equities / 40% bonds).
-- Set targets for individual assets within categories (e.g., 70% MSCI World / 30% MSCI EM within equities).
 - Break down supported ETFs into their underlying holdings, combining direct and indirect exposure (e.g., NVIDIA shares held directly and through an MSCI World ETF).
 - Analyze portfolio exposure by theme, sector, and geography.
+- Group assets into categories and optionally define target allocations (e.g., 60% equities / 40% bonds).
+- Set targets for individual assets within categories (e.g., 70% MSCI World / 30% MSCI EM within equities).
 - Examine portfolio beta, annualized volatility, and correlations between assets.
+- Set in-app alerts for moving averages, loan-to-value ratios or maintenance headroom.
 
-Current holdings remain usable without transactions. Optional dated snapshots and
-reviewed transaction history support personal value, cash-flow and return analysis
-when the required evidence is available. Missing history is never reconstructed
-automatically. The app also provides [Vorabpauschale estimates](docs/user/taxes.md)
-for supported fund years. It does not connect to brokerage accounts or execute
-trades. Automatic ETF breakdowns are limited to
-supported providers, and underlying holdings data may be missing or incomplete.
+You can track your current holdings on their own or add past transactions.
+With transaction data, you can see what your portfolio was worth over time,
+how much you added or withdrew, and how your investments performed. Missing
+history is never reconstructed automatically. The app also provides
+[Vorabpauschale estimates](docs/user/taxes.md) for supported fund years. It
+does not connect to brokerage accounts or execute trades. Automatic ETF
+breakdowns are limited to supported providers, and underlying holdings data
+may be missing or incomplete.
 
 ## How to use
 
 ### Install a release
 
-For the easiest setup, download the latest version for your operating system from the
-[GitHub releases page](https://github.com/eliaskempf/portfolio-breakdown/releases/latest).
-Prebuilt packages do not require Python or uv.
-- **Windows:** Download the installer file ending in `windows-x64-setup.exe` and follow the setup instructions. Launch **Portfolio Breakdown** from the Start Menu or desktop shortcut.
-- **Linux (Ubuntu 22.04/24.04, x64):** Download and install the `.deb` package, then launch the app from your applications menu.
-- **macOS (experimental, Apple Silicon, macOS 15+):** Download the `.dmg`, open it, and drag **Portfolio Breakdown Experimental** into **Applications**. The app is not Developer ID signed or notarized, so macOS may block it from opening.
+Choose a package for your operating system from the [GitHub releases page](https://github.com/eliaskempf/portfolio-breakdown/releases/latest).
+Prebuilt packages include Python.
 
-Portable versions are also available for Windows (`.zip`) and Linux (`.tar.gz`), which
-can be extracted and run without installation.
+- **Windows x64** — Run the installer ending in `windows-x64-setup.exe`, then open **Portfolio Breakdown** from the Start menu. Setup installations can download and verify updates through **App menu → Help**.
+- **Linux (Ubuntu 22.04/24.04, x64)** — Install the `.deb`, then open **Portfolio Breakdown Experimental** from the applications menu.
+- **macOS (experimental, Apple Silicon, macOS 15+)** — When the release includes a `.dmg`, open it and drag **Portfolio Breakdown Experimental** into **Applications**. The app lacks Developer ID signing and notarization, so Gatekeeper may block it.
 
-For platform-specific instructions, known limitations, and uninstallation, see the
+Portable packages are also available for Windows (`.zip`) and Linux (`.tar.gz`).
+For platform-specific instructions, known limitations and uninstallation, see the
 [installation guide](docs/user/install.md).
 
 ### Run from source
@@ -66,26 +64,15 @@ uv run portfolio-app
 
 `uv` automatically manages Python and the project environment.
 
-On Windows, use `uv run portfolio-desktop` to launch the standalone window. You
-can also try the app with demo data using `uv run portfolio-app --demo`, or add
-`--offline-demo` to use synthetic data without an internet connection.
+On Windows, use `uv run portfolio-desktop` to launch the standalone window.
+To explore 30 months of invented holdings and trades, run `uv run portfolio-app --demo`
+for public market data or `uv run portfolio-app --demo --offline-demo` for synthetic prices.
 
 ### Documentation
 
-For an introduction to the app, follow the [getting-started guide](docs/user/getting-started.md)
-or take the optional in-app tour.
-
-The [user guide](docs/user/index.md) covers imports, calculations, backups, troubleshooting,
-and other features. Installed versions also include offline documentation, accessible through
-**App menu → Help → User guide**.
-
-## Version 0.3.0
-
-Explore 30 months of demo holdings and trades, inspect a savings statement, or
-choose **Overview → Performance → View holdings on a date** to see an earlier
-portfolio. This release also updates category and position workflows, improves
-responsiveness on long histories, and adds verified updates for installed Windows
-users. See the [release and upgrade notes](docs/user/releases.md#version-030).
+Follow the [getting-started guide](docs/user/getting-started.md) or take the optional in-app tour.
+The [user guide](docs/user/index.md) covers imports, calculations, backups and troubleshooting.
+Installed packages include an offline copy under **App menu → Help → User guide**.
 
 ## Disclaimer
 

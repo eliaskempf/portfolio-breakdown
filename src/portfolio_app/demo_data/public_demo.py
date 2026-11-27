@@ -46,7 +46,7 @@ def _ownership(holdings, end):
     first_purchase = _session(start + timedelta(days=1), direction='next')
     sold = _session(_months_before(end, 18))
     bought = _session(_months_before(end, 8))
-    account = Account('demo-savings', 'Demo savings', 'bank', 'Savings', 'EUR', 'cash')
+    account = Account('demo-savings', 'Emergency fund', 'bank', 'Savings', 'EUR', 'cash')
     events = (
         Event('savings-opening', start.isoformat(), 'cash_open', account.id, 'EUR', 4400),
         Event('savings-deposit', _session(_months_before(end, 5)).isoformat(), 'cash_flow', account.id, 'EUR', 550),

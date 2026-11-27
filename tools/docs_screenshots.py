@@ -67,7 +67,7 @@ def capture(url: str, output: Path):
             executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
         try:
             page = browser.new_page(viewport={'width': 1440, 'height': 1700},
-                                    device_scale_factor=1, color_scheme='light', reduced_motion='reduce')
+                                    device_scale_factor=2, color_scheme='dark', reduced_motion='reduce')
             page.set_default_timeout(30000)
             errors, external = [], []
             page.on('pageerror', lambda error: errors.append(str(error)))
@@ -88,11 +88,17 @@ def capture(url: str, output: Path):
 
             page.goto(url)
             expect(page.get_by_role('tab', name='Overview', exact=True)).to_be_visible()
-            expect(page.get_by_role('radio', name='Allocation', exact=True)).to_be_checked()
-            expect(page.locator('.st-key-overview_allocation .js-plotly-plot')).to_be_visible()
+            allocation = page.get_by_role('radio', name='Allocation', exact=True)
+            expect(allocation).to_be_checked()
+            chart = page.locator('.st-key-overview_allocation .js-plotly-plot')
+            expect(chart.get_by_text('Emergency fund', exact=True)).to_be_visible()
             idle()
+            modes = page.get_by_role('radiogroup').filter(has=allocation).bounding_box()
+            plot = chart.bounding_box()
+            top = modes['y'] - 12
             page.screenshot(path=str(output / 'demo-overview.png'), animations='disabled',
-                            clip={'x': 0, 'y': 0, 'width': 1440, 'height': 1100})
+                            clip={'x': 20, 'y': top, 'width': 1400, 'height': plot['y'] + plot['height'] + 10 - top})
+            page.emulate_media(color_scheme='light')
             page.get_by_role('tab', name='Exposure', exact=True).click()
             table = page.get_by_role('table', name='Exposure assets', exact=True)
             expect(table).to_contain_text('Nvidia')
@@ -104,7 +110,7 @@ def capture(url: str, output: Path):
             expect(dialog.get_by_role('table', name='Xtrackers MSCI World holdings', exact=True)).to_contain_text('Other')
             idle()
             dialog.get_by_test_id('stExpander').filter(has_text='ETF breakdown: Xtrackers MSCI World').screenshot(
-                path=str(output / 'demo-etf-breakdown.png'), animations='disabled')
+                path=str(output / 'demo-etf-breakdown.png'), scale='css', animations='disabled')
             page.get_by_role('button', name='Close exposure details', exact=True).click()
             page.get_by_role('tab', name='Rebalance', exact=True).click()
             page.get_by_role('tab', name='Targets', exact=True).click()
@@ -116,7 +122,7 @@ def capture(url: str, output: Path):
             expect(dialog.locator('canvas').first).to_be_visible()
             idle()
             page.mouse.move(0, 0)
-            dialog.screenshot(path=str(output / 'demo-targets.png'), animations='disabled')
+            dialog.screenshot(path=str(output / 'demo-targets.png'), scale='css', animations='disabled')
             dialog.get_by_role('button', name='Cancel', exact=True).click()
             expect(dialog).to_have_count(0)
             page.get_by_role('tab', name='Plan', exact=True).click()
@@ -127,7 +133,7 @@ def capture(url: str, output: Path):
             page.mouse.move(0, 0)
             page.wait_for_timeout(800)  # Let the calculation button's tooltip dismiss.
             page.locator('.st-key-rebalance_tabs').screenshot(
-                path=str(output / 'demo-contribution.png'), animations='disabled')
+                path=str(output / 'demo-contribution.png'), scale='css', animations='disabled')
             assert not errors, errors
             assert not external, external
         finally:
