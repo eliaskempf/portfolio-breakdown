@@ -22,8 +22,10 @@ with their existing records.
 An upgrade preserves active History and dated purchase costs, including saved
 exchange rates, when releases round the same CSV quantity or acquisition price
 differently. Opening the workspace preserves the original CSV and journal.
-Older snapshots stored rounded numbers, so they cannot distinguish between
-decimal values that rounded to the same saved number.
+For positions with applied History, the journal supplies the current balance
+in both Portfolio and Monitoring. **Apply history** accepts the balance shown
+in the review. Older CSV-owned purchase records can only distinguish values
+at the precision originally saved.
 
 Starting with v0.3.0, the Windows Setup installation can download and verify a
 later installer from **App menu → Help**. Portable Windows, Linux and macOS

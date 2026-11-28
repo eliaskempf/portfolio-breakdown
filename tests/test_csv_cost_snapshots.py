@@ -16,7 +16,7 @@ from portfolio_app.performance.cost_basis import FIELD, active_components, compo
 from portfolio_app.performance.performance import ValuationCostCache, position_performance
 from portfolio_app.portfolio.balances import patch_holdings
 from portfolio_app.portfolio.csv_summary import ATTRIBUTE, source_for
-from portfolio_app.portfolio.holdings import DataError, metadata_dimensions, parse_holdings
+from portfolio_app.portfolio.holdings import metadata_dimensions, parse_holdings
 from portfolio_app.portfolio.positions import read_snapshot, save_position
 from portfolio_app.portfolio.purchases import read_opening
 
@@ -61,12 +61,10 @@ def test_source_snapshots_follow_rows_and_new_records_save_the_exact_decimals(su
 
 
 @pytest.mark.parametrize('summary', [(OLD[0], NEW[1], 'USD'), (NEW[0], OLD[1], 'USD')])
-def test_mixed_parser_generations_cannot_authorize_cost_or_security_history(summary):
+def test_mixed_parser_generations_cannot_authorize_csv_costs(summary):
     rows = parse_holdings(text())
     rows[FIELD] = details(summary)
     assert active_components(rows.iloc[0])[0]['date'] == ''
-    with pytest.raises(DataError, match='changed outside History'):
-        effective_holdings(rows, (linked(summary),))
 
 
 def test_changed_live_row_cannot_replay_source_metadata():
@@ -74,11 +72,6 @@ def test_changed_live_row_cannot_replay_source_metadata():
     rows[FIELD] = details(OLD)
     rows.loc[0, 'acquisition_price'] = 13
     assert active_components(rows.iloc[0])[0]['conversions'] == {}
-    with pytest.raises(DataError, match='changed outside History'):
-        effective_holdings(rows, (linked(OLD),))
-    # An in-memory edit matching the saved tuple cannot bypass managed History.
-    with pytest.raises(DataError, match='changed outside History'):
-        effective_holdings(rows, (linked((str(rows.iloc[0].shares), '13', 'USD')),))
 
 
 def test_source_metadata_is_private_in_arrow_and_plain_text_and_safe_across_copies():
@@ -135,7 +128,7 @@ def test_explicit_decimal_edits_replace_earlier_dated_components(writer, tmp_pat
 
 
 def test_legacy_batches_keep_dates_only_for_a_coherent_source_summary():
-    frame = parse_holdings(text())
+    frame = parse_holdings(text(*OLD[:2]))
     purchase = dict(date='2024-01-02', shares='10', price='12.01', fees='0')
     batch = dict(version=1, mode='reconcile', saved_at='2024-01-03', currency='USD',
                  purchases=[purchase], result_shares=OLD[0], result_average=OLD[1])
@@ -170,16 +163,26 @@ def test_marked_exact_decimals_reject_a_colliding_edit_and_detached_floats():
     detached = pd.DataFrame(original.to_dict('records'))
     assert active_components(detached.iloc[0])[0]['date'] == ''
     for frame in (edited, detached):
-        with pytest.raises(DataError, match='changed outside History'):
-            effective_holdings(frame, (restored,))
+        assert effective_holdings(frame, (restored,)).iloc[0].shares == 10
 
     legacy = replace(restored, source_exact=False)
     assert 'source_exact' not in journal_to_dict(Journal(version=5, securities=(legacy,)))['securities'][0]
     assert effective_holdings(edited, (legacy,)).iloc[0].shares == 10
 
 
-def test_parser_only_numeric_syntax_never_persists_an_invalid_decimal():
-    from portfolio_app.performance.cost_basis import stored_snapshot
-    frame = parse_holdings(text('+1e 2', '+1e 2'))
-    summary, exact = stored_snapshot(frame.iloc[0])
-    assert not exact and Decimal(summary[0]) == Decimal(summary[1]) == Decimal('100')
+@pytest.mark.parametrize('prefix', ['', '+'])
+def test_spaced_exponent_stores_exact_decimal_and_rejects_colliding_source_edit(prefix):
+    from portfolio_app.performance.cost_basis import matches_snapshot, stored_snapshot
+
+    def row(token):
+        return parse_holdings(text(prefix + '1e 2', token)).iloc[0]
+
+    original = row(prefix + '8.00000000000000001e 0')
+    edited = row(prefix + '8.00000000000000002e 0')
+    summary, exact = stored_snapshot(original)
+    assert exact and list(map(Decimal, summary[:2])) == [Decimal('100'), Decimal('8.00000000000000001')]
+    assert edited.acquisition_price == original.acquisition_price
+    book = book_for(Journal(), original)
+    assert book.source_exact
+    assert matches_snapshot(original, book.source_summary, source_exact=True)
+    assert not matches_snapshot(edited, book.source_summary, source_exact=True)

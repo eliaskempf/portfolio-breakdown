@@ -79,8 +79,7 @@ def create_history_demo(directory: Path, *, end: date | None = None, market_pric
         book = book_for(journal, snapshot.holdings.set_index('position_id',drop=False).loc[row.position_id])
         books.append(replace(book, account_id=account, records=tuple(events), active_ids=tuple(e.id for e in events)))
     journal = replace(journal, securities=tuple(books))
-    # Match the seed summary to the invented current FIFO balance, keeping the
-    # ordinary source fingerprint guard intact when history becomes authoritative.
+    # Seed the CSV with the balance seen when the invented history was applied.
     frame = snapshot.holdings
     states = replay_securities(journal.securities).positions
     from portfolio_app.performance.cost_basis import resolve_cost, stored_snapshot

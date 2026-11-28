@@ -11,7 +11,6 @@ from portfolio_app.interface.shared.render_sections import render_sections
 from portfolio_app.interface.views.positions.position_entry_ui import (holding_amounts, optional_number, physical_pricing,
     purchase_rows, render_manual_price)
 from portfolio_app.portfolio.purchases import save_purchase_batch, read_opening
-from portfolio_app.portfolio.position_entry import compact_decimal, decimal_input
 from portfolio_app.interface.shared.display_names import display_name, instrument_name
 from portfolio_app.funds.etf import FundSnapshot, validate_fund_listings
 from portfolio_app.portfolio.physical_assets import is_unit_based_physical
@@ -700,11 +699,12 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                     st.caption(trade_error)
             else:
                 shares, buy_in, currency, amount_errors = holding_amounts(prefix, row, editing=editing, from_purchases=from_purchases, rows=purchases)
-        from portfolio_app.performance.cost_basis import (FIELD, active_components, aggregate_component, encode_components,
+        from portfolio_app.performance.cost_basis import (FIELD, active_components, aggregate_component, decimal, encode_components,
             fingerprint, same_summary, resolve_cost)
         from portfolio_app.interface.views.workspace.currency_ui import cost_conversion_controls, historical_for, ui_prices, render_fx_progress
         from portfolio_app.portfolio.purchases import purchase_components, validate_purchases
         parts, conversion_error = [], None
+        unchanged_cost = False
         historical = None if purchase else historical_for(path.parent, demo=demo)
         if not amount_errors and not purchase:
             try:
@@ -759,7 +759,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                 raise DataError('Enter a quantity unit for this physical asset.')
             if amount_errors:
                 raise DataError(amount_errors[0])
-            new_buy_in = not editing or buy_in != decimal_input(compact_decimal(row.get("acquisition_price")), "Buy-in", optional=True)
+            new_buy_in = not editing or buy_in != decimal(row.get('acquisition_price'))
             if buy_in is not None and not currency.strip() and new_buy_in:
                 raise DataError("Enter the currency of the buy-in price, for example EUR.")
             if conversion_error:
@@ -778,7 +778,21 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                     reporting_currency=reporting_currency(), historical=historical, components=parts,
                     validate=lambda frame: validate_fund_listings(frame, funds))
             else:
-                values[FIELD] = encode_components(parts, values, csv_values=True)
+                if editing:
+                    if target == (initial_target * 100 if initial_target is not None else None):
+                        values.pop(target_field)
+                    if manual_price == optional_number(row.get('manual_price')):
+                        values.pop('manual_price')
+                if unchanged_cost:
+                    # The form displays normalized decimals. Preserve exact CSV
+                    # spellings and the saved cost evidence on metadata edits.
+                    for field in ('shares', 'acquisition_price', 'acquisition_currency'):
+                        if field in raw:
+                            values.pop(field)
+                    if parts != active_components(row):
+                        values[FIELD] = encode_components(parts, row, csv_values=True)
+                else:
+                    values[FIELD] = encode_components(parts, values, csv_values=True)
                 asset_id = save_position(
                     path, values, expected_revision=st.session_state['position_edit_revision'], position_id=position_id,
                     validate=lambda frame: validate_fund_listings(frame, funds),

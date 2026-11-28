@@ -284,3 +284,27 @@ def test_import_freezes_legacy_position_identity_and_rolls_back_failure(tmp_path
     assert path.read_text().splitlines()[0] == 'id,name,shares,position_key'
     assert frozen.shares.tolist() == [3]
     assert result.journal.transaction_imports[0].positions == (('Portfolio', 'AUR', position),)
+
+
+@pytest.mark.parametrize('save_draft_first', [False, True])
+def test_applying_import_captures_the_reviewed_csv_and_uses_transaction_balances(tmp_path, save_draft_first):
+    from portfolio_app.ingestion.transaction_csv import read_csv
+
+    path = tmp_path / 'holdings.csv'
+    path.write_text('id,name,position_key,account,shares,acquisition_price,acquisition_currency\n'
+                    'invented,Invented,synthetic,Portfolio,5,8.00000000000000001,EUR\n')
+    rows = read_csv('reference,date,type,asset,quantity,amount,currency\na,2024-01-12,buy,A,2,16,EUR\n')
+    mapping = {('Portfolio', 'A'): 'synthetic'}
+    if save_draft_first:
+        save_transaction_import(tmp_path, rows, mapping, expected_journal_revision=None,
+                                expected_holdings_revision=read_snapshot(path).revision)
+        path.write_text(path.read_text().replace('8.00000000000000001', '8.00000000000000002'))
+    snapshot = read_snapshot(path)
+    result = save_transaction_import(tmp_path, rows, mapping,
+                                     expected_journal_revision=load_journal(tmp_path)[1],
+                                     expected_holdings_revision=snapshot.revision, selected_ids=[rows[0].identity],
+                                     starts_at_zero=True, accept_reconciliation=True, comparison_date='2024-01-13')
+    book, = result.journal.securities
+    price = '8.00000000000000002' if save_draft_first else '8.00000000000000001'
+    assert book.source_exact and book.source_summary == ('5', price, 'EUR')
+    assert effective_holdings(snapshot.holdings, (book,)).iloc[0].shares == 2

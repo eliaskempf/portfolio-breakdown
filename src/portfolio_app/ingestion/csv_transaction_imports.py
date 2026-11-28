@@ -8,7 +8,7 @@ from portfolio_app.ledger.security_history import (
     AssetCharge, Charge, SecurityEvent, append_evidence, affected_positions,
     duplicate_candidates, effective_holdings, replay_securities, selected_events,
 )
-from portfolio_app.ledger.history_commands import book_for
+from portfolio_app.ledger.history_commands import book_for, reviewed_holding_source
 from portfolio_app.ingestion.transaction_csv import ImportReceipt, digest, retain_import_interpretations
 
 
@@ -242,7 +242,7 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
         if not selected:
             if not row.issues and len(resolved) == len(pairs) and pairs:
                 primary = resolved[row.facts['account_id'], row.facts['asset_id']]
-                book = books.get(primary) or ImportBook(book_for(journal, indexed.loc[primary].to_dict()))
+                book = books.get(primary) or ImportBook(book_for(journal, indexed.loc[primary]))
                 if identity not in book.records and identity not in book.replaced:
                     try:
                         draft = make_event(row, resolved, identity, _previous_event(known[identity], known, owners, primary))
@@ -273,7 +273,7 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
         primary = resolved[row.facts['account_id'], row.facts['asset_id']]
         for account, asset, pos in positions:
             if pos not in books:
-                books[pos] = ImportBook(book_for(journal, indexed.loc[pos].to_dict()))
+                books[pos] = ImportBook(book_for(journal, indexed.loc[pos]))
             book = books[pos]
             if aggregate_accounts and book.account_id:
                 raise DataError('Aggregate asset imports cannot adopt an existing linked cash book.')
@@ -323,7 +323,7 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     for identity in excluded_ids:
         for _, _, position in known[identity].positions:
             if position not in books:
-                books[position] = ImportBook(book_for(journal, indexed.loc[position].to_dict()))
+                books[position] = ImportBook(book_for(journal, indexed.loc[position]))
     books = {position: book.finish() for position, book in books.items()}
     from portfolio_app.ledger.history_commands import exclude_transactions
     excluded_count = 0
@@ -380,6 +380,12 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     if matches and not accept_duplicates:
         raise DataError('Matching economic transactions require review as distinct executions.')
     version = max(journal.version, 5 if ordered_corrections or any(r.facts.get('schema_version') == '3' for r in receipts) else 4 if any(r.facts.get('schema_version') == '2' for r in receipts) else 3)
+    # Draft imports may have been retained before the current CSV balance was reviewed.
+    for previous in journal.securities:
+        if previous.position_id in touched and not previous.active:
+            candidate = books[previous.position_id]
+            if candidate.active:
+                books[previous.position_id] = replace(candidate, **reviewed_holding_source(indexed.loc[previous.position_id]))
     proposed = replace(journal, version=max(version, 6) if kept else version, securities=tuple(books.values()),
                        transaction_imports=tuple(receipts), kept_imports=tuple(kept.values()))
     from portfolio_app.ledger.history_commands import history_comparisons

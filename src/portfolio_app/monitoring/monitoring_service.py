@@ -141,6 +141,7 @@ class MonitoringService:
 
     def _account_sources(self, *, refresh, fetch_series=None):
         from portfolio_app.ledger.account_journal import load_journal, replay
+        from portfolio_app.ledger.security_history import cash_postings, effective_holdings, replay_securities
         from portfolio_app.portfolio.positions import read_snapshot
         from portfolio_app.portfolio.portfolio_settings import load_settings
         from portfolio_app.portfolio.valuation import value_holdings
@@ -151,6 +152,11 @@ class MonitoringService:
             journal, journal_revision = load_journal(self.directory)
             holdings = read_snapshot(self.directory/'holdings.csv').holdings
             currency = load_settings(self.directory).reporting_currency
+        securities = replay_securities(journal.securities)
+        if journal.securities:
+            holdings = effective_holdings(holdings, journal.securities, security_state=securities)
+        postings = cash_postings(journal, security_cash=securities.cash)
+        account_state = replay(journal, _security_postings=postings)
         if fetch_series is None:
             fetch_series = partial(self.market.get, refresh=refresh)
         self_now = self.now
@@ -184,7 +190,7 @@ class MonitoringService:
         def rate(unit):
             return current_rate(prices, unit, currency, refresh=refresh)
 
-        return _AccountSources(journal, replay(journal), holdings, currency, value_positions, rate)
+        return _AccountSources(journal, account_state, holdings, currency, value_positions, rate)
 
     def account_inputs(self, rules, *, refresh=False, sources=None):
         """Scope evidence to the requested backing assets, currencies and freshness limits."""

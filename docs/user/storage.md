@@ -218,9 +218,11 @@ application versions may not read the current journal;
 use a compatible application or restore the complete pre-upgrade backup into a
 separate workspace. Do not replace only the journal while retaining newer history.
 
-History-managed CSV rows retain their source snapshot and metadata. Current
-financial balances are projected from the journal, so the CSV alone is not a
-current-balance export. Back up the entire workspace. Draft evidence, original
+Until History is applied, the CSV supplies the position’s quantity and purchase
+costs. Once applied, the journal supplies both. The CSV still identifies the
+position and supplies its metadata. Editing a valid quantity or buy-in in that
+CSV row leaves the journal balance unchanged. To correct the balance, use
+**Replace balance** in History. Back up the entire workspace. Draft evidence, original
 records, observations, coverage reviews and closed positions are included. A
 failed first activation may leave stable position keys, but never a partially
 applied trade or duplicate cash posting.

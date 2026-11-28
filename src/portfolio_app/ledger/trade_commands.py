@@ -12,9 +12,9 @@ from portfolio_app.ledger.account_journal import Journal, load_journal, replay, 
 from portfolio_app.ledger.history_commands import book_for, proposed_journal, record_reviews
 from portfolio_app.ledger.history_publication import publish_positions_and_history
 from portfolio_app.ledger.security_history import (
-    SecurityBook, SecurityEvent, append_evidence, duplicate_candidates, effective_holdings, selected_events,
+    SecurityBook, SecurityEvent, append_evidence, duplicate_candidates, effective_holdings, opening_costs, selected_events,
 )
-from portfolio_app.performance.cost_basis import active_components
+from portfolio_app.performance.cost_basis import opening_cost_row
 from portfolio_app.portfolio.holdings import DataError, parse_holdings
 from portfolio_app.portfolio.positions import EMPTY_CSV, position_content, read_snapshot
 from portfolio_app.workspace.storage import revision as file_revision
@@ -52,10 +52,10 @@ def prepare_trade(journal: Journal, holdings: pd.DataFrame, position_id: str, ev
                 raise DataError('Enter when the existing holding was measured, before this trade.')
         if opening_date >= event.date:
             raise DataError('This trade overlaps the holding snapshot. Use Add earlier history to reconcile it.')
-        source = opening_row if opening_row is not None else row
+        source = opening_cost_row(opening_row if opening_row is not None else row)
         quantity = Decimal(str(source['shares']))
         opening = SecurityEvent(uuid4().hex, 'opening', opening_date,
-            quantity=quantity, costs=tuple(active_components(source)) if quantity else (),
+            quantity=quantity, costs=opening_costs(source, quantity) if quantity else (),
             source='confirmed_zero_start' if new_position else 'holding_snapshot',
             note='Zero units before the first purchase.' if new_position else 'Existing holding before new trades.')
         book = append_evidence(book, (opening,))

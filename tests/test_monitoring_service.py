@@ -140,6 +140,22 @@ def test_real_account_input_path_scopes_fx_and_handles_zero_holdings(tmp_path):
     assert latest['value'] is None and latest['inputs']['asset_value']==0
 
 
+def test_monitoring_uses_history_quantity_for_loan_backing(tmp_path):
+    from test_trade_commands import save, trade
+
+    rule = account_workspace(tmp_path)
+    service = MonitoringService(tmp_path, demo=True, now=lambda: NOW)
+    path = tmp_path / 'holdings.csv'
+    original = path.read_bytes()
+    save(tmp_path, trade('sale', 'sell', '2026-10-11', '5', '100', '0'),
+         position_id='security', opening_date='2026-10-10')
+    service.evaluate()
+    latest = load_monitoring(tmp_path)[0]['states'][rule.id]['latest']
+    assert latest['inputs']['backing'] == {'security': 500}
+    assert latest['quality'] == 'valid' and latest['value'] == 120
+    assert path.read_bytes() == original
+
+
 def test_account_cached_fallback_cannot_clear_trigger_and_manual_refresh_retries(tmp_path):
     r=account_workspace(tmp_path,manual=False)
     service=MonitoringService(tmp_path,now=lambda:NOW)

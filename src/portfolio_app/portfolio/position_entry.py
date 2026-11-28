@@ -22,7 +22,12 @@ def decimal_input(value: object, label: str, *, optional: bool = False) -> Decim
 def compact_decimal(value: object) -> str:
     if value is None or str(value).lower() in {'', 'nan'}:
         return ''
-    text = format(Decimal(str(value)), 'f')
+    number = Decimal(str(value))
+    if number.is_zero():
+        return '0'
+    if number.adjusted() < -78 or number.adjusted() >= 80:
+        return str(number)
+    text = format(number, 'f')
     return text.rstrip('0').rstrip('.') if '.' in text else text
 
 

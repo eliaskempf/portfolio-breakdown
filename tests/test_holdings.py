@@ -109,3 +109,42 @@ def test_nonconflicting_custom_metadata_remains_available(tmp_path):
     path = tmp_path / 'holdings.csv'
     path.write_text('id,name,shares,custom_theme\ninvented,Invented asset,1,Invented theme\n')
     assert 'custom_theme' in metadata_dimensions(load_holdings(path))
+
+
+def test_whitespace_after_exponent_opens_legacy_csv_without_rewriting(tmp_path):
+    from portfolio_app.portfolio.csv_summary import source_for
+    from portfolio_app.performance.cost_basis import matches_snapshot
+
+    path = tmp_path / 'holdings.csv'
+    original = (
+        'id,name,shares,acquisition_price,acquisition_currency,target_allocation,'
+        'within_bucket_target,manual_price,quantity_unit,manual_price_date,manual_price_currency\r\n'
+        'synthetic,Invented,1e 2,7.4883761085352051E\t+0,EUR,15e 0%,1E -1,2e 1,unit,2024-01-05,EUR\r\n'
+    ).encode()
+    path.write_bytes(original)
+    row = load_holdings(path).iloc[0]
+    assert (row.shares, row.target_allocation, row.within_bucket_target, row.manual_price) == (100, .15, .1, 20)
+    assert row.acquisition_price == 7.4883761085352045
+    assert source_for(row).tokens == ('1e 2', '7.4883761085352051E\t+0', 'EUR')
+    assert matches_snapshot(row, ['100.0', '7.4883761085352045', 'EUR'])
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize('token', ['1 e2', '1e+ 2', '1e - 2', '1e 2 3', '1e\u00a02', '1e ', '1e 309', '-1e 2'])
+def test_exponent_compatibility_rejects_invalid_holdings(tmp_path, token):
+    path = tmp_path / 'holdings.csv'
+    path.write_text(f'id,name,shares\nsynthetic,Invented,{token}\n')
+    with pytest.raises(DataError, match='finite nonnegative number'):
+        load_holdings(path)
+
+
+def test_common_csv_values_and_blank_costs_skip_the_legacy_parser(tmp_path, monkeypatch):
+    from portfolio_app.portfolio import legacy_numeric
+
+    def unexpected(token):
+        pytest.fail(f'Unexpected compatibility parse of {token!r}')
+
+    monkeypatch.setattr(legacy_numeric, 'spaced_exponent', unexpected)
+    path = tmp_path / 'holdings.csv'
+    path.write_text('id,name,shares,acquisition_price\na,Invented,1.5e2,\nb,Also invented,2,12.34\n')
+    assert load_holdings(path).shares.tolist() == [150.0, 2.0]

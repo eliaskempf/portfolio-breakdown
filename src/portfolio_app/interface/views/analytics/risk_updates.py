@@ -14,7 +14,8 @@ from portfolio_app.analytics.risk_refresh import (
 from portfolio_app.interface.shared.background_ui import refresh_allowed, status_fragment
 from portfolio_app.workspace.workspace_lock import workspace_context
 from portfolio_app.funds.leverage_settings import FILE as LEVERAGE_FILE
-from portfolio_app.workspace.storage import revision
+from portfolio_app.ledger.account_journal import FILE as JOURNAL_FILE
+from portfolio_app.interface.shared.input_cache import file_stamp
 
 
 @dataclass(eq=False, frozen=True)
@@ -27,7 +28,7 @@ class RiskSelection:
         return self.settings == other.settings and self.proxy_inputs == other.proxy_inputs and self.holdings.equals(other.holdings)
 
     def proxies_current(self):
-        return all(revision(path) == saved for path, saved in self.proxy_inputs)
+        return all(file_stamp(path) == saved for path, saved in self.proxy_inputs)
 
 
 @dataclass(frozen=True)
@@ -84,8 +85,8 @@ def view_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
     settings = (workspace, demo, today, benchmark, years, actual, future, scoped,
                 portfolio_result is not None, capital is None, None if pd.isna(capital) else capital)
     # An actual contract proxy can be outside the selected accounts.
-    proxy_paths = (data_dir / 'holdings.csv', data_dir / LEVERAGE_FILE) if actual else ()
-    selection = RiskSelection(settings, tuple((path, revision(path)) for path in proxy_paths), positions.copy())
+    proxy_paths = (data_dir / 'holdings.csv', data_dir / LEVERAGE_FILE, data_dir / JOURNAL_FILE) if actual else ()
+    selection = RiskSelection(settings, tuple((path, file_stamp(path)) for path in proxy_paths), positions.copy())
 
     cache = None if demo else workspace_history_cache(workspace)
 

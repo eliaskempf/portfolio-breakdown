@@ -1,4 +1,6 @@
 """Compact holding inputs and optional purchase rows for the position dialog."""
+from decimal import Decimal
+
 import pandas as pd
 import streamlit as st
 
@@ -112,9 +114,16 @@ def purchase_rows(prefix):
 def holding_amounts(prefix, row, *, editing, from_purchases=False, rows=()):
     """Return quantity, average cost, currency and validation errors."""
     initial = {'shares': compact_decimal(row.get('shares')), 'buy_in': compact_decimal(row.get('acquisition_price'))}
+    def amount_input(field, text, label, *, optional=False):
+        # Existing CSVs can contain exact values outside the entry widget's
+        # limits. Keep them when untouched; validate every changed input.
+        if editing and text and text == initial[field]:
+            return Decimal(text)
+        return decimal_input(text, label, optional=optional)
+
     initial['total_buy_in'] = compact_decimal(linked_costs(
-        decimal_input(initial['shares'], 'Quantity', optional=True),
-        decimal_input(initial['buy_in'], 'Average', optional=True), 'average')[1])
+        amount_input('shares', initial['shares'], 'Quantity', optional=True),
+        amount_input('buy_in', initial['buy_in'], 'Average', optional=True), 'average')[1])
     for field, value in initial.items():
         st.session_state.setdefault(prefix + field, value)
     st.session_state.setdefault(prefix + 'cost_source', 'average')
@@ -129,8 +138,8 @@ def holding_amounts(prefix, row, *, editing, from_purchases=False, rows=()):
         field = 'buy_in' if active == 'average' else 'total_buy_in'
         other = 'total_buy_in' if active == 'average' else 'buy_in'
         try:
-            quantity = decimal_input(st.session_state[prefix + 'shares'], 'Quantity', optional=True)
-            amount = decimal_input(st.session_state[prefix + field], 'Buy-in', optional=True)
+            quantity = amount_input('shares', st.session_state[prefix + 'shares'], 'Quantity', optional=True)
+            amount = amount_input(field, st.session_state[prefix + field], 'Buy-in', optional=True)
             average, total = linked_costs(quantity, amount, active)
             st.session_state[prefix + other] = compact_decimal(total if active == 'average' else average)
         except DataError:
@@ -165,7 +174,7 @@ def holding_amounts(prefix, row, *, editing, from_purchases=False, rows=()):
             help='Total units currently held, including fractional units. Zero keeps a planned position. Decimal points or commas are accepted.')
     if not from_purchases:
         try:
-            quantity = decimal_input(quantity_text, 'Quantity')
+            quantity = amount_input('shares', quantity_text, 'Quantity')
         except DataError as exc:
             quantity = None
             if quantity_text:
@@ -193,7 +202,8 @@ def holding_amounts(prefix, row, *, editing, from_purchases=False, rows=()):
     else:
         source = st.session_state[prefix + 'cost_source']
         try:
-            amount = decimal_input(average_text if source == 'average' else total_text, 'Buy-in', optional=True)
+            field, text = ('buy_in', average_text) if source == 'average' else ('total_buy_in', total_text)
+            amount = amount_input(field, text, 'Buy-in', optional=True)
             average, _ = linked_costs(quantity, amount, source)
         except DataError as exc:
             average = None

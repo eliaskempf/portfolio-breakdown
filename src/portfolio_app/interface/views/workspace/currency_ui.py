@@ -169,6 +169,8 @@ def cost_conversion_controls(parts, target, directory, prices, *, key, demo=Fals
     else:
         st.caption(f'Converted cost: {resolved.amount:,.2f} {target} · {resolved.note or "Recorded cost"}')
     render_fx_progress(directory, prices)
+    if method == 'Keep saved conversion':
+        return parts
     return freeze_historical(parts, target, historical)
 
 

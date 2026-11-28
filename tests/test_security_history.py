@@ -1,7 +1,6 @@
 """Invented securities, accounts and amounts; never read working portfolio data."""
 from dataclasses import replace
 from decimal import Decimal as D
-from math import inf, nextafter
 import pytest
 
 from portfolio_app.ledger.account_journal import Account, Event, Journal, replay, journal_from_dict, journal_to_dict
@@ -78,35 +77,18 @@ def test_evidence_does_not_change_balances_and_opening_does_not_post_cash():
     assert not replay_securities((replace(b, active_ids=('open',)),)).cash
 
 
-def test_materialization_preserves_source_and_rejects_external_change():
-    rows = parse_holdings('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,8,EUR\n')
+def test_active_journal_owns_balance_while_csv_supplies_identity_and_metadata():
+    rows = parse_holdings('id,name,shares,acquisition_price,acquisition_currency\ninvented,Renamed,15,17,USD\n')
     b = book(opening(), E('a', 'buy', '2024-02-01', quantity=D(2), price=D(10), currency='EUR', charges_known=True))
-    effective = effective_holdings(rows, (b,))
-    assert effective.iloc[0].shares == 12
-    assert rows.iloc[0].shares == 10
-    rows.loc[0, 'shares'] = 11
-    with pytest.raises(DataError, match='outside History'):
+    row = effective_holdings(rows, (b,)).iloc[0]
+    assert (row.shares, row.acquisition_currency, row['name']) == (12, 'EUR', 'Renamed')
+    assert row.acquisition_price == pytest.approx(100 / 12)
+    assert rows.iloc[0].shares == 15
+    draft = replace(b, active_ids=())
+    assert effective_holdings(rows, (draft,)).iloc[0].shares == 15
+    rows.loc[0, 'id'] = 'another-instrument'
+    with pytest.raises(DataError, match='different instrument'):
         effective_holdings(rows, (b,))
-
-
-@pytest.mark.parametrize('direction', [0.0, inf])
-def test_history_snapshot_rejects_a_real_one_step_edit(direction):
-    rows = parse_holdings('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,8,EUR\n')
-    changed = replace(book(opening()), source_summary=('10', str(nextafter(8.0, direction)), 'EUR'))
-    with pytest.raises(DataError, match='outside History'):
-        effective_holdings(rows, (changed,))
-
-
-@pytest.mark.parametrize(('price', 'saved'), [
-    ('', ('10', '0', 'EUR')),
-    ('0', ('10', '', 'EUR')),
-    ('8', (str(nextafter(10.0, inf)), '8', 'EUR')),
-    ('8', ('10', '8', 'USD')),
-])
-def test_history_snapshot_preserves_missing_prices_quantities_and_currency(price, saved):
-    rows = parse_holdings(f'id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,{price},EUR\n')
-    with pytest.raises(DataError, match='outside History'):
-        effective_holdings(rows, (replace(book(opening()), source_summary=saved),))
 
 
 def test_split_preserves_total_cost_and_oversale_rejected():

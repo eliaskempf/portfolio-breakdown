@@ -18,7 +18,7 @@ def create_acceptance_workspace(directory: Path):
     from portfolio_app.ledger.history_commands import correct_transaction, save_history
     from portfolio_app.performance.history_observations import load_observations, save_observations, Observation
     from portfolio_app.portfolio.positions import read_snapshot
-    from portfolio_app.ledger.security_history import replay_securities
+    from portfolio_app.ledger.security_history import replay_securities, security_history_fingerprint
     from portfolio_app.ingestion.transaction_csv import read_csv
     from portfolio_app.ledger.transaction_import_commands import save_transaction_import
 
@@ -36,13 +36,6 @@ def create_acceptance_workspace(directory: Path):
     frame['manual_price_date'] = today.isoformat()
     frame['quantity_unit'] = 'units'
     frame.to_csv(path, index=False)
-    # Fixed fingerprints produced by the released v0.2.1 x64 parser.
-    legacy = {'demo-world': ('110.0', '85.52261818181819', 'EUR'),
-              'demo-cash-fund': ('140.0', '50.285714285714285', 'EUR')}
-    journal, revision = load_journal(directory)
-    books = tuple(replace(book, source_summary=legacy[book.position_id], source_exact=False)
-                  for book in journal.securities)
-    save_journal(directory, replace(journal, securities=books), revision)
     preferences = directory / '.cache' / 'etf-refresh' / 'preferences.json'
     preferences.parent.mkdir(parents=True, exist_ok=True)
     preferences.write_text(json.dumps({'enabled': False, 'minimum_age_days': 1}))
@@ -56,6 +49,22 @@ def create_acceptance_workspace(directory: Path):
                         account='Portfolio', bucket_id='equity', instrument_type='equity')],
         selected_ids=[row.identity for row in rows], starts_at_zero=True,
         accept_reconciliation=True, comparison_date=today.isoformat())
+    journal, revision = load_journal(directory)
+    # Model the three source fingerprints written by the v0.2.1 x64 parser.
+    legacy = {'demo-world': ('110.0', '85.52261818181819', 'EUR'),
+              'demo-cash-fund': ('140.0', '50.285714285714285', 'EUR'),
+              'smoke-closed': ('0.0', '', '')}
+    journal = replace(journal, securities=tuple(
+        replace(book, source_summary=legacy[book.position_id], source_exact=False) for book in journal.securities))
+    # The only review so far accepted the initial two synthetic import events.
+    books = []
+    for book in journal.securities:
+        if book.reviews:
+            review, = book.reviews
+            book = replace(book, reviews=(replace(review, facts_fingerprint=security_history_fingerprint(
+                journal, book.position_id)),))
+        books.append(book)
+    save_journal(directory, replace(journal, securities=tuple(books)), revision)
     journal, revision = load_journal(directory)
     book = next(book for book in journal.securities if book.position_id == 'smoke-closed')
     sale = next(event for event in book.records if event.kind == 'sell')

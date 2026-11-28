@@ -131,7 +131,8 @@ def read_opening(path: Path, revision: str | None, position_id: str | None) -> d
     row = {key: value.strip() for key, value in raw.iloc[int(matches[0])].items()}
     if "acquisition_currency" in row:
         row["acquisition_currency"] = row["acquisition_currency"].upper()
-    return CostRow(row, source_for(frame.loc[matches[0]]))
+    from portfolio_app.performance.cost_basis import opening_cost_row
+    return opening_cost_row(CostRow(row, source_for(frame.loc[matches[0]])))
 
 
 def read_purchase_history(value: str) -> list[dict]:

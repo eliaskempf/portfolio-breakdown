@@ -596,3 +596,29 @@ def test_reused_context_expires_for_workspace_currency_date_and_evidence(tmp_pat
         def today(cls): return date.today().fromordinal(date.today().toordinal()+1)
     monkeypatch.setattr(ui, 'date', Tomorrow)
     assert context() is not first
+
+
+def test_apply_uses_the_comparison_visible_before_the_click(tmp_path):
+    from portfolio_app.ledger.account_journal import load_journal
+
+    path = tmp_path / 'holdings.csv'
+    path.write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,10,EUR\n')
+    app = launch(tmp_path)
+    label(app.button, 'Add starting balance').click().run()
+    label(app.button, 'Save starting balance').click().run()
+    draft, revision = load_journal(tmp_path)
+    label(app.button, 'Review against portfolio').click().run()
+    app.multiselect[0].set_value([draft.securities[0].records[0].id]).run()
+
+    # A second writer changes the source after the user has seen the comparison.
+    path.write_text(path.read_text().replace('Invented,10,', 'Invented,15,'))
+    label(app.button, 'Apply history').click().run()
+    assert not app.exception
+    assert load_journal(tmp_path) == (draft, revision)
+
+    # After seeing the new balance the user can accept the original ten units.
+    label(app.button, 'Apply history').click().run()
+    assert not app.exception
+    accepted = load_journal(tmp_path)[0].securities[0]
+    assert accepted.active and D(accepted.source_summary[0]) == 15
+    assert accepted.records[0].quantity == 10

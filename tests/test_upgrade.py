@@ -9,7 +9,6 @@ import pytest
 
 from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
 from portfolio_app.performance.cost_basis import active_components, resolve_cost
-from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.workspace.backup import commit_restore, create_backup, inspect_backup
 from portfolio_app.ledger.history_commands import correct_transaction, save_history
 from portfolio_app.performance.history_observations import Observation, ObservationStore, save_observations
@@ -91,8 +90,10 @@ def test_upgrade_reads_history_fingerprint_from_unchanged_csv(tmp_path, quantity
     validate_workspace(tmp_path)
     assert inventory(tmp_path) == before
     path.write_text(path.read_text().replace(f',{price},EUR', ',17.25,EUR'))
-    with pytest.raises(DataError, match='outside History'):
-        validate_workspace(tmp_path)
+    validate_workspace(tmp_path)
+    from portfolio_app.ledger.security_history import effective_holdings
+    projected = effective_holdings(read_snapshot(path).holdings, load_journal(tmp_path)[0].securities)
+    assert projected.iloc[0].acquisition_price == float(saved_price)
 
 
 @pytest.mark.parametrize('saved_price', ['12.01', '12.010000000000002'])

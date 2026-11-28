@@ -23,14 +23,20 @@ def replace_book(journal, book):
     return replace(journal, version=max(5, journal.version), securities=books)
 
 
+def reviewed_holding_source(row):
+    """Record the CSV balance seen at review, independently of the accepted ledger balance."""
+    summary, exact = stored_snapshot(row)
+    return dict(source_summary=tuple(summary), source_exact=exact)
+
+
 def book_for(journal, row):
     existing = next((b for b in journal.securities if b.position_id == row['position_id']), None)
     if existing and existing.active:
         return existing
-    summary, exact = stored_snapshot(row)
+    source = reviewed_holding_source(row)
     if existing:
-        return replace(existing, source_summary=tuple(summary), source_exact=exact)
-    return SecurityBook(row['position_id'], row['id'], tuple(summary), source_exact=exact)
+        return replace(existing, **source)
+    return SecurityBook(row['position_id'], row['id'], **source)
 
 
 def preview_activation(journal, book, selected_ids, row, *, target='EUR', historical=None, other_changes=()):
@@ -111,7 +117,7 @@ def record_reviews(proposed, positions, comparison_date, *, resolution='accept')
 def save_history(directory, book, *, expected_journal_revision, expected_holdings_revision,
                  activate=False, resolution='accept',
                  accept_balance_change=False, accept_cash_change=False, accept_duplicates=False,
-                 other_changes=()):
+                 other_changes=(), expected_observations_revision=..., expected_reporting_currency=None):
     """Publish all legs together; provenance never changes transaction permissions."""
     directory = Path(directory)
     with workspace_lock(directory):
@@ -122,7 +128,8 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
         old = {b.position_id: b for b in journal.securities}
         books = []
         for candidate in (book, *other_changes):
-            if snapshot.holdings.position_id.eq(candidate.position_id).sum() != 1:
+            matching = snapshot.holdings.loc[snapshot.holdings.position_id.eq(candidate.position_id)]
+            if len(matching) != 1:
                 raise DataError('The selected holding no longer exists.')
             previous = old.get(candidate.position_id)
             if previous:
@@ -130,6 +137,10 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
                     raise DataError('Retain original evidence; append corrections instead of overwriting records.')
                 if previous.active and (candidate.source_summary, candidate.source_exact, candidate.instrument_id, candidate.account_id) != (previous.source_summary, previous.source_exact, previous.instrument_id, previous.account_id):
                     raise DataError('History identity and active cash binding cannot change.')
+            if activate and candidate.active and not (previous and previous.active):
+                # The locked revisions above bind Apply to the displayed comparison.
+                # A draft may predate this review and carry an older CSV summary.
+                candidate = replace(candidate, **reviewed_holding_source(matching.iloc[0]))
             if not activate:
                 candidate = replace(candidate, active_ids=previous.active_ids if previous else (),
                                     reviews=previous.reviews if previous else ())
@@ -150,9 +161,13 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
             from portfolio_app.performance.history_observations import ObservationFX, load_observations
             from portfolio_app.portfolio.portfolio_settings import load_settings
             target = load_settings(directory).reporting_currency
+            observations, observation_revision = load_observations(directory)
+            if ((expected_observations_revision is not ... and observation_revision != expected_observations_revision)
+                    or (expected_reporting_currency is not None and target != expected_reporting_currency)):
+                raise DataError('Cost conversion evidence or reporting currency changed. Reload and review again.')
             touched = changed_positions(journal, books) | {b.position_id for b in books if b.active}
             comparisons = history_comparisons(journal, proposed, snapshot.holdings, touched,
-                target=target, historical=ObservationFX(load_observations(directory)[0]))
+                target=target, historical=ObservationFX(observations))
             if not accept_balance_change and any(
                     abs(Decimal(c['before_quantity'])-Decimal(c['after_quantity'])) > Decimal('1e-9') or
                     c['before_cost'] is not None and c['after_cost'] is not None and abs(c['before_cost']-c['after_cost']) > Decimal('.01')

@@ -13,7 +13,6 @@ import streamlit as st
 from portfolio_app.interface.shared.render_sections import render_sections
 
 from portfolio_app.ledger.account_journal import load_journal
-from portfolio_app.performance.cost_basis import active_components
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.ledger.history_commands import book_for, preview_activation, save_history, reconstruction_candidate
 from portfolio_app.performance.history_observations import (
@@ -23,7 +22,7 @@ from portfolio_app.performance.history_observations import (
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.ledger.security_history import (
     Charge, SecurityEvent, SecurityLot, append_evidence,
-    selected_events,
+    opening_defaults, selected_events,
 )
 
 
@@ -383,26 +382,31 @@ def _source_label(source):
     return {'manual':'Manual entry', 'confirmed_zero_start':'Starting balance'}.get(source, 'Recorded history')
 
 
+def _retain_opening_costs(fields, defaults):
+    if all(fields[key] == defaults[key] for key in ('quantity', 'amount', 'currency')):
+        fields['costs'] = defaults['costs']
+
+
 def _opening_form(directory, journal, revision, snapshot, book, row, key):
     st.markdown('**Add starting balance**')
     st.caption('Optional: what you held at the end of this date, before your recorded transactions.')
     key += 'opening_'
+    defaults = opening_defaults(journal, book, snapshot.holdings)
     left, right = st.columns(2)
     stamp = left.date_input('Balance date', max_value=date.today(), key=key+'date')
-    quantity = right.text_input('Units held', value=str(row.shares), key=key+'quantity')
+    quantity = right.text_input('Units held', value=str(defaults['quantity']), key=key+'quantity')
     left, right = st.columns([3,1])
-    total = row.shares*row.acquisition_price if pd.notna(row.acquisition_price) else None
+    total = defaults['amount']
     cost = left.text_input('Total acquisition cost', value=str(total) if total is not None else '',
         help='What you paid for this holding, including purchase fees. Leave blank if unknown.', key=key+'cost')
-    currency = right.text_input('Currency', value=row.get('acquisition_currency') or 'EUR', key=key+'currency').upper()
+    currency = right.text_input('Currency', value=defaults['currency'], key=key+'currency').upper()
     if not book.active and journal.accounts:
         names = {'':'Cash not tracked', **{a.id:a.name for a in journal.accounts}}
         account = st.selectbox('Cash account', list(names), index=list(names).index(book.account_id), format_func=names.get, key=key+'account')
         book = replace(book, account_id=account)
     try:
         fields = dict(kind='opening', date=stamp.isoformat(), quantity=_decimal(quantity), amount=_decimal(cost, optional=True), currency=currency)
-        if fields['quantity'] == _decimal(row.shares) and fields['amount'] == (_decimal(total) if total is not None else None) and currency == row.get('acquisition_currency'):
-            fields['costs'] = tuple(active_components(row))
+        _retain_opening_costs(fields, defaults)
         event = SecurityEvent(_record_id(key+str(revision), fields), **fields)
         candidate = append_evidence(book, (event,))
         st.button('Save starting balance', key=key+'evidence', on_click=_save_evidence,
@@ -444,10 +448,12 @@ def _fix_history(directory, journal, revision, snapshot, book, row, key):
     book = replace(book, account_id=account)
     st.caption('Use selects the reconstruction to activate. Saving evidence alone leaves balances unchanged.')
     rows = _event_rows(book)
+    defaults = None
     if not rows:
-        rows = [dict(record='', Use=True, Kind='opening', Date='', Order=0, Quantity=str(row.shares),
-            Price='', Gross=str(row.shares*row.acquisition_price) if pd.notna(row.acquisition_price) else '',
-            Currency=row.get('acquisition_currency') or 'EUR', Fees='', Fee_currency='', Fee_date='',
+        defaults = opening_defaults(journal, book, snapshot.holdings)
+        rows = [dict(record='', Use=True, Kind='opening', Date='', Order=0, Quantity=str(defaults['quantity']),
+            Price='', Gross=str(defaults['amount']) if defaults['amount'] is not None else '',
+            Currency=defaults['currency'], Fees='', Fee_currency='', Fee_date='',
             Charges_known=False, Destination='', Note='')]
     destinations = _holding_choices(snapshot, book)
     destination_ids = {label: identity for identity, label in destinations.items()}
@@ -501,10 +507,10 @@ def _fix_history(directory, journal, revision, snapshot, book, row, key):
             if old:
                 same_cost = (fields['quantity'], fields['amount'], fields['currency']) == (old.quantity, old.amount, old.currency)
                 fields.update(lots=old.lots if same_cost else (), costs=old.costs if same_cost else (), value_date=old.value_date, source=old.source)
-            elif fields['kind'] == 'opening' and fields['quantity'] == _decimal(row.shares) and fields['currency'] == row.get('acquisition_currency'):
-                current_cost = _decimal(row.shares)*_decimal(row.acquisition_price) if pd.notna(row.acquisition_price) else None
-                if fields['amount'] == current_cost:
-                    fields['costs'] = tuple(active_components(row))
+            elif fields['kind'] == 'opening':
+                if defaults is None:
+                    defaults = opening_defaults(journal, book, snapshot.holdings)
+                _retain_opening_costs(fields, defaults)
             if old and old.id == opening_id and not lot_table.empty:
                 from portfolio_app.performance.cost_basis import component
                 fields['lots'] = tuple(SecurityLot(_record_id(key, lot), _decimal(lot['Quantity']),
@@ -565,11 +571,15 @@ def _legacy_evidence(directory, journal, revision, snapshot, book, row, key):
 def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False, removal=False, other_changes=(), return_key=None):
     from portfolio_app.interface.shared.currency_display import reporting_currency
     from portfolio_app.performance.history_observations import ObservationFX
-    historical = ObservationFX(load_observations(directory)[0])
+    observations, observation_revision = load_observations(directory)
+    historical = ObservationFX(observations)
+    target = reporting_currency()
     signature = sha256(json.dumps([asdict(candidate), *[asdict(b) for b in other_changes]], default=str, sort_keys=True).encode()).hexdigest()
+    reviewed = (signature, revision, snapshot.revision, observation_revision, target)
+    displayed = st.session_state.get(key+'reviewed')
     if show_review or (review_container or st).button('Review history', key=key+'review'):
-        st.session_state[key+'reviewed'] = (signature, revision, snapshot.revision)
-    if st.session_state.get(key+'reviewed') != (signature, revision, snapshot.revision):
+        st.session_state[key+'reviewed'] = reviewed
+    if st.session_state.get(key+'reviewed') != reviewed:
         return
     from portfolio_app.ledger.history_commands import changed_positions, proposed_journal, history_comparisons
     from portfolio_app.interface.views.history.history_review_ui import ReviewPreview, render_history_review
@@ -591,11 +601,11 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
     def build(excluded):
         selected = chosen(excluded)
         primary, comparison, cash = preview_activation(journal, selected[0], selected[0].active_ids, row,
-            target=reporting_currency(), historical=historical, other_changes=selected[1:])
+            target=target, historical=historical, other_changes=selected[1:])
         proposed = proposed_journal(journal, selected)
         touched = changed_positions(journal, selected) | {candidate.position_id}
         comparisons = history_comparisons(journal, proposed, snapshot.holdings, touched,
-            target=reporting_currency(), historical=historical)
+            target=target, historical=historical)
         comparisons = tuple(sorted(comparisons, key=lambda c: c['position_id'] != candidate.position_id))
         changes = tuple(dict(account=c['Account'], currency=c['Currency'], before=c['Before'], after=c['After'])
             for c in cash if c['Before'] != c['After'] or (c['Account'] == primary.account_id and c['After'] is None))
@@ -607,10 +617,15 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
     def keep():
         _history_action(_key(directory, candidate.position_id), 'list')
     def apply(excluded):
+        # Streamlit delivers the click on a rerun that can see newer files.
+        if displayed != reviewed:
+            st.warning('The comparison changed. Review the updated balances before applying.')
+            return
         selected = chosen(excluded)
         save_history(directory, selected[0], expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
             activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
-            accept_duplicates=True, other_changes=selected[1:])
+            accept_duplicates=True, other_changes=selected[1:],
+            expected_observations_revision=observation_revision, expected_reporting_currency=target)
         st.session_state.pop(key+'reviewed', None)
         st.session_state[(return_key or _key(directory, candidate.position_id))+'screen'] = 'list'
         st.rerun()
@@ -856,14 +871,16 @@ def _edit_transaction(directory, journal, revision, snapshot, book, key):
 
 def _replace_balance(directory, journal, revision, snapshot, book, row, key):
     key += 'replace_'
+    defaults = opening_defaults(journal, book, snapshot.holdings)
     stamp = st.date_input('Balance date', max_value=date.today(), key=key+'date')
-    quantity = st.text_input('Total quantity', value=str(row.shares), key=key+'quantity')
-    cost = st.text_input('Total acquisition cost', value=str(row.shares*row.acquisition_price) if pd.notna(row.acquisition_price) else '', key=key+'cost')
-    currency = st.text_input('Cost currency', value=row.get('acquisition_currency') or 'EUR', key=key+'currency')
+    quantity = st.text_input('Total quantity', value=str(defaults['quantity']), key=key+'quantity')
+    cost = st.text_input('Total acquisition cost', value=str(defaults['amount']) if defaults['amount'] is not None else '', key=key+'cost')
+    currency = st.text_input('Cost currency', value=defaults['currency'], key=key+'currency')
     st.caption('A replacement starts a new tracking interval. Earlier evidence remains saved.')
     try:
         fields = dict(kind='opening', date=stamp.isoformat(), sequence=max([e.sequence for e in journal.events]+[e.sequence for b in journal.securities for e in b.records]+[0])+1,
             quantity=_decimal(quantity), amount=_decimal(cost, optional=True), currency=currency.upper())
+        _retain_opening_costs(fields, defaults)
         event = SecurityEvent(_record_id(key+str(revision), fields), **fields)
         candidate = replace(append_evidence(book, (event,)), active_ids=(*book.active_ids, event.id))
         _activation(directory, journal, revision, snapshot, candidate, row, key, resolution='boundary')

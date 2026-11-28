@@ -53,9 +53,12 @@ def _actual_future_risk(valued, data_dir, service, target, years, refresh, memo,
     from portfolio_app.portfolio.holdings import DataError
     from portfolio_app.funds.leverage_settings import load_leverage_settings
     from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import effective_holdings
+    from portfolio_app.workspace.workspace_lock import workspace_lock
     from portfolio_app.studies.study_market import validate_history_for_contract
     factors = {item.position_id for item in load_leverage_settings(data_dir)[0].fund_factors}
-    source_positions = read_snapshot(data_dir / 'holdings.csv').holdings
+    source_positions = None
     extras, exposures, returns = [], {}, {}
     for identity, rows in valued.loc[valued.instrument_type.eq('future')].groupby('id'):
         row = rows.iloc[0]
@@ -94,7 +97,12 @@ def _actual_future_risk(valued, data_dir, service, target, years, refresh, memo,
             else:
                 proxy_id = row.get('proxy_position_id', '')
                 candidates = valued.loc[valued.position_id.eq(proxy_id)] if 'position_id' in valued else valued.iloc[:0]
-                if candidates.empty:
+                if candidates.empty and isinstance(proxy_id, str) and proxy_id:
+                    if source_positions is None:
+                        with workspace_lock(data_dir):
+                            holdings = read_snapshot(data_dir / 'holdings.csv').holdings
+                            journal, _ = load_journal(data_dir)
+                        source_positions = effective_holdings(holdings, journal.securities)
                     candidates = source_positions.loc[source_positions.position_id.eq(proxy_id)]
                 if (product not in ('FMWN', 'FMWO', 'FMWB') or len(candidates) != 1 or proxy_id in factors
                         or candidates.iloc[0].get('instrument_type') != 'etf' or candidates.iloc[0].shares <= 0

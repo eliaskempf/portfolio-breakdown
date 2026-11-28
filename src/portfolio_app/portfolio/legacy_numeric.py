@@ -6,6 +6,8 @@ sources and redistribution notices are identified in the project's LICENSE.
 """
 from decimal import Decimal
 import math
+import platform
+import sys
 import re
 
 
@@ -62,6 +64,19 @@ def _fallback_float(sign, whole, fraction, exponent, modern, fused_digits):
     # Decimal literals give the correctly rounded constants from pandas' table.
     power = float(f'1e{abs(scale)}')
     return value * power if scale > 0 else value / power
+
+
+def spaced_exponent(token: str) -> tuple[str, float] | None:
+    """Return the exact decimal spelling and the former reader's value, if valid."""
+    match = _TOKEN.fullmatch(token)
+    if match:
+        sign, whole, fraction, exponent = match.groups()
+        if (whole or fraction) and exponent and exponent[0].isspace():
+            fused = sys.platform == 'darwin' and platform.machine() == 'arm64'
+            value = _fallback_float(sign, whole, fraction, exponent, modern=False, fused_digits=fused)
+            if math.isfinite(value) and value >= 0:
+                return token[:match.start(4)] + exponent.lstrip(), value
+    return None
 
 
 def _number(token, integer_column, modern, fused_digits):

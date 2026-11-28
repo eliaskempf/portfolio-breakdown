@@ -113,6 +113,33 @@ def test_actual_risk_reuse_observes_proxy_positions_outside_the_selection(tmp_pa
     assert excluded.status == 'partial' and 'future:synthetic' in excluded.excluded
 
 
+def test_risk_proxy_follows_journal_only_trades_outside_the_selection(tmp_path, monkeypatch, settled_read):
+    from test_actual_risk import actual, future, row
+    from test_trade_commands import save, trade
+
+    monkeypatch.setattr(risk_updates.st, 'session_state', {})
+    monkeypatch.setattr(MarketRiskHistoryProvider, 'fetch', DemoRiskHistoryProvider.fetch)
+    positions = actual([row('cash', 'cash', 100., 'EUR'), future(proxy_position_id='proxy')])
+    path = tmp_path / 'holdings.csv'
+    path.write_text('id,name,shares,instrument_type,position_key,ticker\n'
+                    'proxy,Invented proxy,0,etf,proxy,INVENTED\n')
+    original = path.read_bytes()
+
+    def read():
+        return settled_read(positions, tmp_path, False, DEFAULT_BENCHMARK, 3,
+                            portfolio_result=SimpleNamespace(net_equity=100.))[0]
+
+    assert 'future:synthetic' in read().excluded
+    save(tmp_path, trade('buy', 'buy', '2026-01-02', '1', '10', '0'),
+         position_id='proxy', opening_date='2026-01-01')
+    held = read()
+    assert held.status == 'complete' and read() is held
+    save(tmp_path, trade('sell', 'sell', '2026-01-03', '1', '10', '0'), position_id='proxy')
+    closed = read()
+    assert 'future:synthetic' in closed.excluded and read() is closed
+    assert path.read_bytes() == original
+
+
 @pytest.mark.parametrize('force', [False, True], ids=['expired', 'explicitly-refreshed'])
 def test_stale_risk_paints_once_across_windows_then_uses_the_complete_worker_result(tmp_path, monkeypatch, force):
     from threading import Event, current_thread

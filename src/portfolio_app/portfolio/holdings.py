@@ -36,6 +36,19 @@ def load_holdings(path: Path) -> pd.DataFrame:
         raise DataError(f"Cannot read holdings CSV {path}: {exc}") from exc
 
 
+def _csv_numbers(tokens):
+    values = pd.to_numeric(tokens, errors='coerce')
+    if values.hasnans:
+        failed = tokens[values.isna() & tokens.ne('')]
+        if not failed.empty:
+            from portfolio_app.portfolio.legacy_numeric import spaced_exponent
+            for index, token in failed.items():
+                recovered = spaced_exponent(token)
+                if recovered is not None:
+                    values.at[index] = recovered[1]
+    return values
+
+
 def parse_holdings(content: str) -> pd.DataFrame:
     """Validate CSV content for both file loading and writes before persistence."""
     try:
@@ -64,7 +77,7 @@ def parse_holdings(content: str) -> pd.DataFrame:
         if target_column not in frame:
             continue
         raw_targets = frame[target_column]
-        targets = pd.to_numeric(raw_targets.str.removesuffix("%"), errors="coerce")
+        targets = _csv_numbers(raw_targets.str.removesuffix("%"))
         targets = targets.where(~raw_targets.str.endswith("%"), targets / 100)
         invalid = raw_targets.ne("") & (~targets.map(math.isfinite) | (targets < 0) | (targets > 1))
         if invalid.any():
@@ -82,7 +95,7 @@ def parse_holdings(content: str) -> pd.DataFrame:
                         raise DataError(f"{column} must be YYYY-MM-DD, no later than today.") from None
     if "manual_price" in frame:
         raw = frame.manual_price
-        number = pd.to_numeric(raw, errors="coerce")
+        number = _csv_numbers(raw)
         if (raw.ne("") & (~number.map(math.isfinite) | (number <= 0))).any():
             raise DataError("Manual unit prices must be finite and positive.")
         frame["manual_price"] = number
@@ -106,7 +119,7 @@ def parse_holdings(content: str) -> pd.DataFrame:
     tokens, integers = {}, {}
     for column in ("shares", "acquisition_price"):
         original = frame[column]
-        numeric = pd.to_numeric(original, errors="coerce")
+        numeric = _csv_numbers(original)
         invalid = (~numeric.map(math.isfinite) | (numeric < 0)) & original.ne("")
         if column == "shares":
             invalid |= original.eq("")

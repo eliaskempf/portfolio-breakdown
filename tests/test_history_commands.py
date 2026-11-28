@@ -341,3 +341,36 @@ def test_application_records_reconciliation_without_completeness_dates(tmp_path)
     review = journal.securities[0].reviews[-1]
     assert review.active_ids == book.active_ids
     assert review.date and not review.complete_from and not review.complete_through
+
+
+def test_apply_records_the_reviewed_csv_source_and_accepts_the_ledger_discrepancy(tmp_path):
+    path, snapshot, book = setup(tmp_path)
+    save_history(tmp_path, book, expected_journal_revision=None, expected_holdings_revision=snapshot.revision)
+    journal, revision = load_journal(tmp_path)
+    draft, = journal.securities
+    reviewed = read_snapshot(path)
+    path.write_text(path.read_text().replace(',12,10,', ',15,10,'))
+    changed = read_snapshot(path)
+    candidate = replace(draft, active_ids=book.active_ids)
+    with pytest.raises(DataError, match='Reload and review'):
+        save_history(tmp_path, candidate, expected_journal_revision=revision,
+                     expected_holdings_revision=reviewed.revision, activate=True, accept_balance_change=True)
+    assert load_journal(tmp_path)[1] == revision
+    accepted = save_history(tmp_path, candidate, expected_journal_revision=revision,
+                            expected_holdings_revision=changed.revision, activate=True, accept_balance_change=True)
+    assert accepted.securities[0].source_summary == ('15', '10', 'EUR')
+    assert effective_holdings(changed.holdings, accepted.securities).iloc[0].shares == 12
+
+
+@pytest.mark.parametrize('review_context', [
+    {'expected_observations_revision': 'superseded'},
+    {'expected_reporting_currency': 'USD'},
+])
+def test_apply_checks_reviewed_conversion_inputs_under_the_workspace_lock(tmp_path, review_context):
+    path, snapshot, candidate = setup(tmp_path)
+    original = path.read_bytes()
+    with pytest.raises(DataError, match='Reload and review'):
+        save_history(tmp_path, candidate, expected_journal_revision=None,
+                     expected_holdings_revision=snapshot.revision, activate=True, **review_context)
+    assert load_journal(tmp_path)[1] is None
+    assert path.read_bytes() == original

@@ -6,7 +6,7 @@ All persisted decimals remain strings. A summary fingerprint detects external ed
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, InvalidOperation, localcontext
 import json
 import math
 
@@ -26,21 +26,32 @@ def decimal(value):
         return None
 
 
+def _csv_decimal(value):
+    number = decimal(value)
+    if number is None and isinstance(value, str) and value:
+        from portfolio_app.portfolio.legacy_numeric import spaced_exponent
+        recovered = spaced_exponent(value)
+        if recovered is not None:
+            return decimal(recovered[0])
+    return number
+
+
 def fingerprint(row):
     numbers = (decimal(row.get(key)) for key in ('shares', 'acquisition_price'))
     currency = row.get('acquisition_currency')
     return [str(value) if value is not None else '' for value in numbers] + [currency.strip().upper() if isinstance(currency, str) else '']
 
 
-def same_summary(a, b):
+def same_summary(a, b, *, csv_source=False):
     """Exact decimal equality, including large integers and the absence of a price."""
     if len(a) != 3 or len(b) != 3 or a[2] != b[2]:
         return False
+    read_source = _csv_decimal if csv_source else decimal
     for left, right in zip(a[:2], b[:2]):
         if left in ('', None) or right in ('', None):
             if left not in ('', None) or right not in ('', None):
                 return False
-        elif (number := decimal(left)) is None or number != decimal(right):
+        elif (number := read_source(left)) is None or number != decimal(right):
             return False
     return True
 
@@ -53,8 +64,20 @@ def _live_source(row, live):
     # in-memory edit from one numeric interpretation to another isn't evidence.
     if isinstance(row.get('shares'), str) and isinstance(row.get('acquisition_price', ''), str):
         raw = (row['shares'].strip(), row.get('acquisition_price', '').strip(), live[2])
-        return source if raw == source.tokens or same_summary(raw, source.tokens) else None
+        return source if raw == source.tokens or same_summary(source.tokens, raw, csv_source=True) else None
     return source if same_summary(live, source.parsed) else None
+
+
+def opening_cost_row(row):
+    """Give editors and transactions exact Decimal-compatible starting amounts."""
+    from portfolio_app.portfolio.csv_summary import CostRow
+
+    summary, _ = stored_snapshot(row, csv_values=True)
+    opening = CostRow(dict(row), _live_source(row, fingerprint(row)))
+    for field, value in zip(('shares', 'acquisition_price'), summary[:2]):
+        if field in opening:
+            opening[field] = value
+    return opening
 
 
 def stored_snapshot(row, *, csv_values=False):
@@ -67,8 +90,8 @@ def stored_snapshot(row, *, csv_values=False):
         quantity, price, currency = row.get('shares'), row.get('acquisition_price'), live[2]
     else:
         return live, False
-    shares = decimal(quantity)
-    unit_price = decimal(price)
+    shares = _csv_decimal(quantity)
+    unit_price = _csv_decimal(price)
     if shares is None or (price not in ('', None) and unit_price is None):
         # The shipped readers also accept certain non-Decimal spellings. The
         # loader's actual numeric values remain valid unmarked evidence.
@@ -79,18 +102,18 @@ def stored_snapshot(row, *, csv_values=False):
     return [str(shares), str(unit_price) if unit_price is not None else '', currency], True
 
 
-def matches_snapshot(row, saved, *, history=False, source_exact=False):
+def matches_snapshot(row, saved, *, source_exact=False):
     live = fingerprint(row)
     source = _live_source(row, live)
     if source_exact:
         # A plain detached float cannot prove the original decimal, even when
         # its string representation happens to equal the stored exact number.
-        return source is not None and same_summary(source.tokens, saved)
+        return source is not None and same_summary(source.tokens, saved, csv_source=True)
     if source is None:
         # A detached row can prove direct equality. Superseded source metadata
         # cannot validate a different live row, even if an older parser would.
-        return (not history or source_for(row) is None) and same_summary(live, saved)
-    if same_summary(live, saved) or same_summary(source.tokens, saved):
+        return same_summary(live, saved)
+    if same_summary(live, saved) or same_summary(source.tokens, saved, csv_source=True):
         return True
     # Old records contain only the numerical tuple produced by the old parser.
     # Distinct source spellings that produced that same tuple are indistinguishable.
@@ -142,10 +165,35 @@ def validate_components(parts):
                 raise DataError('Exchange rate must be finite and positive.')
 
 
+class ReconciledPurchases(list):
+    """Original purchase components and the balance confirmed for their prefix."""
+    def __init__(self, parts, count, balance):
+        super().__init__(parts)
+        self.count_at_reconciliation = count
+        self.confirmed_balance = balance
+
+
+def _read_reconciliation(parts, record):
+    count, balance = record['component_count'], decimal(record['confirmed_shares'])
+    if type(count) is not int or not 1 <= count <= len(parts) or balance is None or balance <= 0:
+        raise ValueError('Invalid purchase reconciliation.')
+    with localcontext() as context:
+        context.prec = 50
+        purchased = sum((decimal(part['shares']) for part in parts[:count]), Decimal(0))
+        # Only this explicitly confirmed prefix used the v1 writer's allowance.
+        if abs(purchased - balance) > min(Decimal('1e-9'), balance * Decimal('1e-9')):
+            raise ValueError('Purchase records exceed the confirmed balance allowance.')
+        total = balance + sum((decimal(part['shares']) for part in parts[count:]), Decimal(0))
+    return ReconciledPurchases(parts, count, balance), total
+
+
 def encode_components(parts, row, *, csv_values=False):
     validate_components(parts)
     summary, exact = stored_snapshot(row, csv_values=csv_values)
     document = dict(version=1, summary=summary, components=parts)
+    if isinstance(parts, ReconciledPurchases):
+        document['legacy_reconciliation'] = dict(component_count=parts.count_at_reconciliation,
+                                                  confirmed_shares=str(parts.confirmed_balance))
     if exact:
         document['source_exact'] = True
     return json.dumps(document, separators=(',', ':'), allow_nan=False)
@@ -159,11 +207,14 @@ def read_details(value):
             raise ValueError
         validate_components(raw.get('components'))
         quantity = decimal(raw['summary'][0])
-        actual = sum(decimal(part['shares']) for part in raw['components'])
+        if 'legacy_reconciliation' in raw:
+            raw['components'], actual = _read_reconciliation(raw['components'], raw['legacy_reconciliation'])
+        else:
+            actual = sum(decimal(part['shares']) for part in raw['components'])
         if quantity is None or abs(actual - quantity) > max(Decimal('1e-12'), quantity * Decimal('1e-12')):
             raise ValueError
         return raw
-    except (ValueError, TypeError, KeyError) as exc:
+    except (ValueError, TypeError, KeyError, DecimalException) as exc:
         raise DataError('Stored cost details are invalid. Restore them from a backup.') from exc
 
 
@@ -183,31 +234,61 @@ def active_components(row):
 
 
 def _legacy_components(row):
-    from portfolio_app.portfolio.purchases import read_purchase_history
+    from portfolio_app.portfolio.purchases import Purchase, read_purchase_history, summarize_purchases
     try:
         batches = read_purchase_history(row['purchase_history'])
         parts, previous = [], None
-        for batch in batches:
-            opening = batch.get('opening', {})
-            if batch['mode'] == 'reconcile':
-                parts = []
-            elif previous is None:
-                if decimal(opening.get('shares', '0')):
-                    parts = [aggregate_component(opening)]
-            elif not same_summary(fingerprint(opening), previous):
-                return None
-            for purchase in batch['purchases']:
-                shares, price, fees = (decimal(purchase.get(k)) for k in ('shares', 'price', 'fees'))
-                if shares is None or fees is None:
+        with localcontext() as context:
+            # Serialized purchase results used the writer's 50-digit arithmetic.
+            context.prec = 50
+            for batch in batches:
+                opening = batch.get('opening', {})
+                if not isinstance(opening, dict):
                     return None
-                parts.append(component(shares, None if price is None else shares * price + fees,
-                                       batch['currency'], purchase['date']))
-            previous = fingerprint(dict(shares=batch.get('result_shares'), acquisition_price=batch.get('result_average'),
-                                        acquisition_currency=batch['currency'] if batch.get('result_average') else ''))
-        if (previous is not None and matches_snapshot(row, previous)
-                and sum(decimal(p['shares']) for p in parts) == decimal(previous[0])):
-            return parts
-    except (DataError, KeyError, TypeError):
+                mode, currency = batch['mode'], batch['currency']
+                if mode == 'reconcile':
+                    parts = []
+                    if not opening:
+                        # Without a recorded opening, the lines must account for
+                        # the entire balance exactly; no allowance can be inferred.
+                        mode = 'add'
+                elif previous is not None and not same_summary(fingerprint(opening), previous):
+                    return None
+                elif previous is None and decimal(opening.get('shares', '0')):
+                    parts = [aggregate_component(opening)]
+
+                purchases = []
+                for item in batch['purchases']:
+                    shares, price, fees = (decimal(item[k]) for k in ('shares', 'price', 'fees'))
+                    if not shares or fees is None or (item['price'] and price is None):
+                        return None
+                    purchases.append(Purchase(item['date'], shares, price, fees))
+                    parts.append(component(shares, None if price is None else shares * price + fees,
+                                           currency, item['date']))
+                # v1 refused additions across currencies when an opening cost was known.
+                if (batch['version'] == 1 and mode == 'add' and decimal(opening.get('shares'))
+                        and opening.get('acquisition_price') and opening.get('acquisition_currency', '').upper() != currency):
+                    return None
+                result = summarize_purchases(purchases, currency, opening, mode=mode)
+                recorded = (batch['result_shares'], batch['result_average'], currency if batch['result_average'] else '')
+                previous = (str(result.total_shares), '' if result.average is None else str(result.average),
+                            result.currency if result.average is not None else '')
+                if not same_summary(previous, recorded):
+                    return None
+                if mode == 'reconcile' and result.batch_shares != result.total_shares:
+                    parts = ReconciledPurchases(parts, len(parts), result.total_shares)
+
+        # The batch writer saved these exact result decimals to the CSV. A
+        # matching rounded float cannot disprove a subsequent source edit.
+        if previous is not None:
+            if source_for(row) is None:
+                # Existing API callers can also supply a detached numeric row.
+                # In that form only direct decimal equality is evidence.
+                if same_summary(fingerprint(row), previous):
+                    return parts
+            elif matches_snapshot(row, previous, source_exact=True):
+                return parts
+    except (DataError, DecimalException, KeyError, TypeError, AttributeError):
         pass
     return None
 

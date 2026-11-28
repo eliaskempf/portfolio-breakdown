@@ -375,7 +375,9 @@ used to start performance measurement. Earlier transactions are not inferred.
 
 The review compares shares, remaining acquisition cost and average buy-in with
 the current portfolio, and checks linked cash where applicable. **Apply history**
-accepts the displayed holding and linked cash changes as the authoritative ledger.
+accepts the displayed holding and linked cash changes, even when the reconstructed
+balance differs from the CSV. If the data changes while the review is open,
+review the updated comparison before applying.
 No separate acceptance checkbox is needed. Backfilled shares are not added to the
 current holding a second time. Resolve discrepancies by correcting records or
 explicitly accepting the reconstructed balance; **Keep portfolio unchanged**
@@ -468,8 +470,8 @@ proceeds cross the selected position's investment boundary.
 Activated holdings obtain current quantities and costs from history. Use **Replace
 balance** for a summary replacement, and Rebalance for category/target edits.
 **Update balances** continues to edit snapshot-only positions. Closed histories
-remain saved. External edits to an activated holding's original CSV balance are
-rejected rather than silently overriding its history.
+remain saved. Valid edits to the original CSV quantity or buy-in leave an
+activated position’s balance unchanged.
 
 Legacy purchase batches remain unchanged. **Copy batch to evidence** makes a
 reviewable candidate with a stable reference to its original row. Cost

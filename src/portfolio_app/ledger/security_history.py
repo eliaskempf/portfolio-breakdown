@@ -345,7 +345,10 @@ class SecurityBalance:
 
     @property
     def costs(self):
-        return tuple(p for lot in self.lots for p in lot.costs)
+        from portfolio_app.performance.cost_basis import component
+        # A lot with no recorded basis still owns its shares. Omitting it
+        # would present the known portion of a mixed holding as its total cost.
+        return tuple(p for lot in self.lots for p in (lot.costs or (component(lot.quantity, None, ''),)))
 
 
 @dataclass(frozen=True)
@@ -387,6 +390,65 @@ def _proportion(amount, quantity, total):
         context.prec = max(context.prec, len(amount.as_tuple().digits) + len(quantity.as_tuple().digits))
         product = amount * quantity
     return product / total
+
+
+def opening_costs(row, quantity):
+    """Allocate a proven historical reconciliation to its opening lot's unit weights."""
+    from portfolio_app.performance.cost_basis import ReconciledPurchases, active_components
+
+    parts = active_components(row)
+    if not isinstance(parts, ReconciledPurchases):
+        return tuple(parts)
+    count = parts.count_at_reconciliation
+    confirmed = parts.confirmed_balance
+    units = [Decimal(part['shares']) for part in parts[:count]]
+    later = (Decimal(part['shares']) for part in parts[count:])
+    if _exact_sum((confirmed, *later)) != quantity:
+        raise DataError('Opening quantity differs from the reconciled purchase balance.')
+    recorded = _exact_sum(units)
+    positive = [i for i, value in enumerate(units) if value]
+    if not positive:
+        raise DataError('Reconciled purchase records have no units.')
+
+    # The CSV keeps the entered purchase quantities. The aggregate opening lot
+    # must total the confirmed balance and preserve each original cost and FX.
+    # Use proportional weights and the same last-component remainder as a lot split.
+    result = list(parts)
+    assigned = ZERO
+    with localcontext() as context:
+        # Keep a very small final component positive beside a much larger one.
+        context.prec = max(context.prec, confirmed.adjusted() - min(units[i].adjusted() for i in positive)
+                           + len(str(count)) + 3)
+        for i in positive:
+            weight = (_difference(confirmed, assigned) if i == positive[-1]
+                      else _proportion(units[i], confirmed, recorded))
+            result[i] = {**parts[i], 'shares': str(weight)}
+            assigned = _exact_sum((assigned, weight))
+    return tuple(result)
+
+
+def opening_defaults(journal, book, holdings):
+    """Exact, aggregate opening balance for a history form's unchanged defaults."""
+    if book.active:
+        state = replay_securities(journal.securities).positions[book.position_id]
+        quantity, costs, currency = state.quantity, state.costs, ''
+    else:
+        from portfolio_app.performance.cost_basis import opening_cost_row
+        row = opening_cost_row(holdings.loc[holdings.position_id.eq(book.position_id)].iloc[0])
+        quantity = Decimal(row['shares'])
+        price, currency = row['acquisition_price'], row.get('acquisition_currency', '')
+        with localcontext() as context:
+            if price:
+                context.prec = max(context.prec, len(quantity.as_tuple().digits) + len(Decimal(price).as_tuple().digits))
+            costs = opening_costs(row, quantity)
+
+    currencies = {part['currency'] for part in costs if part['amount'] == '' or Decimal(part['amount'])}
+    amount = None
+    if len(currencies) <= 1 and all(part['amount'] != '' for part in costs):
+        amount = _exact_sum(Decimal(part['amount']) for part in costs)
+    if len(currencies) == 1:
+        currency, = currencies
+    return dict(quantity=quantity, amount=amount, currency=currency or 'EUR', costs=costs)
 
 
 def _partition_lot(lot, quantity):
@@ -731,13 +793,15 @@ def validate_books(books, accounts):
     replay_securities(books)
 
 
-def effective_holdings(holdings, books):
+def effective_holdings(holdings, books, *, security_state=None):
     """Materialize managed balances without writing competing CSV summaries."""
-    from portfolio_app.performance.cost_basis import matches_snapshot, encode_components, component
+    from portfolio_app.performance.cost_basis import encode_components, component
     result = holdings.copy(deep=True)
     if 'acquisition_currency' not in result:
         result['acquisition_currency'] = ''
-    states = replay_securities(books).positions
+    if security_state is None:
+        security_state = replay_securities(books)
+    states = security_state.positions
     projected = set()
     for book in books:
         matches = result.index[result.position_id == book.position_id]
@@ -751,8 +815,8 @@ def effective_holdings(holdings, books):
         row = result.loc[index]
         if not book.active:
             continue
-        if row.id != book.instrument_id or not matches_snapshot(row, book.source_summary, history=True, source_exact=book.source_exact):
-            raise DataError('A history-linked holding changed outside History. Restore its source snapshot before continuing.')
+        if row.id != book.instrument_id:
+            raise DataError('A history-linked holding refers to a different instrument. Restore or reconcile its identity.')
         state = states[book.position_id]
         costs = state.costs or (component(0, 0, ''),)
         currencies = {p['currency'] for p in costs if p['amount'] != '0'}
