@@ -18,13 +18,8 @@ class CsvSummary:
 
     @cached_property
     def parser_snapshots(self):
-        from portfolio_app.portfolio.legacy_numeric import legacy_fingerprint, modern_fingerprint
-        modes = dict(integer_shares=self.integer_shares, integer_price=self.integer_price)
-        # The archived parsers used fused digit accumulation on Apple Silicon.
-        # All fields of a candidate must come from the same parser and platform.
-        variants = [legacy_fingerprint(*self.tokens, **modes, fused_digits=fused) for fused in (False, True)]
-        variants.append(modern_fingerprint(*self.tokens, **modes))
-        return tuple(dict.fromkeys(candidate for candidate in variants if candidate is not None))
+        from portfolio_app.portfolio.legacy_numeric import parser_fingerprints
+        return parser_fingerprints(self.tokens, self.integer_shares, self.integer_price)
 
 
 class CsvSummaries(str):

@@ -393,14 +393,15 @@ def _batch_snapshot(batch):
     return (batch['result_shares'], average, batch['currency'] if average else '')
 
 
-def _review_parser_matches(row, previous, summary):
-    from portfolio_app.portfolio.legacy_numeric import legacy_fingerprint
+def _review_parser_matches(previous, summary):
+    from itertools import product
+    from portfolio_app.portfolio.legacy_numeric import parser_fingerprints
 
-    source = source_for(row)
-    for fused in (False, True):
-        candidate = legacy_fingerprint(*previous, integer_shares=source.integer_shares,
-                                       integer_price=source.integer_price, fused_digits=fused)
-        if candidate is not None and same_summary(candidate, summary):
+    # The verified purchase batch supplies the original tokens. The subsequent
+    # edit can also change pandas' inferred column type, e.g. 10.000…01 to 10.
+    for integer_shares, integer_price in product((False, True), repeat=2):
+        if any(same_summary(candidate, summary)
+               for candidate in parser_fingerprints(previous, integer_shares, integer_price)):
             return True
     return False
 
@@ -462,7 +463,7 @@ def _legacy_components(row, *, document=None, reviewed_fx=False, skip_matching_r
                 return None
             if not matches_snapshot(row, previous, source_exact=True):
                 if not (same_summary(previous, document['summary']) or
-                        reviewed_fx and _review_parser_matches(row, previous, document['summary'])):
+                        reviewed_fx and _review_parser_matches(previous, document['summary'])):
                     return None
                 # Verified purchase evidence identifies the original source even
                 # when an external edit collides with its parsed float.

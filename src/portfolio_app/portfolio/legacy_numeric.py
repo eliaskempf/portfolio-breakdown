@@ -133,3 +133,12 @@ def modern_fingerprint(shares: str, acquisition_price: str, currency: str, *,
                        fused_digits: bool = False) -> tuple[str, str, str] | None:
     """Full 3.1.1 fingerprint for the same cells, including on an older runtime."""
     return _fingerprint(shares, acquisition_price, currency, integer_shares, integer_price, True, fused_digits)
+
+
+def parser_fingerprints(tokens, integer_shares, integer_price):
+    # Both fields must come from one parser and platform. The legacy parser
+    # used fused digit accumulation on Apple Silicon.
+    modes = dict(integer_shares=integer_shares, integer_price=integer_price)
+    versions = [legacy_fingerprint(*tokens, **modes, fused_digits=fused) for fused in (False, True)]
+    versions.append(modern_fingerprint(*tokens, **modes))
+    return tuple(dict.fromkeys(result for result in versions if result is not None))

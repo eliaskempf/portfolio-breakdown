@@ -97,3 +97,25 @@ def test_matching_reviewed_purchase_result_skips_recalculation(tmp_path, monkeyp
 
     monkeypatch.setattr(purchases, 'summarize_purchases', unexpected_replay)
     assert cost_basis.active_components(read_snapshot(path).holdings.iloc[0]) == parts
+
+
+@pytest.mark.parametrize('field', ['acquisition_price', 'shares'])
+def test_edit_to_integer_spelling_retires_currency_review_of_original_fraction(tmp_path, field):
+    # v0.2.1 used the original column's numeric type when saving the FX review.
+    q = '2.00000000000000001' if field == 'shares' else '2'
+    price = '10.00000000000000001' if field == 'acquisition_price' else '10'
+    amount = D(q) * D(price)
+    record = dict(purchase(q, price), fx_rate='0.8')
+    batch = dict(v1_batch('add', opening('0',''), [record], q, price), version=2)
+    part = prior_component(q, str(amount), target_cost=str(amount*D('0.8')))
+    part['conversions']['GBP'] = dict(amount=str(amount*D('0.7')), rate='0.7', method='estimate',
+                                      saved_at='2024-04-01', observed_on='2024-04-01')
+    path = tmp_path/'holdings.csv'
+    def read(**updates):
+        path.write_text(csv_with_document(content([batch]), ['2.0','10.0','USD'], [part], **updates))
+        return cost_basis.active_components(read_snapshot(path).holdings.iloc[0])
+    assert read() == [part]
+    integer = '10' if field == 'acquisition_price' else '2'
+    for spelling in (integer, integer + '.0'):
+        edited, = read(**{field: spelling})
+        assert not edited['date'] and edited['conversions'] == {}
