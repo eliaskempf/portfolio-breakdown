@@ -414,3 +414,12 @@ def test_review_and_guarded_save_use_exact_csv_then_applied_journal_balance(tmp_
                              expected_holdings_revision=snapshot.revision, activate=True)
         journal, revision = load_journal(tmp_path)
         book = journal.securities[0]
+
+
+def test_history_opening_for_missing_catalog_row_has_actionable_error(tmp_path):
+    from portfolio_app.ledger.account_journal import Journal
+    from portfolio_app.ledger.security_history import opening_defaults
+
+    _, snapshot, book = setup(tmp_path)
+    with pytest.raises(DataError, match='selected holding no longer exists'):
+        opening_defaults(Journal(version=5, securities=(book,)), book, snapshot.holdings.iloc[:0])

@@ -11,7 +11,7 @@ from portfolio_app.performance.cost_basis import stored_snapshot
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.ledger.security_history import (
-    SecurityBook, HistoryReview, effective_holdings, reconcile_balances, replay_securities, cash_postings,
+    SecurityBook, HistoryReview, effective_holdings, history_holding, reconcile_balances, replay_securities, cash_postings,
 )
 from portfolio_app.workspace.workspace_lock import workspace_lock
 
@@ -130,9 +130,7 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
         old = {b.position_id: b for b in journal.securities}
         books = []
         for candidate in (book, *other_changes):
-            matching = snapshot.holdings.loc[snapshot.holdings.position_id.eq(candidate.position_id)]
-            if len(matching) != 1:
-                raise DataError('The selected holding no longer exists.')
+            row = history_holding(snapshot.holdings, candidate.position_id)
             previous = old.get(candidate.position_id)
             if previous:
                 if candidate.records[:len(previous.records)] != previous.records:
@@ -142,7 +140,7 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
             if activate and candidate.active and not (previous and previous.active):
                 # The locked revisions above bind Apply to the displayed comparison.
                 # A draft may predate this review and carry an older CSV summary.
-                candidate = replace(candidate, **reviewed_holding_source(matching.iloc[0]))
+                candidate = replace(candidate, **reviewed_holding_source(row))
             if not activate:
                 candidate = replace(candidate, active_ids=previous.active_ids if previous else (),
                                     reviews=previous.reviews if previous else ())

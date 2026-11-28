@@ -108,8 +108,8 @@ def _balances(preview, key, *, review_step='', reviewed=()):
     def number(value):
         if value is None:
             return 'Unknown'
-        text = str(Decimal(str(value)))
-        return text.rstrip('0').rstrip('.') if '.' in text and 'E' not in text else text
+        from portfolio_app.portfolio.position_entry import compact_decimal
+        return compact_decimal(value)
     def money(value):
         return _money(None if value is None or pd.isna(value) else Decimal(str(value)))
     old, new = Decimal(item['before_quantity']), Decimal(item['after_quantity'])

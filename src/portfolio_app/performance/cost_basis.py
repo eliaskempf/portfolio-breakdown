@@ -125,13 +125,15 @@ def component(shares, amount, currency, day='', conversions=None):
                 date=day or '', conversions=conversions or {})
 
 
+def _exact_product(quantity, price):
+    with localcontext() as context:
+        context.prec = max(context.prec, len(quantity.as_tuple().digits) + len(price.as_tuple().digits))
+        return quantity * price
+
+
 def aggregate_component(row):
     quantity, price = decimal(row.get('shares')), decimal(row.get('acquisition_price'))
-    amount = None
-    if quantity is not None and price is not None:
-        with localcontext() as context:
-            context.prec = max(context.prec, len(quantity.as_tuple().digits) + len(price.as_tuple().digits))
-            amount = quantity * price
+    amount = _exact_product(quantity, price) if quantity is not None and price is not None else None
     return component(quantity or 0, amount, row.get('acquisition_currency', ''))
 
 
@@ -239,22 +241,27 @@ def active_components(row):
 
 def _document_components(row, document):
     parts = document['components']
-    if isinstance(parts, ReconciledPurchases) or (document.get('source_exact') and not row.get('purchase_history')):
+    if isinstance(parts, ReconciledPurchases):
         return parts
+    if document.get('source_exact') and not row.get('purchase_history'):
+        return _estimated_csv_aggregate(row, document)
     source = _live_source(row, fingerprint(row))
     if source is None:
         return parts
     quantity = _csv_decimal(source.tokens[0])
-    if quantity is None or len(parts) == 1 and decimal(parts[0]['shares']) == quantity:
+    if quantity is None:
         return parts
     from portfolio_app.ledger.security_history import _exact_sum, allocate_opening_units
-    recorded = _exact_sum(decimal(part['shares']) for part in parts)
-    if recorded == quantity:
-        return parts
-    if row.get('purchase_history'):
+    recorded = decimal(parts[0]['shares']) if len(parts) == 1 else _exact_sum(decimal(part['shares']) for part in parts)
+    if row.get('purchase_history') and (recorded != quantity or
+            not document.get('source_exact') and not same_summary(source.tokens, document['summary'], csv_source=True)):
+        # Even with unchanged units, a price edit can collide with an old float.
+        # The batch writer also saved its exact decimal result in purchase_history.
         recovered = _legacy_components(row, document=document)
         if recovered is not None:
             return recovered
+    if recorded == quantity:
+        return parts
     # Former currency edits wrote the parsed aggregate and its component
     # weights. Bind those weights only to a proven, complete parser output.
     if (not document.get('source_exact') and recorded > 0 and quantity > 0
@@ -263,6 +270,47 @@ def _document_components(row, document):
             and (same_summary(source.parsed, document['summary'])
                  or any(same_summary(candidate, document['summary']) for candidate in source.parser_snapshots))):
         return allocate_opening_units(parts, len(parts), quantity)
+    return parts
+
+
+def _estimated_csv_aggregate(row, document):
+    """Early exact-marked FX reviews calculated the undated aggregate from parsed floats."""
+    parts = document['components']
+    if len(parts) != 1:
+        return parts
+    part, = parts
+    if (set(part) != {'shares', 'amount', 'currency', 'date', 'conversions'}
+            or part['date'] or not part['conversions'] or not part['amount']):
+        return parts
+    units, price, currency = document['summary']
+    if not price or not currency or part['currency'] != currency:
+        return parts
+    exact_quantity, recorded_quantity = decimal(units), decimal(part['shares'])
+    amount, exact_amount = decimal(part['amount']), _exact_product(exact_quantity, decimal(price))
+    if not amount or (recorded_quantity, amount) == (exact_quantity, exact_amount):
+        return parts
+    # matches_snapshot has already bound this marked document to the unchanged source.
+    source = source_for(row)
+    from portfolio_app.portfolio.portfolio_settings import REPORTING_CURRENCIES
+    with localcontext() as context:
+        context.prec = 28  # The amount accepted at review used this Decimal context.
+        for target, fx in part['conversions'].items():
+            if (target not in REPORTING_CURRENCIES or target == currency
+                    or set(fx) != {'amount', 'rate', 'observed_on', 'method', 'saved_at'}
+                    or fx['method'] != 'estimate' or not fx['observed_on'] or not fx['saved_at']
+                    or decimal(fx['amount']) != amount * decimal(fx['rate'])):
+                return parts
+        def matches_parsed(candidate):
+            quantity, unit_price, denomination = candidate
+            parsed_price = decimal(unit_price)
+            # Candidate releases used both 28-digit and exact native products.
+            return (denomination == currency and recorded_quantity == decimal(quantity)
+                    and parsed_price is not None and amount in
+                    (recorded_quantity * parsed_price, _exact_product(recorded_quantity, parsed_price)))
+
+        if matches_parsed(source.parsed) or any(matches_parsed(c) for c in source.parser_snapshots):
+            # Keep every confirmed target amount, quote, and timestamp verbatim.
+            return [{**part, 'shares': str(exact_quantity), 'amount': str(exact_amount)}]
     return parts
 
 
@@ -352,7 +400,7 @@ def _legacy_components(row, *, document=None):
 
         if document is not None:
             saved = document['components']
-            if not isinstance(parts, ReconciledPurchases) or not same_purchase_costs(parts, saved, rates):
+            if previous is None or not same_purchase_costs(parts, saved, rates):
                 return None
             if not matches_snapshot(row, previous, source_exact=True):
                 if not same_summary(previous, document['summary']):
@@ -360,7 +408,9 @@ def _legacy_components(row, *, document=None):
                 # Verified purchase evidence identifies the original source even
                 # when an external edit collides with its parsed float.
                 return [aggregate_component(opening_cost_row(row))]
-            return ReconciledPurchases(saved, parts.count_at_reconciliation, parts.confirmed_balance)
+            if isinstance(parts, ReconciledPurchases):
+                return ReconciledPurchases(saved, parts.count_at_reconciliation, parts.confirmed_balance)
+            return None
 
         # The batch writer saved these exact result decimals to the CSV. A
         # matching rounded float cannot disprove a subsequent source edit.

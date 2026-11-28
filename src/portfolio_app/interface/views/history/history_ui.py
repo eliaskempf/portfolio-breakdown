@@ -22,7 +22,7 @@ from portfolio_app.performance.history_observations import (
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.ledger.security_history import (
     Charge, SecurityEvent, SecurityLot, append_evidence,
-    opening_defaults, selected_events,
+    history_holding, opening_defaults, selected_events,
 )
 
 
@@ -211,7 +211,7 @@ def _remove_transactions(directory, journal, revision, snapshot, book, row, key)
             st.rerun()
         return
     owner = candidates[0]
-    source_row = snapshot.holdings.loc[snapshot.holdings.position_id.eq(owner.position_id)].iloc[0]
+    source_row = history_holding(snapshot.holdings, owner.position_id)
     _activation(directory, journal, revision, snapshot, owner, source_row, key+'remove_',
         resolution='accept', show_review=True, removal=True, other_changes=tuple(candidates[1:]),
         return_key=key)
@@ -609,7 +609,7 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
         return tuple(sorted(changed, key=lambda b: b.position_id != candidate.position_id))
     def build(excluded):
         selected = chosen(excluded)
-        source = snapshot.holdings.loc[snapshot.holdings.position_id.eq(candidate.position_id)].iloc[0]
+        source = history_holding(snapshot.holdings, candidate.position_id)
         primary, comparison, cash = preview_activation(journal, selected[0], selected[0].active_ids, source,
             target=target, historical=historical, other_changes=selected[1:])
         proposed = proposed_journal(journal, selected)

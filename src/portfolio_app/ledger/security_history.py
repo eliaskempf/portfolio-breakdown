@@ -447,9 +447,16 @@ def _recorded_balance(row, state):
     return quantity, costs
 
 
+def history_holding(holdings, position_id):
+    matching = holdings.loc[holdings.position_id.eq(position_id)]
+    if len(matching) != 1:
+        raise DataError('The selected holding no longer exists. Reload the portfolio.')
+    return matching.iloc[0]
+
+
 def opening_defaults(journal, book, holdings):
     """Exact, aggregate opening balance for a history form's unchanged defaults."""
-    row = holdings.loc[holdings.position_id.eq(book.position_id)].iloc[0]
+    row = history_holding(holdings, book.position_id)
     state = replay_securities(journal.securities).positions[book.position_id] if book.active else None
     quantity, costs = _recorded_balance(row, state)
     # Zero amounts do not determine the denomination of a nonzero total.

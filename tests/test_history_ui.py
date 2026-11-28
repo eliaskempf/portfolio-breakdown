@@ -624,19 +624,20 @@ def test_apply_uses_the_comparison_visible_before_the_click(tmp_path):
     assert accepted.records[0].quantity == 10
 
 
-def test_history_review_displays_distinct_small_quantities(tmp_path):
+@pytest.mark.parametrize('before,after', [('0.10000000001', '0.10000000002'), ('0.0000005', '0.000000501')])
+def test_history_review_displays_distinct_small_quantities(tmp_path, before, after):
     from portfolio_app.ledger.history_commands import book_for
     path = tmp_path / 'holdings.csv'
-    path.write_text('position_key,id,name,shares,acquisition_price,acquisition_currency\np,a,Invented,0.10000000001,1,EUR\n')
+    path.write_text(f'position_key,id,name,shares,acquisition_price,acquisition_currency\np,a,Invented,{before},1,EUR\n')
     row = read_snapshot(path).holdings.iloc[0]
-    opening = E('opening', 'opening', '2024-01-01', quantity=D('0.10000000002'), amount=1, currency='EUR')
+    opening = E('opening', 'opening', '2024-01-01', quantity=D(after), amount=1, currency='EUR')
     book = replace(book_for(Journal(), row), records=(opening,))
     save_journal(tmp_path, Journal(version=5, securities=(book,)), None)
     app = launch(tmp_path)
     label(app.button, 'Review against portfolio').click().run()
     assert not app.exception
     amounts = app.table[0].value.iloc[0]
-    assert amounts['Current portfolio'] == '0.10000000001' and amounts['From history'] == '0.10000000002'
+    assert amounts['Current portfolio'] == before and amounts['From history'] == after
 
 
 def test_apply_waits_for_the_selected_similar_transactions_to_be_displayed(tmp_path):

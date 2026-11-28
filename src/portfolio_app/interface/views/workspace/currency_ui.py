@@ -9,7 +9,7 @@ import streamlit as st
 
 from portfolio_app.market.market_data import BackgroundPrices
 from portfolio_app.performance.cost_basis import (FIELD, active_components, component, encode_components, estimate_missing,
-    freeze_historical, resolve_cost, supplied_conversion)
+    freeze_historical, opening_cost_row, resolve_cost, supplied_conversion)
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.portfolio.portfolio_settings import REPORTING_CURRENCIES, load_settings, save_settings
 from portfolio_app.workspace.storage import revision
@@ -82,7 +82,7 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
             try:
                 changes, records = {}, []
                 for identity in selection:
-                    row = held.loc[held.position_id.eq(identity)].iloc[0]
+                    row = opening_cost_row(held.loc[held.position_id.eq(identity)].iloc[0])
                     parts = estimate_missing(active_components(row), target, prices, historical)
                     changes[identity] = {FIELD: encode_components(parts, row)}
                     for part in parts:
