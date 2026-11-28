@@ -69,7 +69,13 @@ if settings.reporting_currency != 'GBP':
     assert part['conversions']['GBP']['method'] == 'estimate'
 
 
-def test_previous_exact_marked_estimate_recovers_opening_with_confirmed_conversion(path):
+@pytest.mark.parametrize('retained_batch', [False, True])
+def test_previous_exact_marked_estimate_recovers_opening_with_confirmed_conversion(path, retained_batch):
+    if retained_batch:
+        from test_saved_purchase_source_edits import ordinary_history
+        batches, _ = ordinary_history(False)
+        patch_holdings(path, {'test': {'purchase_history': json.dumps(batches)}},
+                       expected_revision=read_snapshot(path).revision)
     document = previous_estimate(path)
     assert document['source_exact'] and D(document['components'][0]['shares']) == 2
     patch_holdings(path, {'test': {FIELD: json.dumps(document)}}, expected_revision=read_snapshot(path).revision)
@@ -79,7 +85,7 @@ def test_previous_exact_marked_estimate_recovers_opening_with_confirmed_conversi
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize('alter', ['native_cost', 'target_amount', 'method', 'date', 'shares', 'rate', 'observed_on'])
+@pytest.mark.parametrize('alter', ['native_cost', 'target_amount', 'method', 'extra_field', 'shares', 'rate', 'observed_on'])
 def test_nonmatching_estimate_is_not_reinterpreted(path, alter):
     document = previous_estimate(path)
     part = document['components'][0]
@@ -87,13 +93,82 @@ def test_nonmatching_estimate_is_not_reinterpreted(path, alter):
     if alter == 'native_cost':
         part['amount'] = '21'
         fx['amount'] = str(D(21) * D(fx['rate']))
-    elif alter == 'date':
-        part['date'] = '2023-01-02'
+    elif alter == 'extra_field':
+        part['source'] = 'Independently recorded lot'
     elif alter == 'shares':
         part['shares'] = '2.00000000000000002'
     else:
         fx.update({'target_amount': {'amount': '15'}, 'method': {'method': 'supplied_rate'},
-                   'rate': {'rate': '0.7'}, 'observed_on': {'observed_on': ''}}[alter])
+                   'rate': {'rate': '0.7'}, 'observed_on': {'observed_on': 'unverified'}}[alter])
+    patch_holdings(path, {'test': {FIELD: json.dumps(document)}}, expected_revision=read_snapshot(path).revision)
+    assert active_components(read_snapshot(path).holdings.iloc[0]) == [part]
+    with pytest.raises(DataError, match='cost quantities'):
+        first_sale(path)
+
+
+@pytest.mark.parametrize('method', ['supplied_cost', 'supplied_rate'])
+def test_old_review_keeps_an_earlier_supplied_conversion_with_its_estimate(path, method):
+    from portfolio_app.performance.cost_basis import supplied_conversion
+
+    document = previous_estimate(path)
+    part, = document['components']
+    supplied_conversion(part, 'GBP', **({'amount': 17} if method == 'supplied_cost' else {'rate': '0.7'}))
+    patch_holdings(path, {'test': {FIELD: json.dumps(document)}}, expected_revision=read_snapshot(path).revision)
+    before = path.read_bytes()
+    assert first_sale(path)['conversions'] == part['conversions']
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('change', ['rate_product', 'supplied_time', 'unexpected_field'])
+def test_invalid_supplied_conversion_beside_valid_estimate_is_not_reinterpreted(path, change):
+    from portfolio_app.performance.cost_basis import supplied_conversion
+
+    document = previous_estimate(path)
+    part, = document['components']
+    supplied_conversion(part, 'GBP', rate='0.7')
+    fx = part['conversions']['GBP']
+    if change == 'rate_product':
+        fx['amount'] = '19'
+    elif change == 'supplied_time':
+        fx['saved_at'] = 'not-a-timestamp'
+    else:
+        fx['observed_on'] = fx['saved_at']
+    patch_holdings(path, {'test': {FIELD: json.dumps(document)}}, expected_revision=read_snapshot(path).revision)
+    assert active_components(read_snapshot(path).holdings.iloc[0]) == [part]
+    with pytest.raises(DataError, match='cost quantities'):
+        first_sale(path)
+
+
+@pytest.mark.parametrize('method', ['supplied_cost', 'supplied_rate', 'clear', 'date_only', 'historical'])
+def test_previous_editor_conversion_before_any_further_estimate(path, method):
+    from portfolio_app.performance.cost_basis import supplied_conversion
+
+    document = previous_estimate(path)
+    old = document['components'][0]
+    old['conversions'].clear()
+    if method in ('supplied_rate', 'supplied_cost'):
+        supplied_conversion(old, 'GBP', **({'rate': '0.7'} if method == 'supplied_rate' else {'amount': 17}))
+    elif method in ('date_only', 'historical'):
+        old['date'] = '2024-01-05'
+        if method == 'historical':
+            old['conversions']['GBP'] = dict(amount='15', rate='0.75', method='historical',
+                                             observed_on='2024-01-02', source='Invented daily FX')
+    patch_holdings(path, {'test': {FIELD: json.dumps(document)}}, expected_revision=read_snapshot(path).revision)
+    before = path.read_bytes()
+    opening = first_sale(path)
+    assert opening['date'] == old['date'] and opening['conversions'] == old['conversions']
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('changed', [{'amount': '14'}, {'source': ''}, {'observed_on': '2024-01-06'},
+                                     {'observed_on': '2023-12-28'}, {'observed_on': ''}])
+def test_inconsistent_historical_evidence_is_not_reinterpreted(path, changed):
+    document = previous_estimate(path)
+    part, = document['components']
+    part['date'] = '2024-01-05'
+    converted = dict(amount='15', rate='0.75', method='historical',
+                     observed_on='2024-01-02', source='Invented daily FX')
+    part['conversions'] = {'GBP': {**converted, **changed}}
     patch_holdings(path, {'test': {FIELD: json.dumps(document)}}, expected_revision=read_snapshot(path).revision)
     assert active_components(read_snapshot(path).holdings.iloc[0]) == [part]
     with pytest.raises(DataError, match='cost quantities'):

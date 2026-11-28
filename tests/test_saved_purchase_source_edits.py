@@ -52,3 +52,48 @@ def test_unchanged_source_skips_purchase_replay_and_unrelated_history_preserves_
     path.write_text(csv_with_document(content(batches), ['2','10','USD'], parts,
                                       acquisition_price='10.00000000000000001'))
     assert cost_basis.active_components(read_snapshot(path).holdings.iloc[0]) == parts
+
+
+def test_currency_review_rounded_batch_summary_does_not_hide_edit(tmp_path):
+    # v0.2.1 Add purchase wrote a 50-digit average. Review currency re-encoded
+    # the same dated component with a float summary and a new estimated target.
+    original, rounded = '33.' + '3' * 48, '33.33333333333333'
+    record = dict(purchase('3', '33', fees='1'), fx_rate='0.8')
+    batch = dict(v1_batch('add', opening('0', ''), [record], '3', original), version=2)
+    parts = [prior_component('3', '100', target_cost='80')]
+    parts[0]['conversions']['GBP'] = dict(amount='70', rate='0.7', method='estimate',
+                                          saved_at='2024-04-01', observed_on='2024-04-01')
+    path = tmp_path/'holdings.csv'
+
+    def read(review_price, csv_price):
+        path.write_text(csv_with_document(content([batch]), ['3', review_price, 'USD'], parts,
+                                          acquisition_price=csv_price))
+        return cost_basis.active_components(read_snapshot(path).holdings.iloc[0])
+
+    assert read(rounded, original) == parts
+    edited, = read(rounded, rounded)
+    assert edited['date'] == '' and edited['conversions'] == {}
+    assert D(edited['amount']) == 3 * D(rounded)
+    assert first_sale(path).costs == (edited,)
+
+    # A different summary cannot bind these conversions to the batch, even
+    # when its dated amounts and supplied FX happen to coincide.
+    assert read('34', '34') == parts
+    parts[0]['date'] = ADD_DATE
+    assert read(rounded, rounded) == parts
+
+
+def test_matching_reviewed_purchase_result_skips_recalculation(tmp_path, monkeypatch):
+    from portfolio_app.portfolio import purchases
+
+    batches, parts = ordinary_history(False)
+    parts[0]['conversions']['GBP'] = dict(amount='14', rate='0.7', method='estimate',
+                                          saved_at='2024-04-01', observed_on='2024-04-01')
+    path = tmp_path/'holdings.csv'
+    path.write_text(csv_with_document(content(batches), ['2', '10', 'USD'], parts))
+
+    def unexpected_replay(*args, **kwargs):
+        pytest.fail('An unchanged final purchase result does not require replay')
+
+    monkeypatch.setattr(purchases, 'summarize_purchases', unexpected_replay)
+    assert cost_basis.active_components(read_snapshot(path).holdings.iloc[0]) == parts

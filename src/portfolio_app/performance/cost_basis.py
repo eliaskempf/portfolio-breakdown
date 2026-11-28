@@ -243,8 +243,17 @@ def _document_components(row, document):
     parts = document['components']
     if isinstance(parts, ReconciledPurchases):
         return parts
-    if document.get('source_exact') and not row.get('purchase_history'):
-        return _estimated_csv_aggregate(row, document)
+    if document.get('source_exact'):
+        # A reviewed aggregate can coexist with older, superseded purchase batches.
+        aggregate = _csv_aggregate_costs(row, document)
+        if aggregate is not None:
+            if row.get('purchase_history'):
+                purchases = _legacy_components(row, document=document)
+                if purchases is not None:
+                    return purchases
+            return aggregate
+        if not row.get('purchase_history'):
+            return parts
     source = _live_source(row, fingerprint(row))
     if source is None:
         return parts
@@ -253,13 +262,18 @@ def _document_components(row, document):
         return parts
     from portfolio_app.ledger.security_history import _exact_sum, allocate_opening_units
     recorded = decimal(parts[0]['shares']) if len(parts) == 1 else _exact_sum(decimal(part['shares']) for part in parts)
-    if row.get('purchase_history') and (recorded != quantity or
-            not document.get('source_exact') and not same_summary(source.tokens, document['summary'], csv_source=True)):
-        # Even with unchanged units, a price edit can collide with an old float.
-        # The batch writer also saved its exact decimal result in purchase_history.
-        recovered = _legacy_components(row, document=document)
-        if recovered is not None:
-            return recovered
+    if row.get('purchase_history'):
+        reviewed_fx = not document.get('source_exact') and any(
+            fx['method'] == 'estimate' for part in parts for fx in part.get('conversions', {}).values())
+        weights_or_source_differ = recorded != quantity or (
+            not document.get('source_exact') and not same_summary(source.tokens, document['summary'], csv_source=True))
+        if weights_or_source_differ or reviewed_fx:
+            # A currency review could rewrite even a dated batch's exact summary
+            # with parsed floats. Its final batch still identifies the original CSV.
+            recovered = _legacy_components(row, document=document, reviewed_fx=reviewed_fx,
+                                           skip_matching_result=not weights_or_source_differ)
+            if recovered is not None:
+                return recovered
     if recorded == quantity:
         return parts
     # Former currency edits wrote the parsed aggregate and its component
@@ -273,33 +287,59 @@ def _document_components(row, document):
     return parts
 
 
-def _estimated_csv_aggregate(row, document):
-    """Early exact-marked FX reviews calculated the undated aggregate from parsed floats."""
+def _csv_aggregate_costs(row, document):
+    """Former currency reviews and later edits retained the parsed aggregate's units and cost."""
     parts = document['components']
     if len(parts) != 1:
-        return parts
+        return None
     part, = parts
     if (set(part) != {'shares', 'amount', 'currency', 'date', 'conversions'}
-            or part['date'] or not part['conversions'] or not part['amount']):
-        return parts
+            or not part['amount']):
+        return None
     units, price, currency = document['summary']
     if not price or not currency or part['currency'] != currency:
-        return parts
+        return None
     exact_quantity, recorded_quantity = decimal(units), decimal(part['shares'])
     amount, exact_amount = decimal(part['amount']), _exact_product(exact_quantity, decimal(price))
     if not amount or (recorded_quantity, amount) == (exact_quantity, exact_amount):
-        return parts
+        return None
     # matches_snapshot has already bound this marked document to the unchanged source.
     source = source_for(row)
+    from portfolio_app.market.prices import parse_time
     from portfolio_app.portfolio.portfolio_settings import REPORTING_CURRENCIES
     with localcontext() as context:
         context.prec = 28  # The amount accepted at review used this Decimal context.
+        writer_fields = {
+            'estimate': {'amount', 'method', 'rate', 'observed_on', 'saved_at'},
+            'historical': {'amount', 'method', 'rate', 'observed_on', 'source'},
+            'supplied_rate': {'amount', 'method', 'rate', 'saved_at'},
+            'supplied_cost': {'amount', 'method', 'saved_at'},
+        }
         for target, fx in part['conversions'].items():
+            method = fx['method']
             if (target not in REPORTING_CURRENCIES or target == currency
-                    or set(fx) != {'amount', 'rate', 'observed_on', 'method', 'saved_at'}
-                    or fx['method'] != 'estimate' or not fx['observed_on'] or not fx['saved_at']
-                    or decimal(fx['amount']) != amount * decimal(fx['rate'])):
-                return parts
+                    or set(fx) != writer_fields.get(method)):
+                return None
+            # A supplied total is the user's independent input. Rate-derived
+            # amounts must match the writer's product in the recorded units.
+            if method != 'supplied_cost' and decimal(fx['amount']) != amount * decimal(fx['rate']):
+                return None
+            try:
+                if method == 'historical':
+                    # HistoricalFX accepts the purchase day or its latest observation
+                    # within the preceding seven days.
+                    day = date.fromisoformat(part['date'])
+                    observed = date.fromisoformat(fx['observed_on'])
+                    if (not isinstance(fx['source'], str) or not fx['source'].strip()
+                            or not 0 <= (day - observed).days <= 7):
+                        return None
+                else:
+                    parse_time(fx['saved_at'])
+                    if method == 'estimate':
+                        parse_time(fx['observed_on'])
+            except (TypeError, ValueError, OverflowError):
+                return None
+
         def matches_parsed(candidate):
             quantity, unit_price, denomination = candidate
             parsed_price = decimal(unit_price)
@@ -311,7 +351,7 @@ def _estimated_csv_aggregate(row, document):
         if matches_parsed(source.parsed) or any(matches_parsed(c) for c in source.parser_snapshots):
             # Keep every confirmed target amount, quote, and timestamp verbatim.
             return [{**part, 'shares': str(exact_quantity), 'amount': str(exact_amount)}]
-    return parts
+    return None
 
 
 def _aggregate_amount_matches(parts, summary):
@@ -348,10 +388,29 @@ def same_purchase_costs(expected, saved, rates):
     return True
 
 
-def _legacy_components(row, *, document=None):
+def _batch_snapshot(batch):
+    average = batch['result_average']
+    return (batch['result_shares'], average, batch['currency'] if average else '')
+
+
+def _review_parser_matches(row, previous, summary):
+    from portfolio_app.portfolio.legacy_numeric import legacy_fingerprint
+
+    source = source_for(row)
+    for fused in (False, True):
+        candidate = legacy_fingerprint(*previous, integer_shares=source.integer_shares,
+                                       integer_price=source.integer_price, fused_digits=fused)
+        if candidate is not None and same_summary(candidate, summary):
+            return True
+    return False
+
+
+def _legacy_components(row, *, document=None, reviewed_fx=False, skip_matching_result=False):
     from portfolio_app.portfolio.purchases import Purchase, read_purchase_history, summarize_purchases
     try:
         batches = read_purchase_history(row['purchase_history'])
+        if skip_matching_result and batches and matches_snapshot(row, _batch_snapshot(batches[-1]), source_exact=True):
+            return None
         parts, rates, previous = [], [], None
         with localcontext() as context:
             # Serialized purchase results used the writer's 50-digit arithmetic.
@@ -390,10 +449,9 @@ def _legacy_components(row, *, document=None):
                         and opening.get('acquisition_price') and opening.get('acquisition_currency', '').upper() != currency):
                     return None
                 result = summarize_purchases(purchases, currency, opening, mode=mode)
-                recorded = (batch['result_shares'], batch['result_average'], currency if batch['result_average'] else '')
                 previous = (str(result.total_shares), '' if result.average is None else str(result.average),
                             result.currency if result.average is not None else '')
-                if not same_summary(previous, recorded):
+                if not same_summary(previous, _batch_snapshot(batch)):
                     return None
                 if mode == 'reconcile' and result.batch_shares != result.total_shares:
                     parts = ReconciledPurchases(parts, len(parts), result.total_shares)
@@ -403,7 +461,8 @@ def _legacy_components(row, *, document=None):
             if previous is None or not same_purchase_costs(parts, saved, rates):
                 return None
             if not matches_snapshot(row, previous, source_exact=True):
-                if not same_summary(previous, document['summary']):
+                if not (same_summary(previous, document['summary']) or
+                        reviewed_fx and _review_parser_matches(row, previous, document['summary'])):
                     return None
                 # Verified purchase evidence identifies the original source even
                 # when an external edit collides with its parsed float.
