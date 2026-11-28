@@ -401,10 +401,15 @@ def opening_costs(row, quantity):
         return tuple(parts)
     count = parts.count_at_reconciliation
     confirmed = parts.confirmed_balance
-    units = [Decimal(part['shares']) for part in parts[:count]]
     later = (Decimal(part['shares']) for part in parts[count:])
     if _exact_sum((confirmed, *later)) != quantity:
         raise DataError('Opening quantity differs from the reconciled purchase balance.')
+    return tuple(allocate_opening_units(parts, count, confirmed))
+
+
+def allocate_opening_units(parts, count, confirmed):
+    """Bind proven aggregate unit weights to an opening, retaining original money and FX."""
+    units = [Decimal(part['shares']) for part in parts[:count]]
     recorded = _exact_sum(units)
     positive = [i for i, value in enumerate(units) if value]
     if not positive:
@@ -424,31 +429,37 @@ def opening_costs(row, quantity):
                       else _proportion(units[i], confirmed, recorded))
             result[i] = {**parts[i], 'shares': str(weight)}
             assigned = _exact_sum((assigned, weight))
-    return tuple(result)
+    return result
+
+
+def _recorded_balance(row, state):
+    """Read the current units and dated costs from their authoritative source."""
+    if state is not None:
+        return state.quantity, state.costs
+    from portfolio_app.performance.cost_basis import opening_cost_row
+    row = opening_cost_row(row)
+    quantity = Decimal(row['shares'])
+    price = row.get('acquisition_price')
+    with localcontext() as context:
+        if price:
+            context.prec = max(context.prec, len(quantity.as_tuple().digits) + len(Decimal(price).as_tuple().digits))
+        costs = opening_costs(row, quantity)
+    return quantity, costs
 
 
 def opening_defaults(journal, book, holdings):
     """Exact, aggregate opening balance for a history form's unchanged defaults."""
-    if book.active:
-        state = replay_securities(journal.securities).positions[book.position_id]
-        quantity, costs, currency = state.quantity, state.costs, ''
-    else:
-        from portfolio_app.performance.cost_basis import opening_cost_row
-        row = opening_cost_row(holdings.loc[holdings.position_id.eq(book.position_id)].iloc[0])
-        quantity = Decimal(row['shares'])
-        price, currency = row['acquisition_price'], row.get('acquisition_currency', '')
-        with localcontext() as context:
-            if price:
-                context.prec = max(context.prec, len(quantity.as_tuple().digits) + len(Decimal(price).as_tuple().digits))
-            costs = opening_costs(row, quantity)
-
-    currencies = {part['currency'] for part in costs if part['amount'] == '' or Decimal(part['amount'])}
+    row = holdings.loc[holdings.position_id.eq(book.position_id)].iloc[0]
+    state = replay_securities(journal.securities).positions[book.position_id] if book.active else None
+    quantity, costs = _recorded_balance(row, state)
+    # Zero amounts do not determine the denomination of a nonzero total.
+    relevant = [p for p in costs if p['amount'] == '' or Decimal(p['amount'])]
+    currencies = {p['currency'] for p in relevant or costs}
+    currency = next(iter(currencies)) if len(currencies) == 1 else ''
     amount = None
-    if len(currencies) <= 1 and all(part['amount'] != '' for part in costs):
-        amount = _exact_sum(Decimal(part['amount']) for part in costs)
-    if len(currencies) == 1:
-        currency, = currencies
-    return dict(quantity=quantity, amount=amount, currency=currency or 'EUR', costs=costs)
+    if (currency or len(relevant) <= 1) and all(p['amount'] != '' for p in costs):
+        amount = _exact_sum(Decimal(p['amount']) for p in costs)
+    return dict(quantity=quantity, amount=amount, currency=currency, costs=costs)
 
 
 def _partition_lot(lot, quantity):
@@ -766,18 +777,20 @@ class Reconciliation:
     cost_matches: bool | None
 
 
-def reconcile(book, row, *, other_books=(), target='EUR', historical=None):
-    from portfolio_app.performance.cost_basis import active_components, resolve_cost
-    state = replay_securities((*other_books, book)).positions[book.position_id]
-    original = Decimal(str(row['shares']))
+def reconcile_balances(row, current_state, state, *, target, historical):
+    from portfolio_app.performance.cost_basis import resolve_cost
+    original, costs = _recorded_balance(row, current_state)
     tolerance = min(Decimal('1e-9'), abs(original)*Decimal('1e-9'))
-    old = resolve_cost(active_components(row), target, historical)
-    new = resolve_cost(list(state.costs), target, historical) if state.costs else None
-    old_cost = old.exact_amount
-    new_cost = new.exact_amount if new else ZERO if not state.quantity else None
+    old_cost = resolve_cost(costs, target, historical).exact_amount if costs else (ZERO if not original else None)
+    new_cost = resolve_cost(state.costs, target, historical).exact_amount if state.costs else (ZERO if not state.quantity else None)
     return Reconciliation(original, state.quantity, old_cost, new_cost, target,
         abs(state.quantity-original) <= tolerance,
         abs(old_cost-new_cost) <= Decimal('.01') if old_cost is not None and new_cost is not None else None)
+
+
+def reconcile(book, row, *, other_books=(), target='EUR', historical=None, current_state=None):
+    state = replay_securities((*other_books, book)).positions[book.position_id]
+    return reconcile_balances(row, current_state, state, target=target, historical=historical)
 
 
 def validate_books(books, accounts):

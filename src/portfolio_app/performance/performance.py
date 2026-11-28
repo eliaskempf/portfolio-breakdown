@@ -34,7 +34,7 @@ class ValuationCostCache:
         # An external summary edit can supersede the saved document. Neither
         # the converted amount nor a market/FX response belongs in this cache.
         previous = self._positions.get(identity)
-        signature = (document, fingerprint(row), source_for(row))
+        signature = (document, fingerprint(row), source_for(row), row.get('purchase_history'), row.get('balance_replaced_at'))
         if previous is not None and previous[0] == signature:
             return previous[1]
         parts = active_components(row)

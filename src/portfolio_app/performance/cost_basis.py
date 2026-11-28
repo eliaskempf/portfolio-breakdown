@@ -127,8 +127,12 @@ def component(shares, amount, currency, day='', conversions=None):
 
 def aggregate_component(row):
     quantity, price = decimal(row.get('shares')), decimal(row.get('acquisition_price'))
-    return component(quantity or 0, quantity * price if quantity is not None and price is not None else None,
-                     row.get('acquisition_currency', ''))
+    amount = None
+    if quantity is not None and price is not None:
+        with localcontext() as context:
+            context.prec = max(context.prec, len(quantity.as_tuple().digits) + len(price.as_tuple().digits))
+            amount = quantity * price
+    return component(quantity or 0, amount, row.get('acquisition_currency', ''))
 
 
 def validate_components(parts):
@@ -223,7 +227,7 @@ def active_components(row):
     if isinstance(value, str) and value:
         raw = read_details(value)
         if matches_snapshot(row, raw['summary'], source_exact=raw.get('source_exact', False)):
-            return raw['components']
+            return _document_components(row, raw)
         # External balance/cost edit: the summary supersedes old purchase evidence.
         return [aggregate_component(row)]
     if not row.get('balance_replaced_at') and row.get('purchase_history'):
@@ -233,11 +237,74 @@ def active_components(row):
     return [aggregate_component(row)]
 
 
-def _legacy_components(row):
+def _document_components(row, document):
+    parts = document['components']
+    if isinstance(parts, ReconciledPurchases) or (document.get('source_exact') and not row.get('purchase_history')):
+        return parts
+    source = _live_source(row, fingerprint(row))
+    if source is None:
+        return parts
+    quantity = _csv_decimal(source.tokens[0])
+    if quantity is None or len(parts) == 1 and decimal(parts[0]['shares']) == quantity:
+        return parts
+    from portfolio_app.ledger.security_history import _exact_sum, allocate_opening_units
+    recorded = _exact_sum(decimal(part['shares']) for part in parts)
+    if recorded == quantity:
+        return parts
+    if row.get('purchase_history'):
+        recovered = _legacy_components(row, document=document)
+        if recovered is not None:
+            return recovered
+    # Former currency edits wrote the parsed aggregate and its component
+    # weights. Bind those weights only to a proven, complete parser output.
+    if (not document.get('source_exact') and recorded > 0 and quantity > 0
+            and recorded == decimal(document['summary'][0])
+            and _aggregate_amount_matches(parts, document['summary'])
+            and (same_summary(source.parsed, document['summary'])
+                 or any(same_summary(candidate, document['summary']) for candidate in source.parser_snapshots))):
+        return allocate_opening_units(parts, len(parts), quantity)
+    return parts
+
+
+def _aggregate_amount_matches(parts, summary):
+    units, price, currency = summary
+    if not currency or any(part['currency'] != currency for part in parts):
+        return False
+    if price == '':
+        return all(part['amount'] == '' for part in parts)
+    if any(part['amount'] == '' for part in parts):
+        return False
+    from portfolio_app.ledger.security_history import _exact_sum
+    with localcontext() as context:
+        context.prec = 28  # Stored aggregates used the ordinary Decimal writer.
+        expected = decimal(units) * decimal(price)
+    return _exact_sum(decimal(part['amount']) for part in parts) == expected
+
+
+def same_purchase_costs(expected, saved, rates):
+    if len(expected) != len(saved):
+        return False
+    for original, part, rate in zip(expected, saved, rates, strict=True):
+        if (decimal(original['shares']) != decimal(part['shares'])
+                or decimal(original['amount']) != decimal(part['amount'])
+                or (original['currency'], original['date']) != (part['currency'], part['date'])):
+            return False
+        if rate:
+            with localcontext() as context:
+                context.prec = 28  # Original v2 conversion writer's Decimal precision.
+                amount = decimal(original['amount'])
+                converted = None if amount is None else amount * decimal(rate)
+            if not any(c['method'] == 'supplied_rate' and decimal(c.get('rate')) == decimal(rate)
+                       and decimal(c['amount']) == converted for c in part.get('conversions', {}).values()):
+                return False
+    return True
+
+
+def _legacy_components(row, *, document=None):
     from portfolio_app.portfolio.purchases import Purchase, read_purchase_history, summarize_purchases
     try:
         batches = read_purchase_history(row['purchase_history'])
-        parts, previous = [], None
+        parts, rates, previous = [], [], None
         with localcontext() as context:
             # Serialized purchase results used the writer's 50-digit arithmetic.
             context.prec = 50
@@ -247,7 +314,7 @@ def _legacy_components(row):
                     return None
                 mode, currency = batch['mode'], batch['currency']
                 if mode == 'reconcile':
-                    parts = []
+                    parts, rates = [], []
                     if not opening:
                         # Without a recorded opening, the lines must account for
                         # the entire balance exactly; no allowance can be inferred.
@@ -256,6 +323,7 @@ def _legacy_components(row):
                     return None
                 elif previous is None and decimal(opening.get('shares', '0')):
                     parts = [aggregate_component(opening)]
+                    rates = [None]
 
                 purchases = []
                 for item in batch['purchases']:
@@ -263,8 +331,12 @@ def _legacy_components(row):
                     if not shares or fees is None or (item['price'] and price is None):
                         return None
                     purchases.append(Purchase(item['date'], shares, price, fees))
-                    parts.append(component(shares, None if price is None else shares * price + fees,
-                                           currency, item['date']))
+                    with localcontext() as cost_context:
+                        if document is not None and batch['version'] == 2:
+                            cost_context.prec = 28  # v2 stored monetary components outside the summary's 50-digit context.
+                        amount = None if price is None else shares * price + fees
+                    parts.append(component(shares, amount, currency, item['date']))
+                    rates.append(item.get('fx_rate'))
                 # v1 refused additions across currencies when an opening cost was known.
                 if (batch['version'] == 1 and mode == 'add' and decimal(opening.get('shares'))
                         and opening.get('acquisition_price') and opening.get('acquisition_currency', '').upper() != currency):
@@ -277,6 +349,18 @@ def _legacy_components(row):
                     return None
                 if mode == 'reconcile' and result.batch_shares != result.total_shares:
                     parts = ReconciledPurchases(parts, len(parts), result.total_shares)
+
+        if document is not None:
+            saved = document['components']
+            if not isinstance(parts, ReconciledPurchases) or not same_purchase_costs(parts, saved, rates):
+                return None
+            if not matches_snapshot(row, previous, source_exact=True):
+                if not same_summary(previous, document['summary']):
+                    return None
+                # Verified purchase evidence identifies the original source even
+                # when an external edit collides with its parsed float.
+                return [aggregate_component(opening_cost_row(row))]
+            return ReconciledPurchases(saved, parts.count_at_reconciliation, parts.confirmed_balance)
 
         # The batch writer saved these exact result decimals to the CSV. A
         # matching rounded float cannot disprove a subsequent source edit.

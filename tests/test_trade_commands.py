@@ -76,7 +76,9 @@ def test_undated_snapshot_requires_boundary_and_retains_exact_quantity(tmp_path)
     assert path.read_bytes() == original
     save(tmp_path, trade(), position_id=identity, opening_date='2026-01-01')
     _, journal = state(tmp_path)
-    assert journal.securities[0].records[0].quantity == D('1.234567890123456789')
+    opening = journal.securities[0].records[0]
+    assert opening.quantity == D('1.234567890123456789')
+    assert D(opening.costs[0]['amount']) == D('2.621551567916476154267337309750190521')
     result = replay_securities(journal.securities).positions[identity]
     assert result.quantity == D('3.734567890123456789')
 

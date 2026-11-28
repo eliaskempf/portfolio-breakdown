@@ -11,7 +11,7 @@ from portfolio_app.performance.cost_basis import stored_snapshot
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.ledger.security_history import (
-    SecurityBook, HistoryReview, effective_holdings, reconcile, replay_securities,
+    SecurityBook, HistoryReview, effective_holdings, reconcile_balances, replay_securities, cash_postings,
 )
 from portfolio_app.workspace.workspace_lock import workspace_lock
 
@@ -46,9 +46,12 @@ def preview_activation(journal, book, selected_ids, row, *, target='EUR', histor
     merged.update({b.position_id: b for b in (candidate, *other_changes)})
     validate_order(journal, merged.values())
     proposed = proposed_journal(journal, (candidate, *other_changes))
-    others = tuple(b for b in proposed.securities if b.position_id != book.position_id)
-    comparison = reconcile(candidate, row, other_books=others, target=target, historical=historical)
-    before, after = replay(journal), replay(proposed)
+    current = replay_securities(journal.securities)
+    reconstructed = replay_securities(proposed.securities)
+    comparison = reconcile_balances(row, current.positions.get(book.position_id), reconstructed.positions[book.position_id],
+                                    target=target, historical=historical)
+    before = replay(journal, _security_postings=cash_postings(journal, security_cash=current.cash))
+    after = replay(proposed, _security_postings=cash_postings(proposed, security_cash=reconstructed.cash))
     keys = sorted(set(before.cash) | set(after.cash) | set(before.unknown_cash) | set(after.unknown_cash))
     cash = [{'Account': account, 'Currency': currency,
              'Before': None if (account, currency) in before.unknown_cash else before.cash.get((account, currency)),
@@ -85,19 +88,18 @@ def proposed_journal(journal, books):
 
 
 def history_comparisons(journal, proposed, holdings, positions, *, target='EUR', historical=None):
-    from portfolio_app.performance.cost_basis import active_components, resolve_cost
-    current = effective_holdings(holdings, journal.securities).set_index('position_id')
+    before = replay_securities(journal.securities)
+    current = effective_holdings(holdings, journal.securities, security_state=before).set_index('position_id')
     states = replay_securities(proposed.securities).positions
     comparisons = []
     for identity in sorted(positions):
         if identity not in current.index or identity not in states:
             raise DataError('Every affected holding needs an explicit starting balance before applying.')
         row, state = current.loc[identity], states[identity]
-        old = resolve_cost(active_components(row), target, historical).exact_amount
-        new = resolve_cost(list(state.costs), target, historical).exact_amount if state.costs else (0 if state.quantity == 0 else None)
+        compared = reconcile_balances(row, before.positions.get(identity), state, target=target, historical=historical)
         comparisons.append(dict(position_id=identity, name=row['name'], account=row['account'],
-            before_quantity=str(row.shares), after_quantity=str(state.quantity),
-            before_cost=old, after_cost=new, currency=target))
+            before_quantity=str(compared.recorded_quantity), after_quantity=str(compared.reconstructed_quantity),
+            before_cost=compared.recorded_cost, after_cost=compared.reconstructed_cost, currency=target))
     return tuple(comparisons)
 
 

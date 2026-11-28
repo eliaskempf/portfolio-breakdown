@@ -77,3 +77,46 @@ def test_opening_defaults_keep_lots_with_no_recorded_basis_unknown(tmp_path, als
     assert defaults['quantity'] == quantity and defaults['amount'] is None
     projected = effective_holdings(holdings, (book,)).iloc[0]
     assert resolve_cost(active_components(projected), 'EUR').amount is None
+
+
+@pytest.mark.parametrize('currencies,confirm,expected_currency,total', [
+    (('',), '', '', '500'), (('',), 'USD', 'USD', '500'), (('USD',), '', 'USD', '500'),
+    (('USD', 'EUR'), '', '', ''), (('', 'EUR'), '', '', ''), (('', ''), '', '', ''),
+])
+def test_opening_form_keeps_cost_denominations_and_dated_evidence(tmp_path, currencies, confirm, expected_currency, total):
+    import csv
+    from portfolio_app.performance.cost_basis import component, encode_components, resolve_cost
+
+    path = tmp_path / 'holdings.csv'
+    holding = dict(position_key='test', id='invented', name='Invented', shares='10', acquisition_price='50',
+                   acquisition_currency=currencies[0] if len(currencies) == 1 else '')
+    parts = [component(10 // len(currencies), 500 // len(currencies), currency, f'2024-01-0{i+1}')
+             for i, currency in enumerate(currencies)]
+    if currencies[0] == 'USD':
+        parts[0]['conversions']['EUR'] = dict(amount='200', method='supplied_cost')
+    holding['cost_basis_details'] = encode_components(parts, holding, csv_values=True)
+    with path.open('w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=holding)
+        writer.writeheader()
+        writer.writerow(holding)
+    before = path.read_bytes()
+    app = launch(tmp_path)
+    label(app.button, 'Add starting balance').click().run()
+    assert label(app.text_input, 'Currency').value == ('' if confirm else expected_currency)
+    assert label(app.text_input, 'Total acquisition cost').value == total
+    if len(currencies) > 1:
+        label(app.text_input, 'Currency').set_value('USD').run()
+        assert not any(button.label == 'Save starting balance' for button in app.button)
+        assert any('Enter a total cost' in notice.value for notice in app.caption)
+        label(app.text_input, 'Currency').set_value('').run()
+    if confirm:
+        label(app.text_input, 'Currency').set_value(confirm).run()
+    label(app.button, 'Save starting balance').click().run()
+    assert not app.exception and path.read_bytes() == before
+    event, = load_journal(tmp_path)[0].securities[0].records
+    assert event.currency == expected_currency and event.amount == (D(total) if total else None)
+    assert not event.lots
+    expected = [{**p, 'currency': confirm} if confirm else p for p in parts]
+    assert list(event.costs) == expected
+    if set(currencies) == {'USD', 'EUR'}:
+        assert resolve_cost(event.costs, 'EUR').amount == 450

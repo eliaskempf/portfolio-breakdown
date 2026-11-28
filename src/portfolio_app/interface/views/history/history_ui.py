@@ -383,8 +383,17 @@ def _source_label(source):
 
 
 def _retain_opening_costs(fields, defaults):
-    if all(fields[key] == defaults[key] for key in ('quantity', 'amount', 'currency')):
-        fields['costs'] = defaults['costs']
+    if fields['quantity'] != defaults['quantity'] or fields['amount'] != defaults['amount']:
+        return
+    costs = defaults['costs']
+    if fields['currency'] == defaults['currency']:
+        fields['costs'] = costs
+    elif not defaults['currency'] and fields['currency']:
+        if (len(costs) == 1 or fields['amount'] is not None) and all(not p['currency'] for p in costs):
+            # The user explicitly supplied the missing denomination.
+            fields['costs'] = tuple({**p, 'currency': fields['currency']} for p in costs)
+        elif fields['amount'] is None:
+            raise DataError('Enter a total cost in the selected currency to replace the original costs.')
 
 
 def _opening_form(directory, journal, revision, snapshot, book, row, key):
@@ -600,7 +609,8 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
         return tuple(sorted(changed, key=lambda b: b.position_id != candidate.position_id))
     def build(excluded):
         selected = chosen(excluded)
-        primary, comparison, cash = preview_activation(journal, selected[0], selected[0].active_ids, row,
+        source = snapshot.holdings.loc[snapshot.holdings.position_id.eq(candidate.position_id)].iloc[0]
+        primary, comparison, cash = preview_activation(journal, selected[0], selected[0].active_ids, source,
             target=target, historical=historical, other_changes=selected[1:])
         proposed = proposed_journal(journal, selected)
         touched = changed_positions(journal, selected) | {candidate.position_id}

@@ -622,3 +622,38 @@ def test_apply_uses_the_comparison_visible_before_the_click(tmp_path):
     accepted = load_journal(tmp_path)[0].securities[0]
     assert accepted.active and D(accepted.source_summary[0]) == 15
     assert accepted.records[0].quantity == 10
+
+
+def test_history_review_displays_distinct_small_quantities(tmp_path):
+    from portfolio_app.ledger.history_commands import book_for
+    path = tmp_path / 'holdings.csv'
+    path.write_text('position_key,id,name,shares,acquisition_price,acquisition_currency\np,a,Invented,0.10000000001,1,EUR\n')
+    row = read_snapshot(path).holdings.iloc[0]
+    opening = E('opening', 'opening', '2024-01-01', quantity=D('0.10000000002'), amount=1, currency='EUR')
+    book = replace(book_for(Journal(), row), records=(opening,))
+    save_journal(tmp_path, Journal(version=5, securities=(book,)), None)
+    app = launch(tmp_path)
+    label(app.button, 'Review against portfolio').click().run()
+    assert not app.exception
+    amounts = app.table[0].value.iloc[0]
+    assert amounts['Current portfolio'] == '0.10000000001' and amounts['From history'] == '0.10000000002'
+
+
+def test_apply_waits_for_the_selected_similar_transactions_to_be_displayed(tmp_path):
+    from portfolio_app.ledger.account_journal import load_journal
+
+    (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,2,10,EUR\n')
+    first = E('one', 'buy', '2024-01-05', quantity=D(1), price=D(10), currency='EUR', charges_known=True)
+    second = replace(first, id='two', sequence=1)
+    book = SecurityBook('position-0', 'invented', ('2', '10', 'EUR'), records=(first, second))
+    save_journal(tmp_path, Journal(version=5, securities=(book,)), None)
+    app = launch(tmp_path)
+    label(app.button, 'Review against portfolio').click().run()
+    # Delayed browser updates can deliver a changed selection with the old button.
+    label(app.multiselect, 'Keep transactions · Invented').set_value(['one'])
+    label(app.button, 'Apply history').click().run()
+    assert not app.exception
+    assert not load_journal(tmp_path)[0].securities[0].active
+    label(app.button, 'Apply history').click().run()
+    saved = load_journal(tmp_path)[0].securities[0]
+    assert 'one' in saved.active_ids and 'two' not in saved.active_ids

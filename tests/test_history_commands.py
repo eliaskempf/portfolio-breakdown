@@ -374,3 +374,43 @@ def test_apply_checks_reviewed_conversion_inputs_under_the_workspace_lock(tmp_pa
                      expected_holdings_revision=snapshot.revision, activate=True, **review_context)
     assert load_journal(tmp_path)[1] is None
     assert path.read_bytes() == original
+
+
+def test_review_and_guarded_save_use_exact_csv_then_applied_journal_balance(tmp_path):
+    from portfolio_app.ledger.history_commands import history_comparisons, preview_activation, proposed_journal
+
+    path = tmp_path / 'holdings.csv'
+    quantity = D('9007199254740993')
+    path.write_text(f'position_key,id,name,shares,acquisition_price,acquisition_currency\np,a,Invented,{quantity},1,EUR\n')
+    snapshot = read_snapshot(path)
+    journal, revision = load_journal(tmp_path)
+    book = book_for(journal, snapshot.holdings.iloc[0])
+    for active in (False, True):
+        if active:
+            # Once applied, a different valid CSV snapshot no longer owns this balance.
+            path.write_text(path.read_text().replace(str(quantity), '7'))
+            snapshot = read_snapshot(path)
+        row = snapshot.holdings.iloc[0]
+        for units, cost in ((quantity - 1, quantity), (quantity, quantity - 1), (quantity, quantity)):
+            event = E('replacement' if active else 'opening', 'opening', '2024-03-01' if active else '2024-02-01',
+                      quantity=units, amount=cost, currency='EUR')
+            candidate = append_evidence(book, (event,))
+            candidate = replace(candidate, active_ids=(*book.active_ids, event.id))
+            proposed = proposed_journal(journal, (candidate,))
+            _, preview, _ = preview_activation(journal, candidate, candidate.active_ids, row)
+            comparison, = history_comparisons(journal, proposed, snapshot.holdings, {'p'})
+            assert D(comparison['before_quantity']) == preview.recorded_quantity == quantity
+            assert comparison['before_cost'] == preview.recorded_cost == quantity
+            assert D(comparison['after_quantity']) == preview.reconstructed_quantity == units
+            assert comparison['after_cost'] == preview.reconstructed_cost == cost
+            assert preview.quantity_matches == (quantity == units)
+            assert preview.cost_matches == (quantity == cost)
+            if units != quantity or cost != quantity:
+                with pytest.raises(DataError, match='discrepancy'):
+                    save_history(tmp_path, candidate, expected_journal_revision=revision,
+                                 expected_holdings_revision=snapshot.revision, activate=True)
+            else:
+                save_history(tmp_path, candidate, expected_journal_revision=revision,
+                             expected_holdings_revision=snapshot.revision, activate=True)
+        journal, revision = load_journal(tmp_path)
+        book = journal.securities[0]

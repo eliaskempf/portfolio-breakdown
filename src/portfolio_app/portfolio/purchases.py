@@ -243,8 +243,14 @@ def save_purchase_batch(
                    "acquisition_price": "" if summary.average is None else str(summary.average),
                    "acquisition_currency": summary.currency if summary.average is not None else "",
                    HISTORY_COLUMN: json.dumps(history, separators=(",", ":"))})
-    from portfolio_app.performance.cost_basis import FIELD, encode_components, freeze_historical
+    from portfolio_app.performance.cost_basis import FIELD, ReconciledPurchases, same_purchase_costs, encode_components, freeze_historical
     parts = components if components is not None else purchase_components(purchases, currency, opening, mode=mode, reporting_currency=reporting_currency)
+    if mode == 'reconcile' and summary.batch_shares != summary.total_shares:
+        if components is not None:
+            expected = purchase_components(purchases, currency, opening, mode=mode, reporting_currency=reporting_currency)
+            if not same_purchase_costs(expected, parts, [p.fx_rate for p in purchases]):
+                raise DataError('Cost components do not match the reconciled purchases.')
+        parts = ReconciledPurchases(parts, len(parts), summary.total_shares)
     parts = freeze_historical(parts, reporting_currency, historical)
     values[FIELD] = encode_components(parts, values, csv_values=True)
     return save_position(path, values, expected_revision=expected_revision, position_id=position_id, validate=validate)

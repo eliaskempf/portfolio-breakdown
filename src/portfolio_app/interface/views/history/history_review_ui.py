@@ -106,7 +106,10 @@ def _balances(preview, key, *, review_step='', reviewed=()):
     if len(items) == 1:
         st.markdown('**'+item['name']+'**')
     def number(value):
-        return 'Unknown' if value is None else format(Decimal(str(value)), '.10f').rstrip('0').rstrip('.') or '0'
+        if value is None:
+            return 'Unknown'
+        text = str(Decimal(str(value)))
+        return text.rstrip('0').rstrip('.') if '.' in text and 'E' not in text else text
     def money(value):
         return _money(None if value is None or pd.isna(value) else Decimal(str(value)))
     old, new = Decimal(item['before_quantity']), Decimal(item['after_quantity'])
@@ -166,11 +169,14 @@ def render_history_review(build_preview, *, key, apply, keep, removal=False, kee
         st.warning(str(exc))
         st.button(keep_label, key=key+'keep', on_click=keep)
         return None
+    # A click from a previous selection must not submit a different reconstruction.
+    selection = digest([sorted(excluded), st.session_state.get(key+'order', {})])[:16]
     if not preview.comparisons:
         st.caption('No new transactions selected')
         if preview.excluded:
-            st.button('Save exclusions', key=key+'exclude', type='primary', on_click=apply, args=(excluded,))
-        elif decisions_pending and st.button('Save decisions', key=key+'decisions', type='primary'):
+            if st.button('Save exclusions', key=key+'exclude_'+selection, type='primary'):
+                apply(excluded)
+        elif decisions_pending and st.button('Save decisions', key=key+'decisions_'+selection, type='primary'):
             apply(excluded)
         st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
@@ -236,10 +242,10 @@ def render_history_review(build_preview, *, key, apply, keep, removal=False, kee
     with st.container(horizontal=True, key=key+'actions'):
         if removal:
             st.button('Keep transactions', key=key+'keep', on_click=keep)
-            if st.button('Remove transactions', key=key+'save', disabled=blocked):
+            if st.button('Remove transactions', key=key+'save_'+selection, disabled=blocked):
                 apply(excluded)
         else:
-            if st.button('Apply history', key=key+'save', disabled=blocked, type='primary',
+            if st.button('Apply history', key=key+'save_'+selection, disabled=blocked, type='primary',
                          help='Apply the displayed balances and retain selected similar entries.'):
                 apply(excluded)
             st.button(keep_label, key=key+'keep', on_click=keep)

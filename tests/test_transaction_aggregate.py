@@ -68,7 +68,7 @@ def test_aggregate_replays_forward_and_compares_independent_holdings():
     states = replay_securities(preview.journal.securities).positions
     assert states['aur'].quantity == 2 and states['orb'].quantity == D('2.8')
     comparison = next(c for c in preview.comparisons if c['position_id']=='aur')
-    assert comparison['before_quantity']=='999.0' and comparison['after_quantity']=='2'
+    assert D(comparison['before_quantity'])==999 and comparison['after_quantity']=='2'
     book = next(b for b in preview.journal.securities if b.position_id=='aur')
     assert any(e.kind=='transfer' and e.other_position_id==book.position_id for e in selected_events(book))
     assert sum(D(p['amount']) for p in states['orb'].costs) == 97
