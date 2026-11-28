@@ -3,7 +3,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from portfolio_app.ledger.account_journal import load_journal, save_journal, replay
 from portfolio_app.portfolio.actual_portfolio import freeze_position_keys
@@ -191,7 +191,6 @@ def reconstruction_candidate(book, selected_ids, *, starts_at_zero=False):
     or pre-history price is inferred.
     """
     from datetime import timedelta
-    from uuid import NAMESPACE_URL, uuid5
     from portfolio_app.ledger.security_history import SecurityEvent, append_evidence, selected_events
     removed = tuple(e.id for e in book.records if e.kind == 'void' and e.id in book.active_ids)
     candidate = replace(book, active_ids=tuple(dict.fromkeys((*selected_ids, *removed))))
@@ -267,7 +266,9 @@ def remove_transactions(book, event_ids):
     for event in current_records(book):
         if event.id not in chosen:
             continue
-        additions.append(SecurityEvent(uuid4().hex, 'void', event.date, replaces=event.id,
+        # The confirmation rerun must reproduce the removal that was previewed.
+        removal_id = uuid5(NAMESPACE_URL, f'history-removal:{event.id}').hex
+        additions.append(SecurityEvent(removal_id, 'void', event.date, replaces=event.id,
                                        note='Removed by user. Original evidence retained.'))
         ancestor = event.replaces
         while ancestor:
@@ -283,7 +284,6 @@ def exclude_transactions(book, event_ids, *, accepted_ids=()):
     Stable void identities keep repeated previews and their approvals identical.
     The original evidence remains available for a later explicit correction.
     """
-    from uuid import NAMESPACE_URL, uuid5
     from portfolio_app.ledger.security_history import SecurityEvent, append_evidence
     chosen = set(event_ids)
     if not chosen:

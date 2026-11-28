@@ -133,7 +133,7 @@ def test_whitespace_after_exponent_opens_legacy_csv_without_rewriting(tmp_path):
 @pytest.mark.parametrize('token', ['1 e2', '1e+ 2', '1e - 2', '1e 2 3', '1e\u00a02', '1e ', '1e 309', '-1e 2'])
 def test_exponent_compatibility_rejects_invalid_holdings(tmp_path, token):
     path = tmp_path / 'holdings.csv'
-    path.write_text(f'id,name,shares\nsynthetic,Invented,{token}\n')
+    path.write_text(f'id,name,shares\nsynthetic,Invented,{token}\n', encoding='utf-8')
     with pytest.raises(DataError, match='finite nonnegative number'):
         load_holdings(path)
 

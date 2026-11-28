@@ -289,6 +289,7 @@ def test_bulk_removing_all_trades_keeps_zero_boundary_and_invalid_subset_is_reje
             expected_holdings_revision=snapshot.revision, activate=True, accept_balance_change=True)
     assert load_journal(tmp_path)[1] == revision
     candidate = remove_transactions(journal.securities[0], ['b', 's'])
+    assert remove_transactions(journal.securities[0], ['s', 'b']) == candidate
     saved = save_history(tmp_path, candidate, expected_journal_revision=revision,
         expected_holdings_revision=snapshot.revision, activate=True, accept_balance_change=True)
     assert saved.securities[0].active
